@@ -60,7 +60,7 @@ export const relayDataToEth = async () => {
     destination_address: DESTINATION_ADDRESS,
     payload: Array.from(payload),
     fee: null,
-    type: 1,
+    type: 3,
   };
 
   const message = [

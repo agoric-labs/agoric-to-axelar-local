@@ -9,7 +9,7 @@ HOME=/root/private/.axelar
 rm -rf ${HOME}/*
 
 DEFAULT_KEYS_FLAGS="--keyring-backend test --home ${HOME}"
-ASSETS="100000000000000000000${DENOM}"
+ASSETS="100000000000000000000${DENOM},10000000000000000uausdc"
 
 # Initializing a new blockchain with identifier ${CHAIN_ID} in the specified home directory
 axelard init "$MONIKER" --chain-id ${CHAIN_ID} --home ${HOME} > /dev/null 2>&1 && echo "Initialized new blockchain with chain ID ${CHAIN_ID}"
@@ -21,6 +21,24 @@ sed -i '/\[api\]/,/\[/ s/swagger = false/swagger = true/' "$HOME"/config/app.tom
 # staking/governance token is hardcoded in config, change this
 sed -i "s/\"stake\"/\"$DENOM\"/" "$HOME"/config/genesis.json && echo "Updated staking token to $DENOM"
 
+sed -i '/"chain_states": \[/a{\n "chain":{\n"name": "Ethereum",\n"supports_foreign_assets": true,\n"key_type": "KEY_TYPE_MULTISIG",\n"module": "evm"\n},\n"activated": false,\n"assets": [\n{\n"denom": "ubld",\n"is_native_asset": false\n}\n],\n"maintainer_states": []\n},\n' $HOME/config/genesis.json
+sed -i '/"chain_states": \[/a{\n "chain":{\n"name": "agoric",\n"supports_foreign_assets": true,\n"key_type": "KEY_TYPE_NONE",\n"module": "axelarnet"\n},\n"activated": false,\n"assets": [\n{\n"denom": "ubld",\n"is_native_asset": true\n}\n],\n"maintainer_states": []\n},\n' $HOME/config/genesis.json
+# cat $HOME/config/genesis.json | jq '.app_state.nexus.chain_states[1] |= . + {
+#     "chain": {
+#       "name": "Ethereum",
+#       "supports_foreign_assets": true,
+#       "key_type": "KEY_TYPE_MULTISIG",
+#       "module": "evm"
+#     },
+#     "activated": false,
+#     "assets": [
+#       {
+#         "denom": "ubld",
+#         "is_native_asset": false
+#       }
+#     ],
+#     "maintainer_states": []
+#   }' > "/tmp/1" && mv "/tmp/1" $HOME/config/genesis.json
 
 # Adding a new key named 'owner' with a test keyring-backend in the specified home directory
 # and storing the mnemonic in the mnemonic.txt file
@@ -88,5 +106,6 @@ cat /root/private/bin/libs/evm-rpc.toml >> "$HOME"/config/config.toml
 axelard start --home ${HOME} \
 --minimum-gas-prices 0${DENOM} \
 --moniker ${MONIKER} \
---rpc.laddr "tcp://0.0.0.0:26657" 
+--rpc.laddr "tcp://0.0.0.0:26657" \
+--log_level debug
 
