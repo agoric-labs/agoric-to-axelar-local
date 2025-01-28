@@ -9,6 +9,7 @@ import {StringToAddress, AddressToString} from "@axelar-network/axelar-gmp-sdk-s
 contract SendReceive is AxelarExecutable {
     using StringToAddress for string;
     using AddressToString for address;
+    uint256 private _count;
 
     IAxelarGasService public immutable gasService;
     string public chainName; // name of the chain this contract is deployed to
@@ -27,6 +28,7 @@ contract SendReceive is AxelarExecutable {
     ) AxelarExecutable(gateway_) {
         gasService = IAxelarGasService(gasReceiver_);
         chainName = chainName_;
+        _count = 10;
     }
 
     function send(
@@ -93,15 +95,38 @@ contract SendReceive is AxelarExecutable {
         return abi.encodePacked(bytes4(0x00000001), gmpPayload);
     }
 
+    function increment() public {
+        _count += 1;
+    }
+
+    function decrement() public {
+        _count -= 1;
+    }
+
+    function getCount() public view returns (uint256) {
+        return _count;
+    }
+
     function _execute(
         string calldata /*sourceChain*/,
         string calldata /*sourceAddress*/,
         bytes calldata payload
     ) internal override {
-        (string memory sender, string memory message) = abi.decode(
-            payload,
-            (string, string)
-        );
-        storedMessage = Message(sender, message);
+        string memory methodToInvoke = abi.decode(payload, (string));
+
+        if (
+            keccak256(abi.encodePacked(methodToInvoke)) ==
+            keccak256(abi.encodePacked("increment"))
+        ) {
+            increment();
+            return;
+        }
+        if (
+            keccak256(abi.encodePacked(methodToInvoke)) ==
+            keccak256(abi.encodePacked("decrement"))
+        ) {
+            decrement();
+            return;
+        }
     }
 }
