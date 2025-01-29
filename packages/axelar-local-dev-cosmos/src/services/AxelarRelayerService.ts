@@ -1,5 +1,5 @@
-import { ContractCallSubmitted, CosmosChainInfo, IBCEvent } from "../types";
-import { AxelarCosmosContractCallEvent, AxelarListener } from "../listeners";
+import { ContractCallSubmitted, ContractCallWithTokenSubmitted, CosmosChainInfo, IBCEvent } from "../types";
+import { AxelarCosmosContractCallEvent, AxelarCosmosContractCallWithTokenEvent, AxelarListener, AxelarTokenSentEvent } from "../listeners";
 import {
   CallContractArgs,
   CallContractWithTokenArgs,
@@ -61,6 +61,16 @@ export class AxelarRelayerService extends Relayer {
       this.handleContractCallEvent.bind(this)
     );
 
+    this.axelarListener.listen(
+      AxelarCosmosContractCallWithTokenEvent,
+      this.handleContractCallWithTokenEvent.bind(this)
+    );
+
+    this.axelarListener.listen(
+      AxelarTokenSentEvent,
+      this.handleContractCallWithTokenEvent.bind(this)
+    );
+
     this.listened = true;
   }
 
@@ -70,6 +80,13 @@ export class AxelarRelayerService extends Relayer {
     await this.execute(this.commands);
   }
 
+  private async handleContractCallWithTokenEvent(args: any) {
+    console.log('fraz1', args)
+    this.updateCallContractWithTokenEvents(args);
+    await this.execute(this.commands);
+  }
+
+
   async stopListening() {
     await this.axelarListener.stop();
 
@@ -77,14 +94,15 @@ export class AxelarRelayerService extends Relayer {
   }
 
   async execute(commands: RelayCommand) {
+    console.log(commands);
     await this.executeWasmToEvm(commands);
-    await this.executeEvmToWasm(commands);
+    // await this.executeEvmToWasm(commands);
   }
 
   private async executeEvmToWasm(command: RelayCommand) {
     const toExecute = command["agoric"];
     if (!toExecute || toExecute?.length === 0) return;
-
+    console.log("here\n\n\n\n\n")
     await this.executeWasmExecutable(toExecute);
   }
 
@@ -101,12 +119,16 @@ export class AxelarRelayerService extends Relayer {
   }
 
   private async executeWasmToEvm(command: RelayCommand) {
+    console.log(networks);
     for (const to of networks) {
       const commands = command[to.name];
       if (!commands || commands?.length == 0) continue;
-
+      console.log(1)
       const execution = await this.executeEvmGateway(to, commands);
+      console.log(2)
+      console.log('frazzzzz1', execution)
       await this.executeEvmExecutable(to, commands, execution);
+      console.log('frazzzzz2')
     }
   }
 
@@ -142,6 +164,7 @@ export class AxelarRelayerService extends Relayer {
     event: IBCEvent<ContractCallSubmitted>
   ) {
     const { args } = event;
+    console.log('fraz3', event)
     const contractCallArgs: CallContractArgs = {
       from: "agoric",
       to: args.destinationChain,
@@ -167,7 +190,37 @@ export class AxelarRelayerService extends Relayer {
 
     this.commands[contractCallArgs.to].push(command);
   }
+  private async updateCallContractWithTokenEvents(
+    event: IBCEvent<ContractCallWithTokenSubmitted>
+  ) {
+    const { args } = event;
+    const contractCallWithTokenArgs: CallContractWithTokenArgs = {
+      from: "agoric",
+      to: args.destinationChain,
+      sourceAddress: args.sender,
+      destinationContractAddress: args.contractAddress,
+      payload: args.payload,
+      payloadHash: args.payloadHash,
+      alias: "??",
+      destinationTokenSymbol: "uausdc",
+      amountIn: "1000000000",
+      amountOut: "1000000000",
+    };
 
+    const commandId = this.getWasmLogID(event);
+    this.relayData.callContractWithToken[commandId] = contractCallWithTokenArgs;
+    const command = Command.createEVMContractCallWithTokenCommand(
+      commandId,
+      this.relayData,
+      contractCallWithTokenArgs
+    );
+
+    if (!this.commands[contractCallWithTokenArgs.to]) {
+      this.commands[contractCallWithTokenArgs.to] = [];
+    }
+
+    this.commands[contractCallWithTokenArgs.to].push(command);
+  }
   private getWasmLogID(event: IBCEvent<ContractCallSubmitted>) {
     return ethers.utils.id(
       `${event.args.messageId}-${event.args.sourceChain}-${event.args.destinationChain}`
@@ -208,24 +261,31 @@ export class AxelarRelayerService extends Relayer {
     execution: any
   ): Promise<void> {
     for (const command of commands) {
+      console.log('1')
       if (command.post == null) continue;
-
+      console.log('2')
+      
       const isExecuted = !execution.events.find((event: any) => {
         return event.event === "Executed" && event.args[0] == command.commandId;
       });
-
-      if (isExecuted) {
-        continue;
-      }
-
-      try {
-        const blockLimit = Number(
-          (await to.provider.getBlock("latest")).gasLimit
-        );
-        return command.post({
-          gasLimit: blockLimit,
-        });
+        console.log('3')
+        
+        if (isExecuted) {
+          continue;
+        }
+        console.log('4')
+        
+        try {
+          const blockLimit = Number(
+            (await to.provider.getBlock("latest")).gasLimit
+          );
+          console.log('5', String(command.post))
+          return command.post({
+            gasLimit: blockLimit,
+          });
       } catch (e) {
+        console.log('6')
+
         logger.log(e);
       }
     }

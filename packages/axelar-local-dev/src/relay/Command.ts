@@ -61,10 +61,22 @@ export class Command {
             [args.from, args.sourceAddress, args.destinationContractAddress, args.payloadHash, args.destinationTokenSymbol, args.amountOut],
             ['string', 'string', 'address', 'bytes32', 'string', 'uint256'],
             async (options: any) => {
+                console.log(">>>", 1);
                 const to = networks.find((chain) => chain.name == args.to);
+                console.log(">>>", 2);
                 if (!to) return;
-
+                console.log('\n\n\n\nExecuting:', {
+                    commandId,
+                    from: args.from,
+                    sourceAddress: args.sourceAddress,
+                    payload: args.payload,
+                    destinationTokenSymbol: args.destinationTokenSymbol,
+                    amountOut: args.amountOut,
+                    options,
+                    destinationContractAddress: args.destinationContractAddress, abi: JSON.stringify(IAxelarExecutable.abi,null,2), relayerWallet: to.relayerWallet
+                });
                 const contract = new Contract(args.destinationContractAddress, IAxelarExecutable.abi, to.relayerWallet);
+                console.log(">>>", 3);
                 const receipt = await contract
                     .executeWithToken(
                         commandId,
@@ -77,6 +89,7 @@ export class Command {
                     )
                     .then((tx: any) => tx.wait());
                 relayData.callContractWithToken[commandId].execution = receipt.transactionHash;
+                console.log(">>>", 5);
                 return receipt;
             },
             'evm'

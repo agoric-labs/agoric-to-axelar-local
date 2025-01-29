@@ -51,7 +51,7 @@ export abstract class Relayer {
         this.commands['multiversx'] = [];
         // Update all events at the source chains
         await this.updateEvents();
-
+        console.log('\n\nfraz', JSON.stringify(this.commands, null, 2));
         await this.execute(this.commands);
     }
 
