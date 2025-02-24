@@ -104,4 +104,11 @@ contract SendReceive is AxelarExecutable {
         );
         storedMessage = Message(sender, message);
     }
+
+    function app(
+        string calldata sender,
+        string calldata message
+    ) external {
+        storedMessage = Message(sender, message);
+    }
 }

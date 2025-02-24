@@ -1,6 +1,7 @@
 import { defaultAxelarChainInfo, AxelarRelayerService, startChains } from './index';
 import { SigningStargateClient } from '@cosmjs/stargate';
 import { encode } from '@metamask/abi-utils';
+import ethers from 'ethers';
 
 import {
   evmRelayer,
@@ -22,6 +23,8 @@ export const relayDataToEth = async () => {
 
   const SendReceive = require('../artifacts/src/__tests__/contracts/SendReceive.sol/SendReceive.json');
 
+  const SendReceive2 = require('../artifacts/src/__tests__/contracts/SendReceive2.sol/AxelarMultiCommandExecutor.json');
+
   const ethereumNetwork = await createNetwork({ name: 'Ethereum' });
   const ethereumContract = await deployContract(
     ethereumNetwork.userWallets[0],
@@ -30,6 +33,15 @@ export const relayDataToEth = async () => {
       ethereumNetwork.gateway.address,
       ethereumNetwork.gasService.address,
       'Ethereum',
+    ]
+  );
+  
+  const middleManContract = await deployContract(
+    ethereumNetwork.userWallets[0],
+    SendReceive2,
+    [
+      ethereumNetwork.gateway.address,
+      ethereumNetwork.gasService.address,
     ]
   );
 
@@ -50,10 +62,25 @@ export const relayDataToEth = async () => {
   const senderAddress = 'agoric1estsewt6jqsx77pwcxkn5ah0jqgu8rhgflwfdl';
 
   // TODO
-  const DESTINATION_ADDRESS = ethereumContract.address;
+  const DESTINATION_ADDRESS = middleManContract.address;
   const DESTINATION_CHAIN = 'Ethereum';
 
-  const payload = encode(['string', 'string'], ['agoric1estsewt6jqsx77pwcxkn5ah0jqgu8rhgflwfdl', 'Hello, world!']);
+
+  const callData = ethereumContract.interface.encodeFunctionData("app", [
+    "fr",
+    "baba"
+  ]);
+
+  
+  const targets = [ethereumContract.address];
+  const callDatas = [callData];
+  
+  const payload = encode(
+    ["address[]", "bytes[]"],
+    [targets, callDatas]
+  );
+
+  // const payload = encode(['string', 'string'], ['agoric1estsewt6jqsx77pwcxkn5ah0jqgu8rhgflwfdl', 'Hello, world!']);
 
   const memo = {
     destination_chain: DESTINATION_CHAIN,
@@ -103,89 +130,21 @@ export const relayDataToEth = async () => {
   );
   console.log('transaction response', response);
 
+  // await ethereumContract.app('fraz', '123');
   // Relay messages between Ethereum and Agoric chains
+
+
+
   await relay({
     agoric: axelarRelayer,
     evm: evmRelayer,
   });
 
-  // Setup for Ethereum Network and Wasm chain relayer
-  //
-
-  // // Deploy Smart Contract on the EVM (Ethereum Virtual Machine)
-  // // const ethereumContract = await deployContract(
-  // //   ethereumNetwork.userWallets[0],
-  // //   SendReceive,
-  // //   [
-  // //     ethereumNetwork.gateway.address,
-  // //     ethereumNetwork.gasService.address,
-  // //     'Ethereum',
-  // //   ]
-  // // );
-
-  // // Deploy Contract on the Wasm Chain
-  // const wasmFilePath = path.resolve(__dirname, '../wasm/send_receive.wasm');
-  // const wasmUploadResponse = await wasmClient1.uploadWasm(wasmFilePath);
-
-  // // Instantiate the Wasm Contract
-  // const { client: wasmClient, address: wasmSenderAddress } =
-  //   await wasmClient1.createFundedSigningClient();
-
-  // const wasmContractInstantiation = await wasmClient.instantiate(
-  //   wasmSenderAddress,
-  //   wasmUploadResponse.codeId,
-  //   {
-  //     channel: ibcRelayer.srcChannelId,
-  //   },
-  //   'send_receive',
-  //   'auto'
-  // );
-  // // ============ SETUP END ============
-
-  // const messageToEthereum = 'Hello from Ethereum';
-  // const messageToWasm = 'Hello from Wasm';
-
-  // // Send a message from Wasm Chain to Ethereum Chain
-  // const wasmTransaction = await wasmClient.execute(
-  //   wasmSenderAddress,
-  //   wasmContractInstantiation.contractAddress,
-  //   {
-  //     send_message_evm: {
-  //       destination_chain: 'Ethereum',
-  //       destination_address: ethereumContract.address,
-  //       message: messageToWasm,
-  //     },
-  //   },
-  //   'auto',
-  //   'test',
-  //   [{ amount: '100000', denom: 'uwasm' }]
-  // );
-  // console.log('Wasm Chain Transaction Hash:', wasmTransaction.transactionHash);
-
-  // // Send a message from Ethereum Chain to Wasm Chain
-  // const ethereumTransaction = await ethereumContract.send(
-  //   'agoric',
-  //   wasmContractInstantiation.contractAddress,
-  //   messageToEthereum,
-  //   {
-  //     value: ethers.utils.parseEther('0.001'),
-  //   }
-  // );
-  // console.log('Ethereum Chain Transaction Hash:', ethereumTransaction.hash);
-
-
 
   // // Verify the message on the Ethereum contract
+  const ethereumMessage1 = await middleManContract.storedMessage();
+  console.log('Message on Ethereum Contract:', ethereumMessage1);
   const ethereumMessage = await ethereumContract.storedMessage();
   console.log('Message on Ethereum Contract:', ethereumMessage);
 
-  // // Verify the message on the Wasm contract
-  // const wasmResponse = await wasmClient1.client.queryContractSmart(
-  //   wasmContractInstantiation.contractAddress,
-  //   {
-  //     get_stored_message: {},
-  //   }
-  // );
-
-  // console.log('Message on Wasm Contract:', wasmResponse);
 };
