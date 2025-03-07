@@ -1,8 +1,9 @@
 version: "3.8"
 services:
   axelar:
-    image: axelar/core:latest
+    build: .
     container_name: axelar
+    platform: linux/amd64
     entrypoint: ["sh", "-l", "-c", "/root/private/bin/init_axelar.sh"]
     volumes:
       - "./bin:/root/private/bin"

@@ -4,6 +4,11 @@ import { SigningStargateClient } from '@cosmjs/stargate';
 import { CosmosChain, CosmosChainInfo } from '../../types';
 import { exportOwnerAccountFromContainer, readFileSync } from '../../utils';
 import { stringToPath } from '@cosmjs/crypto';
+import { Registry } from "@cosmjs/proto-signing";
+import { defaultRegistryTypes } from "@cosmjs/stargate";
+import {
+  ConfirmGatewayTxRequest as EvmConfirmGatewayTxRequest,
+} from '@axelar-network/axelarjs-types/axelar/evm/v1beta1/tx';
 
 export class CosmosClient {
   public chainInfo: Required<CosmosChainInfo>;
@@ -82,11 +87,14 @@ export class CosmosClient {
     const address = await owner
       .getAccounts()
       .then((accounts) => accounts[0].address);
-
+    const registry = new Registry([
+      ...defaultRegistryTypes,
+      ["/axelar.evm.v1beta1.ConfirmGatewayTxRequest", EvmConfirmGatewayTxRequest],
+    ]);
     const client = await SigningStargateClient.connectWithSigner(
       chainInfo.rpcUrl,
       owner,
-      { gasPrice: gasPrice }
+      { gasPrice: gasPrice, registry }
     );
 
     return new CosmosClient(

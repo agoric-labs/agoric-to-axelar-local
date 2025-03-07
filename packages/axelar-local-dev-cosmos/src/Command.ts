@@ -1,10 +1,14 @@
 "use strict";
 
 import { ethers } from "ethers";
-const { defaultAbiCoder } = ethers.utils;
+const { defaultAbiCoder, arrayify } = ethers.utils;
 import { CallContractArgs, RelayData } from "@axelar-network/axelar-local-dev";
 import { decodeVersionedPayload } from "./utils";
 import { CosmosClient } from "./clients";
+import { toAccAddress } from '@cosmjs/stargate/build/queryclient/utils';
+import {
+  ConfirmGatewayTxRequest as EvmConfirmGatewayTxRequest,
+} from '@axelar-network/axelarjs-types/axelar/evm/v1beta1/tx';
 
 //An internal class for handling axelar commands.
 export class Command {
@@ -52,10 +56,10 @@ export class Command {
         const { argNames, argValues, methodName } = decodeVersionedPayload(
           args.payload
         );
-
+        
         const { client } = wasmClient;
         const senderAddress = wasmClient.getOwnerAccount();
-
+        
         const msg = {
           [methodName]: {
             [argNames[0]]: argValues[0],
@@ -63,10 +67,34 @@ export class Command {
             [argNames[2]]: argValues[2],
           },
         };
-
-        const tx = "TODO"
-
-        // relayData.callContract[commandId].execution = tx.transactionHash;
+        
+        const getConfirmGatewayTxPayload = (sender: string, chain: string, txHash: string) => {
+          return [
+            {
+              typeUrl: `/axelar.evm.v1beta1.ConfirmGatewayTxRequest`,
+              value: EvmConfirmGatewayTxRequest.fromPartial({
+                sender: toAccAddress(sender),
+                chain,
+                txId: arrayify(txHash),
+              }),
+            },
+          ];
+        }
+        const payload = getConfirmGatewayTxPayload(senderAddress, args.from, args.transactionHash);
+        console.log(payload);
+        const tx = await client.signAndBroadcast(
+          senderAddress,
+          payload,
+          "auto",
+          // senderAddress,
+          // args.destinationContractAddress,
+          // msg,
+          // "auto",
+          // "call_contract: evm_to_wasm",
+          // [{ amount: "100000", denom: wasmClient.chainInfo.denom }]
+        );
+        console.log(tx);
+        relayData.callContract[commandId].execution = tx.transactionHash;
 
         return tx;
       },

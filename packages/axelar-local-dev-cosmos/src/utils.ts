@@ -46,8 +46,7 @@ export function encodeVersionedPayload(
   payload: string
 ): Uint8Array {
   const versionHex = hexZeroPad(hexlify(version), 4);
-  const payloadString = hexlify(toUtf8Bytes(JSON.stringify(payload)));
-  return arrayify(versionHex.concat(payloadString));
+  return arrayify(versionHex.concat(payload.substring(2)));
 }
 
 export async function exportOwnerAccountFromContainer(
