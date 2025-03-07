@@ -53,6 +53,10 @@ final_output=$(
       "activated": false,
       "assets": [
         {
+          "denom": "ubld",
+          "is_native_asset": false
+        },
+        {
           "denom": "uausdc",
           "is_native_asset": false
         }
@@ -63,8 +67,21 @@ final_output=$(
     [{
       "denom": "uausdc",
       "is_native_asset": false
-    }]')
+    },
+    {
+      "denom": "ubld",
+      "is_native_asset": false
+    }]' | jq '.app_state.evm.chains[0].gateway.address = 
+    [
+      65,  97, 201,  20, 243, 101,
+      90,  90, 204, 118, 189, 175,
+      227, 219, 229, 192, 249,  71,
+      75, 200
+    ]
+  ')
 echo $final_output | jq . > "$HOME"/config/genesis.json
+
+cat "$HOME"/config/genesis.json
 
 
 # Adding a new key named 'owner' with a test keyring-backend in the specified home directory
