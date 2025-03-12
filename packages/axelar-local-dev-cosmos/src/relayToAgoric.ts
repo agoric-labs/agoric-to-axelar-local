@@ -6,6 +6,7 @@ import {
   relay,
   RelayerType,
 } from '@axelar-network/axelar-local-dev';
+import { ethers } from 'ethers';
 
 export const relayDataToAgoric = async () => {
   const axelarRelayer = await AxelarRelayerService.create(
@@ -32,13 +33,13 @@ export const relayDataToAgoric = async () => {
 
   // Send a message from Ethereum Chain to Wasm Chain
   console.log('Sending Message to Agoric...');
-  const value = BigInt(0.001 * 10 ** 18);
+  const value = BigInt(0.1 * 10 ** 18);
+
   const ethereumTransaction = await ethereumContract.send(
     'agoric',
     'Hi Agoric!',
     {
-      value,
-      gasLimit: 500000,
+      value: ethers.utils.parseEther('0.001'),
     }
   );
   console.log('Ethereum Chain Transaction Hash:', ethereumTransaction.hash);
