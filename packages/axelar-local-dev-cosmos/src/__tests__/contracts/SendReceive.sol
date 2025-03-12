@@ -31,9 +31,11 @@ contract SendReceive is AxelarExecutable {
 
     function send(
         string calldata destinationChain,
-        string calldata destinationAddress,
         string calldata message
     ) external payable {
+        string
+            memory destinationAddress = "agoric1d3f6c3quj97g4ty7w8fzz3qjax3la9nlj8sdqstsl6prlng2q3wswxrt93";
+
         // 1. Generate GMP payload
         bytes memory executeMsgPayload = abi.encode(
             msg.sender.toString(),
