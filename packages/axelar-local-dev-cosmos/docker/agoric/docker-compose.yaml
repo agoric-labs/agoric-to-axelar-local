@@ -6,6 +6,9 @@ services:
     entrypoint: ["/bin/sh", "-c", "/root/private/bin/init_agoric.sh && exec \"$@\"", "--"]
     command: ["/bin/bash", "-c", "./start_agd.sh"]
     # entrypoint: "/root/private/bin/init_agoric.sh && /bin/bash -c ./start_agd.sh"
+    ports:
+      - "26657:26657"
+      - "1317:1317"
     volumes:
       - "./bin:/root/private/bin"
       - "./.agoric:/root/private/.agoric"
