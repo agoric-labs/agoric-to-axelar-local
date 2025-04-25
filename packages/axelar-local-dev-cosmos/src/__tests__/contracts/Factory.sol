@@ -3,13 +3,13 @@
 pragma solidity ^0.8.0;
 
 import {AxelarExecutable} from "@axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol";
-import {AxelarExecutableWithToken} from "@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutableWithToken.sol";
 import {IAxelarGasService} from "@axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IAxelarGasService.sol";
 import {StakingContract} from "src/__tests__/contracts/StakingContract.sol";
 import {IERC20} from "@axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IERC20.sol";
 import {StringToAddress, AddressToString} from "@axelar-network/axelar-gmp-sdk-solidity/contracts/libs/AddressString.sol";
 import {Ownable} from "src/__tests__/contracts/Ownable.sol";
 
+import "@openzeppelin/contracts/utils/Strings.sol";
 struct CallResult {
     bool success;
     bytes result;
@@ -26,19 +26,20 @@ struct CallParams {
     bytes data;
 }
 
-contract Wallet is AxelarExecutableWithToken, Ownable {
+contract Wallet is AxelarExecutable, Ownable {
+
+    using Strings for uint256; // For converting uint to string
     IAxelarGasService public gasService;
 
     constructor(
         address gateway_,
         address gasReceiver_,
         string memory owner_
-    ) AxelarExecutableWithToken(gateway_) Ownable(owner_) {
+    ) AxelarExecutable(gateway_) Ownable(owner_) {
         gasService = IAxelarGasService(gasReceiver_);
     }
 
     function _execute(
-        bytes32 commandId,
         string calldata sourceChain,
         string calldata sourceAddress,
         bytes calldata payload
@@ -64,7 +65,6 @@ contract Wallet is AxelarExecutableWithToken, Ownable {
     }
 
     function _executeWithToken(
-        bytes32 commandId,
         string calldata sourceChain,
         string calldata sourceAddress,
         bytes calldata payload,
@@ -74,12 +74,11 @@ contract Wallet is AxelarExecutableWithToken, Ownable {
         address stakingAddress = abi.decode(payload, (address));
 
         require(amount > 0, "Deposit amount must be greater than zero");
-        address tokenAddress = gatewayWithToken().tokenAddresses(tokenSymbol);
+        address tokenAddress = gateway.tokenAddresses(tokenSymbol);
 
         IERC20(tokenAddress).transfer(address(this), amount); // Transfer tokens from user
-        IERC20(tokenAddress).approve(stakingAddress, amount); // Approve Aave Pool
 
-        StakingContract(stakingAddress).stake(amount); // Deposit into Aave
+        _sendWithToken(sourceChain, sourceAddress, payload, tokenSymbol, amount);
     }
 
     function _send(
@@ -95,11 +94,34 @@ contract Wallet is AxelarExecutableWithToken, Ownable {
             msg.sender
         );
 
-        gatewayWithToken().callContract(
+        gateway.callContract(
             destinationChain,
             destinationAddress,
             payload
         );
+    }
+
+    function _sendWithToken(
+        string calldata destinationChain,
+        string calldata destinationAddress,
+        bytes memory payload,
+        string calldata symbol,
+        uint256 amount
+    ) internal {
+
+        gasService.payNativeGasForExpressCallWithToken{value: msg.value}(
+            address(this),
+            destinationChain,
+            destinationAddress,
+            payload,
+            symbol,
+            amount,
+            msg.sender
+        );
+
+        address tokenAddress = gateway.tokenAddresses(symbol);
+        IERC20(tokenAddress).approve(address(gateway), amount);
+        gateway.callContractWithToken(destinationChain, destinationAddress, payload, symbol, amount);
     }
 }
 

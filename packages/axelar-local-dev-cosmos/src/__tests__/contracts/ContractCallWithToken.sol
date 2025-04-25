@@ -1,25 +1,23 @@
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {AxelarExecutableWithToken} from "@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutableWithToken.sol";
-import {IERC20} from "@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IERC20.sol";
-import {IAxelarGasService} from "@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IAxelarGasService.sol";
+import {AxelarExecutable} from "@axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol";
+import {IERC20} from "@axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IERC20.sol";
+import {IAxelarGasService} from "@axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IAxelarGasService.sol";
 
 /**
  * @title Call Contract With Token
  * @notice Send a token along with an Axelar GMP message between two blockchains
  */
-contract CallContractWithToken is AxelarExecutableWithToken {
+contract CallContractWithToken is AxelarExecutable {
     IAxelarGasService public immutable gasService;
 
     event Executed(
-        bytes32 commandId,
         string sourceChain,
         string sourceAddress,
         bytes payload
     );
     event ExecutedWithToken(
-        bytes32 commandId,
         string sourceChain,
         string sourceAddress,
         bytes payload,
@@ -41,7 +39,7 @@ contract CallContractWithToken is AxelarExecutableWithToken {
     constructor(
         address _gateway,
         address _gasReceiver
-    ) AxelarExecutableWithToken(_gateway) {
+    ) AxelarExecutable(_gateway) {
         gasService = IAxelarGasService(_gasReceiver);
 
         storedMessage = Message("fraz", "init");
@@ -65,9 +63,9 @@ contract CallContractWithToken is AxelarExecutableWithToken {
     ) external payable {
         require(msg.value > 0, "Gas payment is required");
 
-        address tokenAddress = gatewayWithToken().tokenAddresses(symbol);
+        address tokenAddress = gateway.tokenAddresses(symbol);
         IERC20(tokenAddress).transferFrom(msg.sender, address(this), amount);
-        IERC20(tokenAddress).approve(address(gatewayWithToken()), amount);
+        IERC20(tokenAddress).approve(address(gateway), amount);
         bytes memory payload = abi.encode(destinationAddresses);
         gasService.payNativeGasForContractCallWithToken{value: msg.value}(
             address(this),
@@ -78,22 +76,13 @@ contract CallContractWithToken is AxelarExecutableWithToken {
             amount,
             msg.sender
         );
-        gatewayWithToken().callContractWithToken(
+        gateway.callContractWithToken(
             destinationChain,
             destinationAddress,
             payload,
             symbol,
             amount
         );
-    }
-
-    function _execute(
-        bytes32 commandId,
-        string calldata sourceChain,
-        string calldata sourceAddress,
-        bytes calldata payload
-    ) internal override {
-        emit Executed(commandId, sourceChain, sourceAddress, payload);
     }
 
     /**
@@ -104,7 +93,6 @@ contract CallContractWithToken is AxelarExecutableWithToken {
      * @param amount amount of tokens sent from src chain
      */
     function _executeWithToken(
-        bytes32 commandId,
         string calldata sourceChain,
         string calldata sourceAddress,
         bytes calldata payload,
@@ -114,7 +102,7 @@ contract CallContractWithToken is AxelarExecutableWithToken {
         storedMessage = Message("fraz", tokenSymbol);
 
         address[] memory recipients = abi.decode(payload, (address[]));
-        address tokenAddress = gatewayWithToken().tokenAddresses(tokenSymbol);
+        address tokenAddress = gateway.tokenAddresses(tokenSymbol);
 
         uint256 sentAmount = amount / recipients.length;
         for (uint256 i = 0; i < recipients.length; i++) {
@@ -122,7 +110,6 @@ contract CallContractWithToken is AxelarExecutableWithToken {
         }
 
         emit ExecutedWithToken(
-            commandId,
             sourceChain,
             sourceAddress,
             payload,
@@ -135,7 +122,7 @@ contract CallContractWithToken is AxelarExecutableWithToken {
         string calldata /*sourceChain*/,
         string calldata /*sourceAddress*/,
         bytes calldata payload
-    ) public {
+    ) internal override {
         (string memory sender, string memory message) = abi.decode(
             payload,
             (string, string)
