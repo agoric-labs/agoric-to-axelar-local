@@ -17,7 +17,7 @@ import {
   VoteEvents,
 } from "@axelar-network/axelarjs-types/axelar/evm/v1beta1/types";
 import { DeliverTxResponse } from "@cosmjs/stargate";
-import { CallContractArgs } from "@axelar-network/axelar-local-dev";
+import { CallContractArgs, CallContractWithTokenArgs } from "@axelar-network/axelar-local-dev";
 import path from "path";
 import { DirectSecp256k1HdWallet } from "@cosmjs/proto-signing";
 import { Path } from "./path";
@@ -202,9 +202,53 @@ export const getVoteRequestPayload = (
   ];
 };
 
+export const getVoteRequestWithTokenPayload = (
+  sender: string,
+  callContractWithTokenArgs: CallContractWithTokenArgs,
+  confirmGatewayTx: DeliverTxResponse,
+  pollId: number
+) => {
+
+  const event = {
+    chain: callContractWithTokenArgs.from,
+    txId: arrayify(`0x${confirmGatewayTx.transactionHash}`),
+    index: confirmGatewayTx.txIndex,
+    status: Event_Status.STATUS_UNSPECIFIED,
+    contractCallWithToken: {
+      sender: arrayify(callContractWithTokenArgs.sourceAddress),
+      destinationChain: callContractWithTokenArgs.to,
+      contractAddress: callContractWithTokenArgs.destinationContractAddress,
+      payloadHash: arrayify(callContractWithTokenArgs.payloadHash),
+      symbol: callContractWithTokenArgs.destinationTokenSymbol,
+      amount: new TextEncoder().encode(callContractWithTokenArgs.amountIn.toString()),//encodeSingle('uint', Number(callContractWithTokenArgs.amountIn.toString())),
+    },
+  };
+
+  const voteEvents = VoteEvents.encode(
+    VoteEvents.fromPartial({
+      chain: callContractWithTokenArgs.from,
+      events: [event],
+    })
+  ).finish();
+
+  return [
+    {
+      typeUrl: `/axelar.vote.v1beta1.VoteRequest`,
+      value: VoteRequest.fromPartial({
+        sender: toAccAddress(sender),
+        pollId: pollId,
+        vote: {
+          typeUrl: "/axelar.evm.v1beta1.VoteEvents",
+          value: voteEvents,
+        },
+      }),
+    },
+  ];
+};
+
 export const getRouteMessagePayload = (
   sender: string,
-  callContractArgs: CallContractArgs,
+  callContractArgs: CallContractArgs | CallContractWithTokenArgs,
   eventId: string
 ) => {
   return [

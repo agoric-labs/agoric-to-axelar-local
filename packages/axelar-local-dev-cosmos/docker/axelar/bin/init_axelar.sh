@@ -85,6 +85,36 @@ final_output=$(
       227, 219, 229, 192, 249,  71,
       75, 200
     ]
+  '| jq '.app_state.evm.chains[0].tokens += 
+    [
+      {
+        "asset": "uausdc",
+        "chain_id": "5",
+        "details": {
+          "token_name": "USD Coin",
+          "symbol": "USDC",
+          "decimals": 6,
+          "capacity": "0"
+        },
+        "token_address": [
+          0,  0,  0,  0,  0,  0,
+          0,  0,  0,  0,  0,  0,
+          0,  0,  0,  0,  0,  0,
+          0,  0
+        ],
+        "tx_hash": [
+          0,  0,  0,  0,  0,  0,
+          0,  0,  0,  0,  0,  0,
+          0,  0,  0,  0,  0,  0,
+          0,  0,  0,  0,  0,  0,
+          0,  0,  0,  0,  0,  0,
+          0,  0
+        ],
+        "status": 4,
+        "is_external": true,
+        "burner_code": null
+      }
+    ]
   ' | jq '.app_state.snapshot.proxied_validators += 
     [{
       "validator": "axelarvaloper1sufx2ryp5ndxdhl3zftdnsjwrgqqgd3q63svql",
