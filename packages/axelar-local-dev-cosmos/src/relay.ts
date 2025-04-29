@@ -35,8 +35,12 @@ export const relayBasic = async () => {
 
   while (true) {
     await relay({
-      agoric: axelarRelayer,
-      evm: evmRelayer,
+      agoric: axelarRelayer, 
     });
+    await axelarRelayer.stopListening();
+    await relay({
+        evm: evmRelayer,
+      });
+    
   }
 };
