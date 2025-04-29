@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Set Docker socket location for macOS
+export DOCKER_HOST=unix://${HOME}/.docker/run/docker.sock
+
 EVM_CHAIN=ethereum
 COSMOS_CHAIN=agoric
 DIR="$(dirname "$0")"

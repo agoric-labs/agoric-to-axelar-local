@@ -2,13 +2,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {AxelarExecutable} from "@axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol";
-import {AxelarExecutableWithToken} from "@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutableWithToken.sol";
-import {IAxelarGasService} from "@axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IAxelarGasService.sol";
-import {StakingContract} from "src/__tests__/contracts/StakingContract.sol";
-import {IERC20} from "@axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IERC20.sol";
-import {StringToAddress, AddressToString} from "@axelar-network/axelar-gmp-sdk-solidity/contracts/libs/AddressString.sol";
-import {Ownable} from "src/__tests__/contracts/Ownable.sol";
+import {AxelarExecutable} from '@axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol';
+import {IAxelarGasService} from '@axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IAxelarGasService.sol';
+import {StakingContract} from './StakingContract.sol';
+import {IERC20} from '@axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IERC20.sol';
+import {StringToAddress, AddressToString} from '@axelar-network/axelar-gmp-sdk-solidity/contracts/libs/AddressString.sol';
+import {Ownable} from './Ownable.sol';
 
 struct CallResult {
     bool success;
@@ -26,23 +25,20 @@ struct CallParams {
     bytes data;
 }
 
-contract Wallet is AxelarExecutableWithToken, Ownable {
+contract Wallet is AxelarExecutable, Ownable {
     IAxelarGasService public gasService;
 
     constructor(
         address gateway_,
         address gasReceiver_,
         string memory owner_
-    ) AxelarExecutableWithToken(gateway_) Ownable(owner_) {
+    ) AxelarExecutable(gateway_) Ownable(owner_) {
         gasService = IAxelarGasService(gasReceiver_);
     }
 
-    function _execute(
-        bytes32 commandId,
-        string calldata sourceChain,
-        string calldata sourceAddress,
+    function _multicall(
         bytes calldata payload
-    ) internal override onlyOwner(sourceAddress) {
+    ) internal returns (CallResult[] memory) {
         CallParams[] memory calls = abi.decode(payload, (CallParams[]));
 
         CallResult[] memory results = new CallResult[](calls.length);
@@ -51,35 +47,34 @@ contract Wallet is AxelarExecutableWithToken, Ownable {
             (bool success, bytes memory result) = calls[i].target.call(
                 calls[i].data
             );
-            require(success, "Contract call failed");
+            require(success, 'Contract call failed');
             results[i] = CallResult(success, result);
         }
 
+        return results;
+    }
+
+    function _execute(
+        string calldata sourceChain,
+        string calldata sourceAddress,
+        bytes calldata payload
+    ) internal override onlyOwner(sourceAddress) {
         bytes memory responsePayload = abi.encodePacked(
             bytes4(0x00000000),
-            abi.encode(AgoricResponse(true, results))
+            abi.encode(AgoricResponse(true, _multicall(payload)))
         );
 
         _send(sourceChain, sourceAddress, responsePayload);
     }
 
     function _executeWithToken(
-        bytes32 commandId,
-        string calldata sourceChain,
-        string calldata sourceAddress,
+        string calldata /*sourceChain*/,
+        string calldata /*sourceAddress*/,
         bytes calldata payload,
-        string calldata tokenSymbol,
-        uint256 amount
+        string calldata /*tokenSymbol*/,
+        uint256 /*amount*/
     ) internal override {
-        address stakingAddress = abi.decode(payload, (address));
-
-        require(amount > 0, "Deposit amount must be greater than zero");
-        address tokenAddress = gatewayWithToken().tokenAddresses(tokenSymbol);
-
-        IERC20(tokenAddress).transfer(address(this), amount); // Transfer tokens from user
-        IERC20(tokenAddress).approve(stakingAddress, amount); // Approve Aave Pool
-
-        StakingContract(stakingAddress).stake(amount); // Deposit into Aave
+        _multicall(payload);
     }
 
     function _send(
@@ -95,11 +90,7 @@ contract Wallet is AxelarExecutableWithToken, Ownable {
             msg.sender
         );
 
-        gatewayWithToken().callContract(
-            destinationChain,
-            destinationAddress,
-            payload
-        );
+        gateway.callContract(destinationChain, destinationAddress, payload);
     }
 }
 
@@ -110,6 +101,8 @@ contract Factory is AxelarExecutable {
     address _gateway;
     IAxelarGasService public immutable gasService;
     string public chainName;
+
+    event WalletCreated(address indexed target, string ownerAddress);
 
     constructor(
         address gateway_,
@@ -125,13 +118,14 @@ contract Factory is AxelarExecutable {
         address newVendorAddress = address(
             new Wallet(_gateway, address(gasService), owner)
         );
+        emit WalletCreated(newVendorAddress, owner);
         return newVendorAddress;
     }
 
     function _execute(
         string calldata sourceChain,
         string calldata sourceAddress,
-        bytes calldata payload
+        bytes calldata /*payload*/
     ) internal override {
         address vendorAddress = createVendor(sourceAddress);
         CallResult[] memory results = new CallResult[](1);

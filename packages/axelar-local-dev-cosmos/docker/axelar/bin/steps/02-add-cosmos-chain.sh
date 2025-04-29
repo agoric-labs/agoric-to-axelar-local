@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Set Docker socket location for macOS
+export DOCKER_HOST=unix://${HOME}/.docker/run/docker.sock
+
 CHAIN_ID=axelar
 HOME=/root/private/.axelar
 DEFAULT_KEYS_FLAGS="--keyring-backend test --home ${HOME}"
