@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Set Docker socket location for macOS - use the correct path for host machine
-# export DOCKER_HOST=unix:///var/run/docker.sock
+# export DOCKER_HOST=$(docker context inspect --format '{{.Endpoints.docker.Host}}')
 
 CHAIN_ID=axelar
 HOME=/root/private/.axelar

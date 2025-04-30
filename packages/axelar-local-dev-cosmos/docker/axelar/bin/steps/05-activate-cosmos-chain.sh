@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Set Docker socket location for macOS
-# export DOCKER_HOST=unix://${HOME}/.docker/run/docker.sock
+# export DOCKER_HOST=$(docker context inspect --format '{{.Endpoints.docker.Host}}')
 
 CHAIN=${1:-wasm}
 DIR="$(dirname "$0")"
