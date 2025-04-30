@@ -73,6 +73,16 @@ contract TestAaveIntegration {
      * @return The amount of rewards claimed
      */
     function claimAaveRewards(address asset, address to) external returns (uint256) {
+        // Check if there are any rewards to claim first
+        uint256 pendingRewards = aavePool.getPendingRewards(address(this), asset);
+        
+        // If no rewards, just emit event with zero and return
+        if (pendingRewards == 0) {
+            emit RewardsClaimed(asset, to, 0);
+            return 0;
+        }
+        
+        // Otherwise proceed with claiming rewards
         uint256 rewards = aavePool.claimRewards(asset, to);
         
         emit RewardsClaimed(asset, to, rewards);

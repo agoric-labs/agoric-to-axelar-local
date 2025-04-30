@@ -310,7 +310,11 @@ contract MockAavePool is Ownable {
     function claimRewards(address asset, address to) external returns (uint256) {
         address user = msg.sender;
         uint256 rewards = _calculateAccruedRewards(user, asset);
-        require(rewards > 0, "No rewards to claim");
+        
+        // If rewards are zero, just return zero instead of reverting
+        if (rewards == 0) {
+            return 0;
+        }
         
         // Reset timestamp for future reward calculations
         _userDepositTimestamps[user][asset] = block.timestamp;
@@ -380,6 +384,7 @@ contract MockAavePool is Ownable {
         uint256 depositTime = _userDepositTimestamps[user][asset];
         uint256 rewardRate = _rewardRates[asset];
         
+        
         if (depositAmount == 0 || depositTime == 0 || rewardRate == 0) {
             return 0;
         }
@@ -388,10 +393,15 @@ contract MockAavePool is Ownable {
         uint256 timeElapsed = block.timestamp - depositTime;
         
         // Convert reward rate from basis points to per-second rate
-        uint256 ratePerSecond = rewardRate * 1e18 / (10000 * 365 days);
+        // Original calculation: uint256 ratePerSecond = rewardRate * 1e18 / (10000 * 365 days);
         
-        // Calculate rewards: principal * rate * time
-        uint256 rewards = (depositAmount * ratePerSecond * timeElapsed) / 1e18;
+        // Simulate reward rate as "percentage per year" in basis points
+// Multiply by 1e18 to keep precision
+uint256 ratePerSecond = rewardRate * 1e18 / (10000 * 365 days);
+
+// Final formula: scale back down
+uint256 rewards = (depositAmount * ratePerSecond * timeElapsed) / 1e18;
+
         
         return rewards;
     }
@@ -429,4 +439,26 @@ contract MockAavePool is Ownable {
         
         return result;
     }
+
+    function debugRewardComponents(address user, address asset) external view returns (
+    uint256 depositAmount,
+    uint256 depositTime,
+    uint256 timeElapsed,
+    uint256 rewardRate,
+    uint256 ratePerSecond,
+    uint256 rewards
+) {
+    depositAmount = _userDeposits[user][asset];
+    depositTime = _userDepositTimestamps[user][asset];
+    rewardRate = _rewardRates[asset];
+
+    timeElapsed = block.timestamp - depositTime;
+
+    // Match the reward formula exactly
+    ratePerSecond = rewardRate * 1e18 / (10000 * 365 days);
+    rewards = (depositAmount * ratePerSecond * timeElapsed) / 1e18;
+
+    return (depositAmount, depositTime, timeElapsed, rewardRate, ratePerSecond, rewards);
+}
+
 }

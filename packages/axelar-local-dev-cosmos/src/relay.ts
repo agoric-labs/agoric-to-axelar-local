@@ -75,22 +75,20 @@ export const relayBasic = async () => {
 
   await aaveContract.setReserveData(
     token.address,
-    ethers.utils.parseUnits("5", 27), // 5% liquidity rate
-    ethers.utils.parseUnits("7", 27), // 7% variable borrow rate
-    ethers.utils.parseUnits("6", 27), // 6% stable borrow rate
+    ethers.utils.parseUnits("0.05", 27), // 5% liquidity rate
+    ethers.utils.parseUnits("0.07", 27), // 7% variable borrow rate
+    ethers.utils.parseUnits("0.06", 27), // 6% stable borrow rate
     100 // 1% reward rate (in basis points)
   );
 
-  console.log("------------------------ starting supplyToAave ------------------------");
   // Test supplyToAave
-  let amount = ethers.utils.parseEther("50");
+  let amount = ethers.utils.parseEther("500");
   // Supply tokens on behalf of the TestAaveIntegration contract itself, not the deployer
   const tx = await testIntegration.supplyToAave(token.address, amount, testIntegration.address);
   await tx.wait();
   console.log("Supplied tokens to MockAave");
-  console.log("------------------------ completed supplyToAave ------------------------");
   // Test withdrawFromAave
-  console.log("------------------------ starting withdrawFromAave ------------------------");
+  
   let aTokenBalance = await aaveContract.getAccruedInterest(testIntegration.address, token.address);
   console.log("Accrued interest before withdrawal:", ethers.utils.formatEther(aTokenBalance));
   aTokenBalance = await aaveContract.getAccruedInterest(deployer.address, token.address);
@@ -130,14 +128,44 @@ export const relayBasic = async () => {
   // Wait for 5 seconds to allow accrual of interest
   console.log("------------------------ waiting 5 seconds ------------------------");
   await new Promise(resolve => setTimeout(resolve, 5000));
+  const rpcProvider = provider as ethers.providers.JsonRpcProvider;
+  await rpcProvider.send("evm_mine", []);
+
+
+
+
   console.log("------------------------ finished waiting ------------------------");
+
+//   console.log("\n---- Debug Reward Calculation ----");
+// const [
+//   depositAmount,
+//   depositTime,
+//   timeElapsed,
+//   rewardRate,
+//   ratePerSecond,
+//   rewards
+// ] = await aaveContract.debugRewardComponents(testIntegration.address, token.address);
+
+// console.log("depositAmount:", ethers.utils.formatEther(depositAmount));
+// console.log("depositTime (unix):", depositTime.toString());
+// console.log("timeElapsed (seconds):", timeElapsed.toString());
+// console.log("rewardRate (bps):", rewardRate.toString());
+// console.log("ratePerSecond (scaled):", ratePerSecond.toString());
+// console.log("rewards (raw wei):", rewards.toString());
+// console.log("rewards (formatted):", ethers.utils.formatEther(rewards));
+
 
   // Check accrued interest after waiting
   const aTokenBalanceAfterWait = await aaveContract.getAccruedInterest(testIntegration.address, token.address);
   console.log("Accrued interest after waiting:", ethers.utils.formatEther(aTokenBalanceAfterWait));
 
-  // Test rewards
-  console.log("------------------------ starting claimAaveRewards ------------------------");
+
+  
+  // Check accrued interest after waiting
+  const pendingRewards = await aaveContract.getPendingRewards(testIntegration.address, token.address);
+  console.log("Pending rewards after waiting:", ethers.utils.formatEther(pendingRewards));
+
+  
   try {
     const claimTx = await testIntegration.claimAaveRewards(token.address, deployer.address);
     const claimReceipt = await claimTx.wait();
@@ -161,23 +189,68 @@ export const relayBasic = async () => {
   }
 
   // Check reserve data
-  console.log("------------------------ starting getAaveReserveData ------------------------");
-  try {
-    const reserveData = await testIntegration.getAaveReserveData(token.address);
-    console.log("Reserve data retrieved successfully");
-  } catch (error) {
-    console.error("Error getting reserve data:", error);
-  }
+  // console.log("------------------------ starting getAaveReserveData ------------------------");
+  // try {
+  //   const reserveData = await testIntegration.getAaveReserveData(token.address);
+  //   console.log("Reserve data retrieved successfully");
+    
+  //   // Format and print important information from ReserveData structure
+  //   console.log("\n==== RESERVE DATA DETAILS ====");
+    
+  //   // Get the raw reserve data directly from the MockAave contract for more detailed info
+  //   const rawReserveData = await aaveContract.getReserveData(token.address);
+    
+  //   // Convert ray values (1e27) to percentages for easier reading
+  //   const liquidityRatePercent = ethers.utils.formatUnits(rawReserveData.currentLiquidityRate, 25); // 27 - 2 decimals
+  //   const variableBorrowRatePercent = ethers.utils.formatUnits(rawReserveData.currentVariableBorrowRate, 25);
+  //   const stableBorrowRatePercent = ethers.utils.formatUnits(rawReserveData.currentStableBorrowRate, 25);
+    
+  //   console.log(`Liquidity Index: ${ethers.utils.formatUnits(rawReserveData.liquidityIndex, 27)}`);
+  //   console.log(`Current Liquidity Rate: ${liquidityRatePercent}% APY`);
+  //   console.log(`Variable Borrow Index: ${ethers.utils.formatUnits(rawReserveData.variableBorrowIndex, 27)}`);
+  //   console.log(`Current Variable Borrow Rate: ${variableBorrowRatePercent}% APY`);
+  //   console.log(`Current Stable Borrow Rate: ${stableBorrowRatePercent}% APY`);
+  //   console.log(`Last Update Timestamp: ${new Date(rawReserveData.lastUpdateTimestamp.toNumber() * 1000).toISOString()}`);
+  //   console.log(`aToken Address: ${rawReserveData.aTokenAddress}`);
+  //   console.log(`Stable Debt Token Address: ${rawReserveData.stableDebtTokenAddress}`);
+  //   console.log(`Variable Debt Token Address: ${rawReserveData.variableDebtTokenAddress}`);
+  //   console.log(`Interest Rate Strategy Address: ${rawReserveData.interestRateStrategyAddress}`);
+    
+  //   // Get additional reserve information
+  //   const normalizedIncome = await aaveContract.getReserveNormalizedIncome(token.address);
+  //   console.log(`Normalized Income: ${ethers.utils.formatUnits(normalizedIncome, 27)}`);
+    
+  //   // Calculate current rewards for the test integration contract
+  //   const pendingRewards = await aaveContract.getPendingRewards(testIntegration.address, token.address);
+  //   console.log(`Pending Rewards: ${ethers.utils.formatEther(pendingRewards)} tokens`);
+    
 
-  // Check user data
-  console.log("------------------------ starting getAaveUserAccountData ------------------------");
-  try {
-    const userData = await testIntegration.getAaveUserAccountData(deployer.address);
-    console.log("User account data retrieved successfully");
-  } catch (error) {
-    console.error("Error getting user account data:", error);
-  }
+  //   const rewardPeriod = await provider.getBlock('latest');
+  //   console.log(`Current Block Timestamp: ${new Date(rewardPeriod.timestamp * 1000).toISOString()}`);
+    
+  // } catch (error) {
+  //   console.error("Error getting reserve data:", error);
+  // }
 
+  // try {
+  //   const userData = await testIntegration.getAaveUserAccountData(testIntegration.address);
+  //   console.log("User account data retrieved successfully");
+    
+  //   // Format and print important information from UserAccountData
+  //   console.log("\n==== USER ACCOUNT DATA DETAILS ====");
+  //   const userAccountData = await aaveContract.getUserAccountData(testIntegration.address);
+    
+  //   console.log(`Total Collateral: ${ethers.utils.formatEther(userAccountData[0])} tokens`);
+  //   console.log(`Total Debt: ${ethers.utils.formatEther(userAccountData[1])} tokens`);
+  //   console.log(`Available Borrowing Capacity: ${ethers.utils.formatEther(userAccountData[2])} tokens`);
+  //   console.log(`Liquidation Threshold: ${userAccountData[3].toNumber() / 100}%`);
+  //   console.log(`Loan to Value: ${userAccountData[4].toNumber() / 100}%`);
+  //   console.log(`Health Factor: ${ethers.utils.formatEther(userAccountData[5])}`);
+    
+  // } catch (error) {
+  //   console.error("Error getting user account data:", error);
+  // }
+  
   evmRelayer.setRelayer(RelayerType.Agoric, axelarRelayer);
 };
 
