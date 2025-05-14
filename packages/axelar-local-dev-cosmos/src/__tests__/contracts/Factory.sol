@@ -1,85 +1,76 @@
 // Factory Contract
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 import {AxelarExecutable} from "@axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol";
-import {AxelarExecutableWithToken} from "@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutableWithToken.sol";
 import {IAxelarGasService} from "@axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IAxelarGasService.sol";
 import {StakingContract} from "src/__tests__/contracts/StakingContract.sol";
 import {IERC20} from "@axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IERC20.sol";
 import {StringToAddress, AddressToString} from "@axelar-network/axelar-gmp-sdk-solidity/contracts/libs/AddressString.sol";
 import {Ownable} from "src/__tests__/contracts/Ownable.sol";
 
-struct CallResult {
-    bool success;
-    bytes result;
-}
+contract Wallet is AxelarExecutable, Ownable {
+    struct Call {
+        address target;
+        bytes data;
+    }
 
-struct AgoricResponse {
-    // false if this is a smart wallet creation, true if it's a contract call
-    bool isContractCallResult;
-    CallResult[] data;
-}
-
-struct CallParams {
-    address target;
-    bytes data;
-}
-
-contract Wallet is AxelarExecutableWithToken, Ownable {
     IAxelarGasService public gasService;
 
     constructor(
         address gateway_,
         address gasReceiver_,
         string memory owner_
-    ) AxelarExecutableWithToken(gateway_) Ownable(owner_) {
+    ) AxelarExecutable(gateway_) Ownable(owner_) {
         gasService = IAxelarGasService(gasReceiver_);
     }
 
-    function _execute(
-        bytes32 commandId,
-        string calldata sourceChain,
-        string calldata sourceAddress,
+    function _multicall(
         bytes calldata payload
-    ) internal override onlyOwner(sourceAddress) {
-        CallParams[] memory calls = abi.decode(payload, (CallParams[]));
+    ) internal returns (bytes[] memory) {
+        (Call[] memory calls, uint256 totalCalls) = abi.decode(
+            payload,
+            (Call[], uint256)
+        );
+        require(calls.length == totalCalls, "Payload length mismatch");
 
-        CallResult[] memory results = new CallResult[](calls.length);
+        bytes[] memory results = new bytes[](calls.length);
 
         for (uint256 i = 0; i < calls.length; i++) {
             (bool success, bytes memory result) = calls[i].target.call(
                 calls[i].data
             );
             require(success, "Contract call failed");
-            results[i] = CallResult(success, result);
+            results[i] = result;
         }
+
+        return results;
+    }
+
+    function _execute(
+        string calldata sourceChain,
+        string calldata sourceAddress,
+        bytes calldata payload
+    ) internal override onlyOwner(sourceAddress) {
+        bytes[] memory results = _multicall(payload);
 
         bytes memory responsePayload = abi.encodePacked(
             bytes4(0x00000000),
-            abi.encode(AgoricResponse(true, results))
+            abi.encode(results)
         );
 
         _send(sourceChain, sourceAddress, responsePayload);
     }
 
     function _executeWithToken(
-        bytes32 commandId,
         string calldata sourceChain,
         string calldata sourceAddress,
         bytes calldata payload,
         string calldata tokenSymbol,
         uint256 amount
     ) internal override {
-        address stakingAddress = abi.decode(payload, (address));
-
-        require(amount > 0, "Deposit amount must be greater than zero");
-        address tokenAddress = gatewayWithToken().tokenAddresses(tokenSymbol);
-
-        IERC20(tokenAddress).transfer(address(this), amount); // Transfer tokens from user
-        IERC20(tokenAddress).approve(stakingAddress, amount); // Approve Aave Pool
-
-        StakingContract(stakingAddress).stake(amount); // Deposit into Aave
+        // _multicall(payload);
+        _sendWithToken(sourceChain, sourceAddress, payload, tokenSymbol, amount);
     }
 
     function _send(
@@ -95,10 +86,34 @@ contract Wallet is AxelarExecutableWithToken, Ownable {
             msg.sender
         );
 
-        gatewayWithToken().callContract(
+        gateway.callContract(destinationChain, destinationAddress, payload);
+    }
+
+    function _sendWithToken(
+        string calldata destinationChain,
+        string calldata destinationAddress,
+        bytes memory payload,
+        string calldata symbol,
+        uint256 amount
+    ) internal {
+        gasService.payNativeGasForExpressCallWithToken{value: msg.value}(
+            address(this),
             destinationChain,
             destinationAddress,
-            payload
+            payload,
+            symbol,
+            amount,
+            msg.sender
+        );
+
+        address tokenAddress = gateway.tokenAddresses(symbol);
+        IERC20(tokenAddress).approve(address(gateway), amount);
+        gateway.callContractWithToken(
+            destinationChain,
+            destinationAddress,
+            payload,
+            symbol,
+            amount
         );
     }
 }
@@ -109,7 +124,9 @@ contract Factory is AxelarExecutable {
 
     address _gateway;
     IAxelarGasService public immutable gasService;
-    string public chainName;
+    string public chainName; // name of the chain this contract is deployed to
+
+    event WalletCreated(address indexed target, string ownerAddress);
 
     constructor(
         address gateway_,
@@ -125,22 +142,20 @@ contract Factory is AxelarExecutable {
         address newVendorAddress = address(
             new Wallet(_gateway, address(gasService), owner)
         );
+        emit WalletCreated(newVendorAddress, owner);
         return newVendorAddress;
     }
 
     function _execute(
         string calldata sourceChain,
         string calldata sourceAddress,
-        bytes calldata payload
+        bytes calldata /*payload*/
     ) internal override {
         address vendorAddress = createVendor(sourceAddress);
-        CallResult[] memory results = new CallResult[](1);
-
-        results[0] = CallResult(true, abi.encode(vendorAddress));
 
         bytes memory msgPayload = abi.encodePacked(
             bytes4(0x00000000),
-            abi.encode(AgoricResponse(false, results))
+            abi.encode(vendorAddress)
         );
         _send(sourceChain, sourceAddress, msgPayload);
     }

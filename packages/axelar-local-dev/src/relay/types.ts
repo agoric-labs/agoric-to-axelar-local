@@ -20,6 +20,8 @@ export interface CallContractWithTokenArgs {
     payloadHash: string;
     alias: string;
     destinationTokenSymbol: string;
+    transactionHash: string;
+    sourceEventIndex: number;
     amountIn: string;
     amountOut: string;
 }

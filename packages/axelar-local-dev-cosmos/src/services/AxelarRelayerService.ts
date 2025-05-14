@@ -148,8 +148,10 @@ export class AxelarRelayerService extends Relayer {
     relayData: RelayData,
     callContractWithTokenArgs: CallContractWithTokenArgs
   ): Command {
-    throw new Error(
-      'Currently, this method is not supported. Please use createCallContractCommand instead.'
+    return WasmCommand.createWasmContractCalWithTokenCommand(
+      commandId,
+      relayData,
+      callContractWithTokenArgs
     );
   }
 
@@ -210,6 +212,8 @@ export class AxelarRelayerService extends Relayer {
       alias: '??',
       destinationTokenSymbol: tokenMap[args.symbol],
       amountIn: args.amount,
+      transactionHash: event.hash,
+      sourceEventIndex: 0,
       amountOut: args.amount,
     };
 

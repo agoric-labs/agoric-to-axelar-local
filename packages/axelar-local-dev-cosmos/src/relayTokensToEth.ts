@@ -38,8 +38,8 @@ export const relayDataToEth = async () => {
   console.log("IBC RELAYER", JSON.stringify(ibcRelayer.srcChannelId));
 
   const IBC_DENOM_AXL_USDC =
-    // 'ubld';
-    "ibc/5BDD47E9E73BF91C14497E254F0A751F1A7D3A6084343F66EA7CEE834A384651";
+    'ubld';
+    // "ibc/5BDD47E9E73BF91C14497E254F0A751F1A7D3A6084343F66EA7CEE834A384651";
   const AMOUNT_IN_ATOMIC_UNITS = "10" + "000" + "000";
   const FEE = "1" + "000" + "000";
   const CHANNEL_ID = ibcRelayer.srcChannelId;

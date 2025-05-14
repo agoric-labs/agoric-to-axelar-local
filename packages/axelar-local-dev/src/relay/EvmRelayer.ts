@@ -333,13 +333,13 @@ export class EvmRelayer extends Relayer {
 
             return gmpGasEvent
                 ? {
-                      event: gmpGasEvent,
-                      eventIndex: this.contractCallWithTokenGasEvents.indexOf(gmpGasEvent),
-                  }
+                    event: gmpGasEvent,
+                    eventIndex: this.contractCallWithTokenGasEvents.indexOf(gmpGasEvent),
+                }
                 : {
-                      event: expressGmpGasEvent,
-                      eventIndex: this.expressContractCallWithTokenGasEvents.indexOf(expressGmpGasEvent),
-                  };
+                    event: expressGmpGasEvent,
+                    eventIndex: this.expressContractCallWithTokenGasEvents.indexOf(expressGmpGasEvent),
+                };
         }
     }
 
@@ -494,9 +494,14 @@ export class EvmRelayer extends Relayer {
             const amountOut = args.amount;
             const commandId = getEVMLogID(from.name, log);
 
-            const to = networks.find((chain: Network) => chain.name === args.destinationChain);
+            const tx = await log.getTransaction();
+            const transactionHash = tx.hash;
+            const sourceEventIndex = log.logIndex;
+
+            // TODO: un hardcord these lines
+            const to = 'agoric';
             if (!to) return;
-            const destinationTokenSymbol = to.tokens[alias];
+            const destinationTokenSymbol = 'USDC';
 
             const callContractWithTokenArgs: CallContractWithTokenArgs = {
                 from: from.name,
@@ -508,12 +513,22 @@ export class EvmRelayer extends Relayer {
                 alias: alias,
                 destinationTokenSymbol,
                 amountIn: args.amount,
+                transactionHash,
+                sourceEventIndex,
                 amountOut: amountOut,
             };
 
             this.relayData.callContractWithToken[commandId] = callContractWithTokenArgs;
-            const command = this.createCallContractWithTokenCommand(commandId, this.relayData, callContractWithTokenArgs);
-            this.commands[args.destinationChain].push(command);
+            let command;
+            if (args.destinationChain.toLowerCase() === 'agoric') {
+                command = this.otherRelayers?.agoric?.createCallContractWithTokenCommand(commandId, this.relayData, callContractWithTokenArgs);
+            } else {
+                command = this.createCallContractWithTokenCommand(commandId, this.relayData, callContractWithTokenArgs);
+            }
+
+            if (command) {
+                this.commands[args.destinationChain].push(command);
+            }
         }
     }
 
