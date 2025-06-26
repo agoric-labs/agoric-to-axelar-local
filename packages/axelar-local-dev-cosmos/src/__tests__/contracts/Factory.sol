@@ -79,21 +79,21 @@ contract Wallet is AxelarExecutableWithToken, Ownable {
             abi.encode(AgoricResponse(true, _multicall(payload)))
         );
 
-        gasService.payGasForContractCall(
-            address(this),
-            sourceChain,
-            sourceAddress,
-            responsePayload,
-            tokenAddress,
-            amount,
-            address(this)
-        );
+        // gasService.payGasForContractCall(
+        //     address(this),
+        //     sourceChain,
+        //     sourceAddress,
+        //     responsePayload,
+        //     tokenAddress,
+        //     amount,
+        //     address(this)
+        // );
 
-        gatewayWithToken().callContract(
-            sourceChain,
-            sourceAddress,
-            responsePayload
-        );
+        // gatewayWithToken().callContract(
+        //     sourceChain,
+        //     sourceAddress,
+        //     responsePayload
+        // );
     }
 }
 
