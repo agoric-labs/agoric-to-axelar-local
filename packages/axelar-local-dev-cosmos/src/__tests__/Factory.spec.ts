@@ -32,7 +32,7 @@ describe("Factory", () => {
   const abiCoder = new ethers.AbiCoder();
   const expectedWalletAddress = "0x856e4424f806D16E8CBC702B3c0F2ede5468eae5";
 
-  const sourceContract = "agoric";
+  const sourceChain = "agoric";
   const sourceAddress = "0x1234567890123456789012345678901234567890";
 
   let commandIdCounter = 1;
@@ -75,7 +75,6 @@ describe("Factory", () => {
     factory = await Contract.deploy(
       axelarGatewayMock.target,
       axelarGasServiceMock.target,
-      "Ethereum",
     );
     await factory.waitForDeployment();
 
@@ -93,7 +92,7 @@ describe("Factory", () => {
     });
   });
 
-  it("fund Factory with ETH to pay for gas", async () => {
+  it("fund Factory with ETH", async () => {
     const provider = ethers.provider;
 
     const factoryAddress = await factory.getAddress();
@@ -116,7 +115,7 @@ describe("Factory", () => {
           return null;
         }
       })
-      .find((parsed) => parsed && parsed.name === "Received");
+      .find((parsed) => parsed && parsed.name === "TokensReceived");
 
     expect(receivedEvent).to.not.be.undefined;
     expect(receivedEvent?.args.sender).to.equal(owner.address);
@@ -129,12 +128,13 @@ describe("Factory", () => {
   it("should create a new remote wallet using Factory", async () => {
     const commandId = getCommandId();
 
-    const payload = abiCoder.encode(["uint256"], [50000]);
+    const nonce = 1;
+    const payload = abiCoder.encode(["uint256"], [nonce]);
     const payloadHash = keccak256(toBytes(payload));
 
     await approveMessage({
       commandId,
-      from: sourceContract,
+      from: sourceChain,
       sourceAddress,
       targetAddress: factory.target,
       payload: payloadHash,
@@ -145,15 +145,64 @@ describe("Factory", () => {
 
     const tx = await factory.execute(
       commandId,
-      sourceContract,
+      sourceChain,
       sourceAddress,
       payload,
     );
 
     await expect(tx)
-      .to.emit(factory, "SmartWalletCreated")
-      .withArgs(expectedWalletAddress, sourceAddress, "agoric", sourceAddress);
-    await expect(tx).to.emit(factory, "CrossChainCallSent");
+      .to.emit(factory, "NewWalletCreated")
+      .withArgs(expectedWalletAddress, nonce, sourceAddress, "agoric");
+  });
+
+  it("should revert if nonce is reused", async () => {
+    const commandId = getCommandId();
+
+    const nonce = 1;
+    const payload = abiCoder.encode(["uint256"], [nonce]);
+    const payloadHash = keccak256(toBytes(payload));
+
+    await approveMessage({
+      commandId,
+      from: sourceChain,
+      sourceAddress,
+      targetAddress: factory.target,
+      payload: payloadHash,
+      owner,
+      AxelarGateway: axelarGatewayMock,
+      abiCoder,
+    });
+
+    await expect(
+      factory.execute(commandId, sourceChain, sourceAddress, payload),
+    ).to.be.revertedWith("nonce already used by sender");
+  });
+
+  it("should revert if message comes from a chain besides agoric", async () => {
+    const commandId = getCommandId();
+    const unsupportedSourceChain = "ethereum";
+    const payload = abiCoder.encode(["uint256"], [2]);
+    const payloadHash = keccak256(toBytes(payload));
+
+    await approveMessage({
+      commandId,
+      from: unsupportedSourceChain,
+      sourceAddress,
+      targetAddress: factory.target,
+      payload: payloadHash,
+      owner,
+      AxelarGateway: axelarGatewayMock,
+      abiCoder,
+    });
+
+    await expect(
+      factory.execute(
+        commandId,
+        unsupportedSourceChain,
+        sourceAddress,
+        payload,
+      ),
+    ).to.be.revertedWith("Only messages from Agoric chain are allowed");
   });
 
   it("should use the remote wallet to call other contracts", async () => {
@@ -188,7 +237,7 @@ describe("Factory", () => {
     const commandId1 = getCommandId();
     await approveMessage({
       commandId: commandId1,
-      from: sourceContract,
+      from: sourceChain,
       sourceAddress,
       targetAddress: wallet.target,
       payload: payloadHash,
@@ -199,7 +248,7 @@ describe("Factory", () => {
 
     const execTx = await wallet.execute(
       commandId1,
-      sourceContract,
+      sourceChain,
       sourceAddress,
       multicallPayload,
     );
@@ -222,7 +271,7 @@ describe("Factory", () => {
     const commandId2 = getCommandId();
     await approveMessageWithToken({
       commandId: commandId2,
-      from: sourceContract,
+      from: sourceChain,
       sourceAddress,
       targetAddress: wallet.target,
       payload: payloadHash2,
@@ -235,7 +284,7 @@ describe("Factory", () => {
 
     const execWithTokenTx = await wallet.executeWithToken(
       commandId2,
-      sourceContract,
+      sourceChain,
       sourceAddress,
       multicallPayload2,
       "USDC",
