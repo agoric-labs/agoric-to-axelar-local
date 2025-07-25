@@ -30,10 +30,47 @@ export const relayBasic = async () => {
 
   evmRelayer.setRelayer(RelayerType.Agoric, axelarRelayer);
 
-  while (true) {
+  const expected = {
+    wallet: "0xd8E896691A0FCE4641D44d9E461A6d746A5c91dB",
+    nonce: 1,
+    sourceChain: "agoric",
+  };
+
+  const timeoutMs = 4 * 60 * 1000; // 4 minutes
+  const pollInterval = 1000; // 1 second
+  const startTime = Date.now();
+  let found = false;
+
+  while (Date.now() - startTime < timeoutMs) {
     await relay({
       agoric: axelarRelayer,
       evm: evmRelayer,
     });
+
+    const logs = await factoryContract.queryFilter("NewWalletCreated");
+    const match = logs.find((log) => {
+      if (!log.args) return false;
+      const [wallet, nonce, _, sourceChain] = log.args;
+      return (
+        parseInt(nonce.toHexString(), 16) === expected.nonce &&
+        wallet === expected.wallet &&
+        sourceChain === expected.sourceChain
+      );
+    });
+
+    if (match) {
+      console.log("✅ Matching NewWalletCreated event found:");
+      console.log(JSON.stringify(match, null, 2));
+      found = true;
+      process.exit(0);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollInterval));
+  }
+
+  if (!found) {
+    throw new Error(
+      "❌ Timed out: Expected NewWalletCreated event was not found within 4 minutes.",
+    );
   }
 };
