@@ -75,7 +75,6 @@ describe("Factory", () => {
     factory = await Contract.deploy(
       axelarGatewayMock.target,
       axelarGasServiceMock.target,
-      "Ethereum",
     );
     await factory.waitForDeployment();
 
@@ -93,7 +92,7 @@ describe("Factory", () => {
     });
   });
 
-  it("fund Factory with ETH to pay for gas", async () => {
+  it("fund Factory with ETH", async () => {
     const provider = ethers.provider;
 
     const factoryAddress = await factory.getAddress();
@@ -116,7 +115,7 @@ describe("Factory", () => {
           return null;
         }
       })
-      .find((parsed) => parsed && parsed.name === "Received");
+      .find((parsed) => parsed && parsed.name === "TokensReceived");
 
     expect(receivedEvent).to.not.be.undefined;
     expect(receivedEvent?.args.sender).to.equal(owner.address);
@@ -129,7 +128,8 @@ describe("Factory", () => {
   it("should create a new remote wallet using Factory", async () => {
     const commandId = getCommandId();
 
-    const payload = abiCoder.encode(["uint256"], [50000]);
+    const nonce = 1;
+    const payload = abiCoder.encode(["uint256"], [nonce]);
     const payloadHash = keccak256(toBytes(payload));
 
     await approveMessage({
@@ -151,9 +151,8 @@ describe("Factory", () => {
     );
 
     await expect(tx)
-      .to.emit(factory, "SmartWalletCreated")
-      .withArgs(expectedWalletAddress, sourceAddress, "agoric", sourceAddress);
-    await expect(tx).to.emit(factory, "CrossChainCallSent");
+      .to.emit(factory, "NewWalletCreated")
+      .withArgs(expectedWalletAddress, nonce, sourceAddress, "agoric");
   });
 
   it("should use the remote wallet to call other contracts", async () => {

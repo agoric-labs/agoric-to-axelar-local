@@ -87,87 +87,64 @@ contract Factory is AxelarExecutable {
     using StringToAddress for string;
     using AddressToString for address;
 
-    address _gateway;
+    address gatewayAddr;
     IAxelarGasService public immutable gasService;
-    string public chainName;
-
-    event SmartWalletCreated(
-        address indexed wallet,
-        string owner,
-        string sourceChain,
-        string sourceAddress
-    );
-    event CrossChainCallSent(
-        string destinationChain,
-        string destinationAddress,
-        bytes payload
-    );
-    event Received(address indexed sender, uint256 amount);
+    // Tracks used nonces per source address to prevent replay attacks.
+    // TODO: Should we consider limiting or cleaning this mapping to avoid unbounded growth?
+    mapping(string => mapping(uint256 => bool)) public usedNonces;
+    bytes32 internal constant EXPECTED_SOURCE_CHAIN = keccak256("agoric");
 
     constructor(
         address gateway_,
-        address gasReceiver_,
-        string memory chainName_
+        address gasReceiver_
     ) AxelarExecutable(gateway_) {
         gasService = IAxelarGasService(gasReceiver_);
-        _gateway = gateway_;
-        chainName = chainName_;
+        gatewayAddr = gateway_;
     }
 
-    function createSmartWallet(string memory owner) public returns (address) {
-        address newWallet = address(
-            new Wallet(_gateway, address(gasService), owner)
-        );
-        return newWallet;
+    function createWallet(string memory owner) internal returns (address) {
+        return address(new Wallet(gatewayAddr, address(gasService), owner));
     }
 
+    event NewWalletCreated(
+        address indexed wallet,
+        uint256 nonce,
+        string sourceAddress,
+        string sourceChain
+    );
+
+    /// @notice Executes a cross-chain wallet creation request.
+    /// @param sourceChain Name of the chain that sent the message
+    /// @param sourceAddress Address (string) of the sender from source chain
+    /// @param payload ABI-encoded nonce
     function _execute(
         string calldata sourceChain,
         string calldata sourceAddress,
         bytes calldata payload
     ) internal override {
-        (uint256 gasAmount) = abi.decode(payload, (uint256));
-        address smartWalletAddress = createSmartWallet(sourceAddress);
-        emit SmartWalletCreated(
-            smartWalletAddress,
-            sourceAddress,
-            sourceChain,
-            sourceAddress
+        require(
+            keccak256(bytes(sourceChain)) == EXPECTED_SOURCE_CHAIN,
+            "Only messages from Agoric chain are allowed"
         );
-        CallResult[] memory results = new CallResult[](1);
 
-        results[0] = CallResult(true, abi.encode(smartWalletAddress));
-
-        bytes memory msgPayload = abi.encodePacked(
-            bytes4(0x00000000),
-            abi.encode(AgoricResponse(false, results))
+        uint256 nonce = abi.decode(payload, (uint256));
+        require(
+            !usedNonces[sourceAddress][nonce],
+            "nonce already used by sender"
         );
-        _send(sourceChain, sourceAddress, msgPayload, gasAmount);
+        usedNonces[sourceAddress][nonce] = true;
+
+        address wallet = createWallet(sourceAddress);
+        emit NewWalletCreated(wallet, nonce, sourceAddress, sourceChain);
     }
 
-    function _send(
-        string calldata destinationChain,
-        string calldata destinationAddress,
-        bytes memory payload,
-        uint256 gasAmount
-    ) internal {
-        gasService.payNativeGasForContractCall{value: gasAmount}(
-            address(this),
-            destinationChain,
-            destinationAddress,
-            payload,
-            address(this)
-        );
-
-        gateway.callContract(destinationChain, destinationAddress, payload);
-        emit CrossChainCallSent(destinationChain, destinationAddress, payload);
-    }
+    event TokensReceived(address indexed sender, uint256 amount, string method);
 
     receive() external payable {
-        emit Received(msg.sender, msg.value);
+        emit TokensReceived(msg.sender, msg.value, "receive");
     }
 
     fallback() external payable {
-        emit Received(msg.sender, msg.value);
+        emit TokensReceived(msg.sender, msg.value, "fallback");
     }
 }
