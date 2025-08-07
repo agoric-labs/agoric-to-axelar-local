@@ -23,7 +23,10 @@ Alternatively, you can start the chains programmatically:
 ```ts
 import { startChains } from "@axelar-network/axelar-local-dev-cosmos";
 
-startChains();
+startChains().catch(err => {
+  console.log(err);
+  throw err;
+});
 ```
 
 ## Running IBC Relayer and Axelar Event Listener
