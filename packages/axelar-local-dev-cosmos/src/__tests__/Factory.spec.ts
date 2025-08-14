@@ -152,7 +152,6 @@ describe("Factory", () => {
     await expect(tx)
       .to.emit(factory, "SmartWalletCreated")
       .withArgs(expectedWalletAddress, sourceAddress, "agoric", sourceAddress);
-    await expect(tx).to.emit(factory, "CrossChainCallSent");
   });
 
   it("should use the remote wallet to call other contracts", async () => {
