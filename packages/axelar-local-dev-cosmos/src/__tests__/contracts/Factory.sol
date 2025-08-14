@@ -118,7 +118,6 @@ contract Factory is AxelarExecutable {
         string calldata sourceAddress,
         bytes calldata payload
     ) internal override {
-        uint256 gasAmount = abi.decode(payload, (uint256));
         address smartWalletAddress = createSmartWallet(sourceAddress);
         emit SmartWalletCreated(
             smartWalletAddress,
