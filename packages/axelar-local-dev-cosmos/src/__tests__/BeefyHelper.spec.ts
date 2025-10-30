@@ -131,5 +131,32 @@ describe("WalletHelper", () => {
           .beefyWithdrawUSDC(mockVault.target, usdcAmount),
       ).to.be.reverted;
     });
+
+    it("should demonstrate formula equivalence: ((a * b) + c - 1) / c vs (a * b + c - 1) / c", async () => {
+      // This test demonstrates that the two formulas are mathematically equivalent
+      // Formula 1: ((usdcAmount * totalSupply) + balance - 1) / balance
+      // Formula 2: (usdcAmount * totalSupply + balance - 1) / balance
+      
+      const testCases = [
+        { usdcAmount: 1000000n, balance: 2942721276721n, totalSupply: 2675589349023n },
+        { usdcAmount: 1n, balance: 1000000n, totalSupply: 500000n },
+        { usdcAmount: 999999n, balance: 1000000n, totalSupply: 1000000n },
+        { usdcAmount: 100000n, balance: 3141592653589n, totalSupply: 2718281828459n },
+      ];
+
+      for (const testCase of testCases) {
+        const { usdcAmount, balance, totalSupply } = testCase;
+
+        // Formula 1: ((usdcAmount * totalSupply) + balance - 1) / balance
+        const formula1 = ((usdcAmount * totalSupply) + balance - 1n) / balance;
+
+        // Formula 2: (usdcAmount * totalSupply + balance - 1) / balance
+        const formula2 = (usdcAmount * totalSupply + balance - 1n) / balance;
+
+        // Both formulas should produce the same result
+        expect(formula1).to.equal(formula2,
+          `Formulas differ for usdcAmount=${usdcAmount}, balance=${balance}, totalSupply=${totalSupply}`);
+      }
+    });
   });
 });
