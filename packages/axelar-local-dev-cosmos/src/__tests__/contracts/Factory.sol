@@ -82,13 +82,12 @@ contract Wallet is AxelarExecutable, Ownable {
         ContractCalls[] memory calls = callMessage.calls;
 
         uint256 len = calls.length;
+        uint256 successCount = 0;
+
         for (uint256 i = 0; i < len; ) {
             (bool success, ) = calls[i].target.call(calls[i].data);
 
-            if (!success) {
-                revert ContractCallFailed(callMessage.id, i);
-            }
-
+            // Always emit status for each call (success or failure)
             emit CallStatus(
                 callMessage.id,
                 i,
@@ -97,12 +96,17 @@ contract Wallet is AxelarExecutable, Ownable {
                 success
             );
 
+            if (success) {
+                successCount++;
+            }
+
             unchecked {
                 ++i;
             }
         }
 
-        emit MulticallStatus(callMessage.id, true, calls.length);
+        bool allSucceeded = successCount == len;
+        emit MulticallStatus(callMessage.id, allSucceeded, calls.length);
     }
 
     function _execute(
