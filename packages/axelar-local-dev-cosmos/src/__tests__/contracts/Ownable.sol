@@ -17,6 +17,7 @@ pragma solidity ^0.8.20;
  */
 abstract contract Ownable {
     string private _owner;
+    bool private _ownableInitialized;
 
     /**
      * @dev The caller account is not authorized to perform an operation.
@@ -41,6 +42,16 @@ abstract contract Ownable {
         //     revert OwnableInvalidOwner(address(0));
         // }
         _transferOwnership(initialOwner);
+        _ownableInitialized = true;
+    }
+
+    /**
+     * @dev Initializes the owner for proxy contracts.
+     */
+    function _initializeOwnable(string memory initialOwner) internal {
+        require(!_ownableInitialized, "Ownable: already initialized");
+        _transferOwnership(initialOwner);
+        _ownableInitialized = true;
     }
 
     /**
@@ -78,4 +89,9 @@ abstract contract Ownable {
         _owner = newOwner;
         emit OwnershipTransferred(oldOwner, newOwner);
     }
+
+    /**
+     * @dev Storage gap to allow for new storage variables in future upgrades
+     */
+    uint256[50] private __gap;
 }

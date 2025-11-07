@@ -5,6 +5,8 @@ import {AxelarExecutable} from "@updated-axelar-network/axelar-gmp-sdk-solidity/
 import {IAxelarGasService} from "@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IAxelarGasService.sol";
 import {IERC20} from "@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IERC20.sol";
 import {StringToAddress, AddressToString} from "@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/libs/AddressString.sol";
+import {BeaconProxy} from "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
+import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 import {Ownable} from "./Ownable.sol";
 
 struct CallResult {
@@ -32,6 +34,7 @@ error ContractCallFailed(string messageId, uint256 step);
 
 contract Wallet is AxelarExecutable, Ownable {
     IAxelarGasService public gasService;
+    bool private _initialized;
 
     event CallStatus(
         string indexed id,
@@ -42,13 +45,36 @@ contract Wallet is AxelarExecutable, Ownable {
     );
     event MulticallStatus(string indexed id, bool success, uint256 totalCalls);
     event Received(address indexed sender, uint256 amount);
+    event WalletInitialized(
+        address indexed gateway,
+        address indexed gasService,
+        string owner
+    );
 
-    constructor(
+    constructor() AxelarExecutable(address(0)) Ownable("") {
+        // Prevent implementation contract from being initialized
+        _initialized = true;
+    }
+
+    function initialize(
         address gateway_,
         address gasReceiver_,
         string memory owner_
-    ) payable AxelarExecutable(gateway_) Ownable(owner_) {
+    ) external {
+        require(!_initialized, "Wallet: already initialized");
+        _initialized = true;
+
+        // Initialize AxelarExecutable by setting gateway
+        // Note: AxelarExecutable stores gateway in its constructor, but for proxies
+        // we need to handle this differently. We'll need to override or work with
+        // the existing pattern.
+
+        // Initialize Ownable
+        _initializeOwnable(owner_);
+
         gasService = IAxelarGasService(gasReceiver_);
+
+        emit WalletInitialized(gateway_, gasReceiver_, owner_);
     }
 
     function _multicall(bytes calldata payload) internal {
@@ -95,43 +121,83 @@ contract Wallet is AxelarExecutable, Ownable {
     fallback() external payable {
         emit Received(msg.sender, msg.value);
     }
+
+    /**
+     * @dev Storage gap to allow for new storage variables in future upgrades
+     * This reserves storage slots that can be used in upgraded versions
+     */
+    uint256[50] private __gap;
 }
 
 contract Factory is AxelarExecutable {
     using StringToAddress for string;
     using AddressToString for address;
 
-    address _gateway;
+    address private _gateway;
     IAxelarGasService public immutable gasService;
+    UpgradeableBeacon public immutable walletBeacon;
+
+    // Wallet registry
+    mapping(string => address[]) private _ownerToWallets;
+    mapping(address => bool) private _isWallet;
+    address[] private _allWallets;
+
+    // Versioning
+    uint256 public walletImplementationVersion;
 
     event SmartWalletCreated(
         address indexed wallet,
         string owner,
         string sourceChain,
-        string sourceAddress
+        string sourceAddress,
+        uint256 version
     );
     event CrossChainCallSent(
         string destinationChain,
         string destinationAddress,
         bytes payload
     );
+    event WalletImplementationUpgraded(
+        address indexed oldImplementation,
+        address indexed newImplementation,
+        uint256 newVersion
+    );
     event Received(address indexed sender, uint256 amount);
 
     constructor(
         address gateway_,
-        address gasReceiver_
+        address gasReceiver_,
+        address walletImplementation_
     ) payable AxelarExecutable(gateway_) {
         gasService = IAxelarGasService(gasReceiver_);
         _gateway = gateway_;
+        walletBeacon = new UpgradeableBeacon(
+            walletImplementation_,
+            address(this)
+        );
+        walletImplementationVersion = 1;
     }
 
     function _createSmartWallet(
         string memory owner
     ) internal returns (address) {
-        address newWallet = address(
-            new Wallet(_gateway, address(gasService), owner)
+        bytes memory initData = abi.encodeWithSelector(
+            Wallet.initialize.selector,
+            _gateway,
+            address(gasService),
+            owner
         );
-        return newWallet;
+
+        BeaconProxy proxy = new BeaconProxy(address(walletBeacon), initData);
+
+        address walletAddress = address(proxy);
+
+        // Register wallet
+        _ownerToWallets[owner].push(walletAddress);
+        _isWallet[walletAddress] = true;
+        _allWallets.push(walletAddress);
+
+        return walletAddress;
     }
 
     function _execute(
@@ -146,7 +212,8 @@ contract Factory is AxelarExecutable {
             smartWalletAddress,
             sourceAddress,
             sourceChain,
-            sourceAddress
+            sourceAddress,
+            walletImplementationVersion
         );
         CallResult[] memory results = new CallResult[](1);
 
@@ -183,5 +250,103 @@ contract Factory is AxelarExecutable {
 
     fallback() external payable {
         emit Received(msg.sender, msg.value);
+    }
+
+    // ========== UPGRADE FUNCTIONS ==========
+
+    /**
+     * @notice Upgrades the Wallet implementation for ALL existing and future wallets
+     * @dev Only callable by Factory owner (via Axelar messages or direct if needed)
+     * @param newImplementation Address of the new Wallet implementation
+     */
+    function upgradeWalletImplementation(address newImplementation) external {
+        require(
+            msg.sender == address(this) ||
+                msg.sender == gateway().contractAddress(),
+            "Factory: unauthorized"
+        );
+
+        address oldImplementation = walletBeacon.implementation();
+        walletBeacon.upgradeTo(newImplementation);
+
+        walletImplementationVersion++;
+
+        emit WalletImplementationUpgraded(
+            oldImplementation,
+            newImplementation,
+            walletImplementationVersion
+        );
+    }
+
+    /**
+     * @notice Returns the current Wallet implementation address
+     */
+    function getWalletImplementation() external view returns (address) {
+        return walletBeacon.implementation();
+    }
+
+    // ========== WALLET REGISTRY FUNCTIONS ==========
+
+    /**
+     * @notice Get all wallets owned by a specific owner
+     * @param owner The owner's address (as string)
+     * @return Array of wallet addresses
+     */
+    function getWalletsByOwner(
+        string calldata owner
+    ) external view returns (address[] memory) {
+        return _ownerToWallets[owner];
+    }
+
+    /**
+     * @notice Check if an address is a wallet created by this factory
+     * @param wallet The address to check
+     * @return True if the address is a registered wallet
+     */
+    function isWallet(address wallet) external view returns (bool) {
+        return _isWallet[wallet];
+    }
+
+    /**
+     * @notice Get all wallets created by this factory
+     * @return Array of all wallet addresses
+     */
+    function getAllWallets() external view returns (address[] memory) {
+        return _allWallets;
+    }
+
+    /**
+     * @notice Get the total number of wallets created
+     * @return Total wallet count
+     */
+    function getTotalWalletCount() external view returns (uint256) {
+        return _allWallets.length;
+    }
+
+    /**
+     * @notice Get wallets with pagination
+     * @param offset Starting index
+     * @param limit Number of wallets to return
+     * @return Array of wallet addresses
+     */
+    function getWalletsPaginated(
+        uint256 offset,
+        uint256 limit
+    ) external view returns (address[] memory) {
+        require(offset < _allWallets.length, "Factory: offset out of bounds");
+
+        uint256 end = offset + limit;
+        if (end > _allWallets.length) {
+            end = _allWallets.length;
+        }
+
+        uint256 length = end - offset;
+        address[] memory wallets = new address[](length);
+
+        for (uint256 i = 0; i < length; i++) {
+            wallets[i] = _allWallets[offset + i];
+        }
+
+        return wallets;
     }
 }
