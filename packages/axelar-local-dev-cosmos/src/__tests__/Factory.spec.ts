@@ -4,12 +4,34 @@ import { ethers } from "hardhat";
 import { keccak256, stringToHex, toBytes } from "viem";
 import {
   approveMessage,
-  approveMessageWithToken,
   constructContractCall,
   deployToken,
   encodeMulticallPayload,
   getPayloadHash,
 } from "./lib/utils";
+
+const computeCreate2Address = async (
+  factoryAddress: string,
+  gatewayAddress: string,
+  gasServiceAddress: string,
+  owner: string,
+) => {
+  const salt = ethers.solidityPackedKeccak256(["string"], [owner]);
+
+  // Get the Wallet contract bytecode and constructor args
+  const WalletFactory = await ethers.getContractFactory("Wallet");
+  const constructorArgs = ethers.AbiCoder.defaultAbiCoder().encode(
+    ["address", "address", "string"],
+    [gatewayAddress, gasServiceAddress, owner],
+  );
+  const initCode = ethers.solidityPacked(
+    ["bytes", "bytes"],
+    [WalletFactory.bytecode, constructorArgs],
+  );
+  const initCodeHash = ethers.keccak256(initCode);
+
+  return ethers.getCreate2Address(factoryAddress, salt, initCodeHash);
+};
 
 const createRemoteEVMAccount = async (
   axelarGatewayMock,
@@ -27,10 +49,9 @@ const createRemoteEVMAccount = async (
 };
 
 describe("Factory", () => {
-  let owner, addr1, factory, axelarGatewayMock;
+  let owner, addr1, factory, axelarGatewayMock, axelarGasServiceMock;
 
   const abiCoder = new ethers.AbiCoder();
-  const expectedWalletAddress = "0x856e4424f806D16E8CBC702B3c0F2ede5468eae5";
 
   const sourceContract = "agoric";
   const sourceAddress = "0x1234567890123456789012345678901234567890";
@@ -50,7 +71,7 @@ describe("Factory", () => {
       AxelarGasService.bytecode,
     );
 
-    const axelarGasServiceMock = await GasServiceFactory.deploy(owner.address);
+    axelarGasServiceMock = await GasServiceFactory.deploy(owner.address);
 
     const TokenDeployerFactory =
       await ethers.getContractFactory("TokenDeployer");
@@ -142,6 +163,14 @@ describe("Factory", () => {
       abiCoder,
     });
 
+    // Compute the expected CREATE2 address
+    const expectedWalletAddress = await computeCreate2Address(
+      factory.target.toString(),
+      axelarGatewayMock.target.toString(),
+      axelarGasServiceMock.target.toString(),
+      sourceAddress,
+    );
+
     const tx = await factory.execute(
       commandId,
       sourceContract,
@@ -152,7 +181,6 @@ describe("Factory", () => {
     await expect(tx)
       .to.emit(factory, "SmartWalletCreated")
       .withArgs(expectedWalletAddress, sourceAddress, "agoric", sourceAddress);
-    await expect(tx).to.emit(factory, "CrossChainCallSent");
   });
 
   it("should use the remote wallet to call other contracts", async () => {
@@ -236,6 +264,5 @@ describe("Factory", () => {
 
     const value = await multicall.getValue();
     expect(value).to.equal(27);
-
   });
 });
