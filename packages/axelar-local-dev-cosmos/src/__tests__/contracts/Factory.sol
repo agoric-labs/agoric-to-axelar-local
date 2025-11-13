@@ -110,11 +110,7 @@ contract Factory is AxelarExecutable {
         string sourceChain,
         string sourceAddress
     );
-    event CrossChainCallSent(
-        string destinationChain,
-        string destinationAddress,
-        bytes payload
-    );
+
     event Received(address indexed sender, uint256 amount);
 
     constructor(
@@ -129,7 +125,11 @@ contract Factory is AxelarExecutable {
         string memory owner
     ) internal returns (address) {
         address newWallet = address(
-            new Wallet(_gateway, address(gasService), owner)
+            new Wallet{salt: keccak256(abi.encodePacked(owner))}(
+                _gateway,
+                address(gasService),
+                owner
+            )
         );
         return newWallet;
     }
@@ -140,7 +140,6 @@ contract Factory is AxelarExecutable {
         string calldata sourceAddress,
         bytes calldata payload
     ) internal override {
-        uint256 gasAmount = abi.decode(payload, (uint256));
         address smartWalletAddress = _createSmartWallet(sourceAddress);
         emit SmartWalletCreated(
             smartWalletAddress,
@@ -148,33 +147,6 @@ contract Factory is AxelarExecutable {
             sourceChain,
             sourceAddress
         );
-        CallResult[] memory results = new CallResult[](1);
-
-        results[0] = CallResult(true, abi.encode(smartWalletAddress));
-
-        bytes memory msgPayload = abi.encodePacked(
-            bytes4(0x00000000),
-            abi.encode(AgoricResponse(false, results))
-        );
-        _send(sourceChain, sourceAddress, msgPayload, gasAmount);
-    }
-
-    function _send(
-        string calldata destinationChain,
-        string calldata destinationAddress,
-        bytes memory payload,
-        uint256 gasAmount
-    ) internal {
-        gasService.payNativeGasForContractCall{value: gasAmount}(
-            address(this),
-            destinationChain,
-            destinationAddress,
-            payload,
-            address(this)
-        );
-
-        gateway().callContract(destinationChain, destinationAddress, payload);
-        emit CrossChainCallSent(destinationChain, destinationAddress, payload);
     }
 
     receive() external payable {
