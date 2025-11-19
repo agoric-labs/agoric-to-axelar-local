@@ -149,7 +149,7 @@ describe("Factory", () => {
   it("should create a new remote wallet using Factory", async () => {
     const commandId = getCommandId();
 
-    const payload = abiCoder.encode(["uint256"], [50000]);
+    const payload = abiCoder.encode([], []);
     const payloadHash = keccak256(toBytes(payload));
 
     await approveMessage({
@@ -325,7 +325,7 @@ describe("Factory", () => {
   it("factory contract should fail when source chain is not agoric", async () => {
     const commandId = getCommandId();
 
-    const payload = abiCoder.encode(["uint256"], [50000]);
+    const payload = abiCoder.encode([], []);
     const payloadHash = keccak256(toBytes(payload));
 
     const wrongSourceChain = "ethereum"; // Wrong source chain
