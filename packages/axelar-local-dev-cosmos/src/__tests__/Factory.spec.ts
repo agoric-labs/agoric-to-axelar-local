@@ -54,7 +54,7 @@ describe("Factory", () => {
   const abiCoder = new ethers.AbiCoder();
 
   const sourceChain = "agoric";
-  const sourceAddress = "0x1234567890123456789012345678901234567890";
+  const sourceAddress = "agoric1wrfh296eu2z34p6pah7q04jjuyj3mxu9v98277";
 
   let commandIdCounter = 1;
   const getCommandId = () => {
@@ -329,11 +329,12 @@ describe("Factory", () => {
     const payloadHash = keccak256(toBytes(payload));
 
     const wrongSourceChain = "ethereum"; // Wrong source chain
+    const sourceAddr = "agoric1ee9hr0jyrxhy999y755mp862ljgycmwyp4pl7q";
 
     await approveMessage({
       commandId,
       from: wrongSourceChain,
-      sourceAddress,
+      sourceAddress: sourceAddr,
       targetAddress: factory.target,
       payload: payloadHash,
       owner,
@@ -343,7 +344,7 @@ describe("Factory", () => {
 
     // This should fail because source chain is not "agoric"
     await expect(
-      factory.execute(commandId, wrongSourceChain, sourceAddress, payload),
+      factory.execute(commandId, wrongSourceChain, sourceAddr, payload),
     ).to.be.revertedWithCustomError(factory, "InvalidSourceChain");
   });
 });
