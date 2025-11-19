@@ -53,8 +53,8 @@ describe("Factory", () => {
 
   const abiCoder = new ethers.AbiCoder();
 
-  const sourceContract = "agoric";
-  const sourceAddress = "0x1234567890123456789012345678901234567890";
+  const sourceChain = "agoric";
+  const sourceAddress = "agoric1wrfh296eu2z34p6pah7q04jjuyj3mxu9v98277";
 
   let commandIdCounter = 1;
   const getCommandId = () => {
@@ -149,12 +149,12 @@ describe("Factory", () => {
   it("should create a new remote wallet using Factory", async () => {
     const commandId = getCommandId();
 
-    const payload = abiCoder.encode(["uint256"], [50000]);
+    const payload = abiCoder.encode([], []);
     const payloadHash = keccak256(toBytes(payload));
 
     await approveMessage({
       commandId,
-      from: sourceContract,
+      from: sourceChain,
       sourceAddress,
       targetAddress: factory.target,
       payload: payloadHash,
@@ -173,7 +173,7 @@ describe("Factory", () => {
 
     const tx = await factory.execute(
       commandId,
-      sourceContract,
+      sourceChain,
       sourceAddress,
       payload,
     );
@@ -218,7 +218,7 @@ describe("Factory", () => {
     const commandId1 = getCommandId();
     await approveMessage({
       commandId: commandId1,
-      from: sourceContract,
+      from: sourceChain,
       sourceAddress,
       targetAddress: wallet.target,
       payload: payloadHash,
@@ -229,7 +229,7 @@ describe("Factory", () => {
 
     const execTx = await wallet.execute(
       commandId1,
-      sourceContract,
+      sourceChain,
       sourceAddress,
       multicallPayload,
     );
@@ -264,5 +264,87 @@ describe("Factory", () => {
 
     const value = await multicall.getValue();
     expect(value).to.equal(27);
+  });
+
+  it("wallet contract should fail when source chain is not agoric", async () => {
+    // Deploy Multicall.sol
+    const MulticallFactory = await ethers.getContractFactory("Multicall");
+    const multicall = await MulticallFactory.deploy();
+    await multicall.waitForDeployment();
+
+    const wallet = await createRemoteEVMAccount(
+      axelarGatewayMock,
+      owner.address,
+      sourceAddress,
+    );
+
+    // Test ContractCall
+    const multicallAddress = await multicall.getAddress();
+    const abiEncodedContractCalls = [
+      constructContractCall({
+        target: multicallAddress,
+        functionSignature: "setValue(uint256)",
+        args: [10],
+      }),
+      constructContractCall({
+        target: multicallAddress,
+        functionSignature: "addToValue(uint256)",
+        args: [17],
+      }),
+    ];
+    const multicallPayload = encodeMulticallPayload(
+      abiEncodedContractCalls,
+      "tx1",
+    );
+    const payloadHash = getPayloadHash(multicallPayload);
+    const wrongSourceChain = "ethereum"; // Wrong source chain
+
+    const commandId1 = getCommandId();
+    await approveMessage({
+      commandId: commandId1,
+      from: wrongSourceChain,
+      sourceAddress,
+      targetAddress: wallet.target,
+      payload: payloadHash,
+      owner,
+      AxelarGateway: axelarGatewayMock,
+      abiCoder,
+    });
+
+    // This should fail because source chain is not "agoric"
+    await expect(
+      wallet.execute(
+        commandId1,
+        wrongSourceChain,
+        sourceAddress,
+        multicallPayload,
+      ),
+    ).to.be.revertedWithCustomError(wallet, "InvalidSourceChain");
+  });
+
+  it("factory contract should fail when source chain is not agoric", async () => {
+    const commandId = getCommandId();
+
+    const payload = abiCoder.encode([], []);
+    const payloadHash = keccak256(toBytes(payload));
+
+    const wrongSourceChain = "ethereum"; // Wrong source chain
+    const sourceAddr = "agoric1ee9hr0jyrxhy999y755mp862ljgycmwyp4pl7q";
+
+    await approveMessage({
+      commandId,
+      from: wrongSourceChain,
+      sourceAddress: sourceAddr,
+      targetAddress: factory.target,
+      payload: payloadHash,
+      owner,
+      AxelarGateway: axelarGatewayMock,
+      abiCoder,
+    });
+
+    // This should fail because source chain is not "agoric"
+    await expect(
+      factory.execute(commandId, wrongSourceChain, sourceAddr, payload),
+    ).to.be.revertedWithCustomError(factory, "InvalidSourceChain");
   });
 });

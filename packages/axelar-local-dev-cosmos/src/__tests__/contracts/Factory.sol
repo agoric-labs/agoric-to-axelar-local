@@ -29,9 +29,11 @@ struct CallMessage {
 }
 
 error ContractCallFailed(string messageId, uint256 step);
+error InvalidSourceChain(string expected, string actual);
 
 contract Wallet is AxelarExecutable, Ownable {
     IAxelarGasService public gasService;
+    string private constant EXPECTED_SOURCE_CHAIN = "agoric";
 
     event CallStatus(
         string indexed id,
@@ -81,10 +83,13 @@ contract Wallet is AxelarExecutable, Ownable {
 
     function _execute(
         bytes32 /*commandId*/,
-        string calldata /*sourceChain*/,
+        string calldata sourceChain,
         string calldata sourceAddress,
         bytes calldata payload
     ) internal override onlyOwner(sourceAddress) {
+        if (keccak256(bytes(sourceChain)) != keccak256(bytes(EXPECTED_SOURCE_CHAIN))) {
+            revert InvalidSourceChain(EXPECTED_SOURCE_CHAIN, sourceChain);
+        }
         _multicall(payload);
     }
 
@@ -103,6 +108,7 @@ contract Factory is AxelarExecutable {
 
     address _gateway;
     IAxelarGasService public immutable gasService;
+    string private constant EXPECTED_SOURCE_CHAIN = "agoric";
 
     event SmartWalletCreated(
         address indexed wallet,
@@ -140,6 +146,9 @@ contract Factory is AxelarExecutable {
         string calldata sourceAddress,
         bytes calldata payload
     ) internal override {
+        if (keccak256(bytes(sourceChain)) != keccak256(bytes(EXPECTED_SOURCE_CHAIN))) {
+            revert InvalidSourceChain(EXPECTED_SOURCE_CHAIN, sourceChain);
+        }
         address smartWalletAddress = _createSmartWallet(sourceAddress);
         emit SmartWalletCreated(
             smartWalletAddress,
