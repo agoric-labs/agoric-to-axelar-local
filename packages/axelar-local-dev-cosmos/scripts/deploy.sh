@@ -22,9 +22,11 @@ deploy_contract() {
     local contract_path=$1
     local gateway_contract=$2
     local gas_service_contract=$3
+    local permit2_contract=$4
 
     GATEWAY_CONTRACT="$gateway_contract" \
         GAS_SERVICE_CONTRACT="$gas_service_contract" \
+        PERMIT2_CONTRACT="$permit2_contract" \
         npx hardhat ignition deploy "$contract_path" --network "$network" --verify
 }
 
@@ -41,19 +43,4 @@ delete_deployments_folder() {
 get_network_config "$network"
 
 delete_deployments_folder "ignition/deployments"
-
-case "$contract" in
-    factory)
-        echo "Deploying Factory contract..."
-        deploy_contract "./ignition/modules/deployFactory.ts" "$GATEWAY" "$GAS_SERVICE"
-        ;;
-    wallethelper)
-        echo "Deploying WalletHelper contract..."
-        npx hardhat ignition deploy "./ignition/modules/deployWalletHelper.ts" --network "$network" --verify
-        ;;
-    *)
-        echo "Unknown contract: $contract"
-        echo "Supported contracts: factory, wallethelper"
-        exit 1
-        ;;
-esac
+deploy_contract "./ignition/modules/deployFactoryFactory.ts" "$GATEWAY" "$GAS_SERVICE" "$PERMIT2"
