@@ -6,7 +6,26 @@
 
 import { ethers, Wallet } from "ethers";
 import { SignatureTransfer, PermitTransferFrom } from "@uniswap/permit2-sdk";
-import { encodeAbiParameters } from "viem";
+import { encodeAbiParameters, hexToBytes } from "viem";
+import { getSigner } from "./axelar-support";
+import { AxelarGmpOutgoingMemo } from "./types";
+import { SigningStargateClient } from "@cosmjs/stargate";
+import { addresses, channels, urls } from "./config";
+
+const AXLEAR_GAS_RECEIVER = "axelar1zl3rxpp70lmte2xr6c4lgske2fyuj3hupcsvcd"; // for testnets
+const AXELAR_GAS_AMOUNT = "20000000"; // 20 BLD
+const DESTINATION_EVM_CHAIN = "ethereum-sepolia"; // axelar-id for eth testnet
+const RPC = "https://ethereum-sepolia-rpc.publicnode.com";
+// source: https://docs.uniswap.org/contracts/v4/deployments#sepolia-11155111
+const PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
+// source: https://developers.circle.com/stablecoins/usdc-contract-addresses#testnet
+const USDC = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
+
+// Factory address (spender must be Factory) => https://sepolia.etherscan.io/address/0x9F9684d7FA7318698a0030ca16ECC4a01944836b
+const FACTORY = "0x9F9684d7FA7318698a0030ca16ECC4a01944836b";
+// PRIVATE KEY of EOA
+const PK = process.env.PRIVATE_KEY;
+if (!PK) throw Error("PRIVATE_KEY is required");
 
 /**
  * Builds an Axelar GMP payload by ABI-encoding contract calls.
@@ -21,6 +40,7 @@ export const buildCreateAndDepositPayload = ({
   tokenOwner,
   permit,
   signature,
+  forAxelar = false,
 }: {
   ownerStr: string;
   tokenOwner: `0x${string}`;
@@ -30,8 +50,9 @@ export const buildCreateAndDepositPayload = ({
     deadline: bigint;
   };
   signature: `0x${string}`;
+  forAxelar?: boolean;
 }) => {
-  return encodeAbiParameters(
+  const abiEncodedData = encodeAbiParameters(
     [
       {
         type: "tuple",
@@ -75,6 +96,9 @@ export const buildCreateAndDepositPayload = ({
       },
     ],
   );
+
+  if (forAxelar) return Array.from(hexToBytes(abiEncodedData));
+  return abiEncodedData;
 };
 
 /**
@@ -196,21 +220,19 @@ const approveUsdc = async ({
  */
 
 const invokeFactoryContractDirectly = async ({
-  factoryAddr,
   signer,
   permit,
   sig65,
 }: {
-  factoryAddr: string;
   signer: Wallet;
   permit: PermitTransferFrom;
-  sig65: string;
+  sig65: `0x${string}`;
 }) => {
   const tokenOwner = (await signer.getAddress()) as `0x${string}`;
 
   // --- invoke Factory.testExecute(bytes) ---
   const FACTORY_ABI = ["function testExecute(bytes payload) external"];
-  const factory = new ethers.Contract(factoryAddr, FACTORY_ABI, signer);
+  const factory = new ethers.Contract(FACTORY, FACTORY_ABI, signer);
 
   const ownerStr = `agoric1${Date.now()}`; // to create a unique create2 addr everytime
 
@@ -225,7 +247,7 @@ const invokeFactoryContractDirectly = async ({
       nonce: permit.nonce as bigint,
       deadline: permit.deadline as bigint,
     },
-    signature: sig65 as `0x${string}`,
+    signature: sig65,
   });
 
   const tx = await factory.testExecute(encodedPayload);
@@ -234,23 +256,94 @@ const invokeFactoryContractDirectly = async ({
   console.log("✅ testExecute confirmed");
 };
 
-const main = async () => {
-  const RPC = "https://ethereum-sepolia-rpc.publicnode.com";
-  const PK = process.env.PRIVATE_KEY;
-  if (!PK) throw Error("PRIVATE_KEY is required");
+// Successful tx: https://sepolia.etherscan.io/tx/0xf79bc6d31c5403d918fcba9431498aee97e7e76b134c91ff2d054a2137add718#eventlog
+const createAndDepositViaAxelar = async ({
+  permit,
+  sig65,
+  tokenOwner,
+}: {
+  permit: PermitTransferFrom;
+  sig65: `0x${string}`;
+  tokenOwner: `0x${string}`;
+}) => {
+  const agoricSigner = await getSigner();
+  const accounts = await agoricSigner.getAccounts();
+  const agoricOwner = accounts[0].address;
+  console.log("Agoric Address:", agoricOwner);
 
+  const encodedPayload = buildCreateAndDepositPayload({
+    ownerStr: agoricOwner,
+    tokenOwner,
+    permit: {
+      permitted: {
+        token: permit.permitted.token as `0x${string}`,
+        amount: permit.permitted.amount as bigint,
+      },
+      nonce: permit.nonce as bigint,
+      deadline: permit.deadline as bigint,
+    },
+    signature: sig65,
+    forAxelar: true,
+  });
+
+  const axelarMemo: AxelarGmpOutgoingMemo = {
+    destination_chain: DESTINATION_EVM_CHAIN,
+    destination_address: FACTORY,
+    payload: encodedPayload as number[],
+    type: 1,
+    fee: {
+      amount: AXELAR_GAS_AMOUNT,
+      recipient: AXLEAR_GAS_RECEIVER,
+    },
+  };
+
+  const ibcPayload = [
+    {
+      typeUrl: "/ibc.applications.transfer.v1.MsgTransfer",
+      value: {
+        sender: agoricOwner,
+        receiver: addresses.AXELAR_GMP,
+        token: {
+          denom: "ubld",
+          amount: AXELAR_GAS_AMOUNT,
+        },
+        timeoutTimestamp: (Math.floor(Date.now() / 1000) + 600) * 1e9,
+        sourceChannel: channels.AGORIC_DEVNET_TO_AXELAR,
+        sourcePort: "transfer",
+        memo: JSON.stringify(axelarMemo),
+      },
+    },
+  ];
+
+  console.log("connecting with signer");
+  const signingClient = await SigningStargateClient.connectWithSigner(
+    urls.RPC_AGORIC_DEVNET,
+    agoricSigner,
+  );
+
+  const fee = {
+    gas: "1000000",
+    amount: [{ denom: "ubld", amount: "1000000" }],
+  };
+
+  console.log("Sign and Broadcast transaction...");
+  const response = await signingClient.signAndBroadcast(
+    agoricOwner,
+    ibcPayload,
+    fee,
+  );
+  console.log("RESPONSE:", response);
+};
+
+const hasFlag = (name: string) => process.argv.includes(`--${name}`);
+
+const main = async () => {
   const provider = new ethers.JsonRpcProvider(RPC);
+
   const signer = new ethers.Wallet(PK, provider);
+  const tokenOwner = (await signer.getAddress()) as `0x${string}`;
 
   const chainId = Number((await provider.getNetwork()).chainId);
-
-  // source: https://docs.uniswap.org/contracts/v4/deployments#sepolia-11155111
-  const PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
-  // source: https://developers.circle.com/stablecoins/usdc-contract-addresses#testnet
-  const USDC = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
-
-  // Factory address (spender must be Factory)
-  const FACTORY = "0x9F9684d7FA7318698a0030ca16ECC4a01944836b";
   const spender = FACTORY;
 
   const { permit, signature65, signature2098 } =
@@ -261,7 +354,7 @@ const main = async () => {
       token: USDC,
       amount: 1n * 1_000_000n,
       nonce: BigInt(Date.now()),
-      deadline: BigInt(Math.floor(Date.now() / 1000) + 60 * 2),
+      deadline: BigInt(Math.floor(Date.now() / 1000) + 60 * 7),
       spender,
     });
 
@@ -276,12 +369,23 @@ const main = async () => {
     signer,
   });
 
-  await invokeFactoryContractDirectly({
-    factoryAddr: FACTORY,
-    signer,
-    permit,
-    sig65: signature65,
-  });
+  const viaAxelar = hasFlag("viaAxelar"); // yarn permit --viaAxelar
+
+  if (viaAxelar) {
+    console.log("invoking via axelar");
+    await createAndDepositViaAxelar({
+      permit,
+      sig65: signature65 as `0x${string}`,
+      tokenOwner,
+    });
+  } else {
+    console.log("invoking via directly");
+    await invokeFactoryContractDirectly({
+      signer,
+      permit,
+      sig65: signature65 as `0x${string}`,
+    });
+  }
 };
 
 main().catch((e) => {
