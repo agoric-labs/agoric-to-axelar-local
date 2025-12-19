@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "permit": "vite-node agoric/create-permit2.ts",
+    "permit": "vite-node agoric/createAndDeposit.ts",
     "make-acc": "makeAccount=true node scripts/make-account.mjs",
     "get-addr": "node scripts/make-account.mjs",
     "setup": "node scripts/setup-gmp.mjs",

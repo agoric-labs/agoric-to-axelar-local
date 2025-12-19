@@ -58,7 +58,7 @@ error ContractCallFailed(string messageId, uint256 step);
 error InvalidSourceChain(string expected, string actual);
 
 // Payload that Factory receives from Axelar to create + deposit in a new Wallet
-struct CreateAndFundPayload {
+struct CreateAndDepositPayload {
     // the Agoric address string
     string ownerStr;
     // EVM address that signed the Permit2 EIP-712 (the token owner on this chain)
@@ -211,9 +211,9 @@ contract Factory is AxelarExecutable {
 
     // Added only for testing directly - should be removed when deploying to production
     function testExecute(bytes calldata payload) external {
-        CreateAndFundPayload memory p = abi.decode(
+        CreateAndDepositPayload memory p = abi.decode(
             payload,
-            (CreateAndFundPayload)
+            (CreateAndDepositPayload)
         );
 
         address smartWalletAddress = _createAndDeposit(
@@ -242,9 +242,9 @@ contract Factory is AxelarExecutable {
         }
 
         // Decode creation + deposit data sent from Agoric
-        CreateAndFundPayload memory p = abi.decode(
+        CreateAndDepositPayload memory p = abi.decode(
             payload,
-            (CreateAndFundPayload)
+            (CreateAndDepositPayload)
         );
 
         address smartWalletAddress = _createAndDeposit(
