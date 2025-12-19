@@ -264,7 +264,10 @@ const invokeFactoryContractDirectly = async ({
   console.log("✅ testExecute confirmed");
 };
 
-// Successful tx: https://sepolia.etherscan.io/tx/0xf79bc6d31c5403d918fcba9431498aee97e7e76b134c91ff2d054a2137add718#eventlog
+/**
+ * Sends a Permit2-based create-and-deposit request to the Factory contract
+ * via Axelar GMP from the Agoric chain.
+ */
 const createAndDepositViaAxelar = async ({
   permit,
   sig65,
@@ -362,7 +365,7 @@ const main = async () => {
       token: USDC,
       amount: 1n * 1_000_000n,
       nonce: BigInt(Date.now()),
-      deadline: BigInt(Math.floor(Date.now() / 1000) + 60 * 2), // valid for 2min
+      deadline: BigInt(Math.floor(Date.now() / 1000) + 60 * 7), // valid for 2min
       spender,
     });
 

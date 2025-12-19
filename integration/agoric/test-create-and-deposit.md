@@ -1,8 +1,69 @@
+Factory was deployed to Ethereum Sepolia with the createAndDeposit changes:
+[0x9F9684d7FA7318698a0030ca16ECC4a01944836b](https://sepolia.etherscan.io/address/0x9F9684d7FA7318698a0030ca16ECC4a01944836b)
+
+## Testing `createAndDeposit` via direct calls
+
+### Command
+
+```bash
+cd integration && yarn permit
+```
+
+### What this does
+
+- Creates a **Permit2 SignatureTransfer** permit with the Factory set as the spender
+- Approves **1 USDC** for the Permit2 contract
+- Invokes `Factory.testExecute(bytes)` directly (bypasses Axelar)
+
+### Why `testExecute` exists
+
+- It is a **test-only helper** added to the Factory
+- Allows rapid validation of Factory logic without requiring Axelar setup
+
+### Results
+
+- Multiple executions succeeded
+- Each run:
+  - Created a **CREATE2** smart wallet
+  - Funded the wallet with **1 USDC**
+
+### Example Transactions
+
+- [Tx1](https://sepolia.etherscan.io/tx/0x7fc50d775d3c5964a96e8baab9e828ab1f82deb4c92505ce0db5897639bf6a22)
+- [Tx2](https://sepolia.etherscan.io/tx/0xc894aca0d5389dd63d6006b946dc1d84ecce3bb4b3d96ff620a4e9af0499ee39)
+- [Tx3](https://sepolia.etherscan.io/tx/0x63052406f4557e3f41afef23ba2d70544589144f86e782800e8dce547e1d7caa)
+
+## Testing createAndDeposit via Axelar
+
+### Command
+
+```bash
+yarn permit --viaAxelar
+```
+
+### What it does
+
+- Uses an **off-chain script** to invoke **Axelar GMP**
+- Sends the same `createAndDeposit` payload via an Axelar GMP contract call
+- Does **not** call the Factory contract directly
+
+### Result
+
+- Successful `createAndDeposit` execution:
+  - https://sepolia.etherscan.io/tx/0xf79bc6d31c5403d918fcba9431498aee97e7e76b134c91ff2d054a2137add718
+
 ## Testing permit deadline
 
-- Ensure token deadline is set 2 minutes in `createAndDeposit.ts` line 365.
-- Run `yarn permit --wait`. When the `--wait` flag is passed, it waits 2 minutes before executing the contract call.
-- The transaction failed which was the expected result:
+### Command
+
+```bash
+yarn permit --wait
+```
+
+- The permit deadline is configured to **2 minutes** in `createAndDeposit.ts` line 365.
+- When the `--wait` flag is used, execution is delayed by **2 minutes** before invoking the Factory
+- This ensures the permit expires prior to the contract call
+- The transaction reverted as expected with an error during execution:
 
 ```bash
 $ yarn permit --wait
