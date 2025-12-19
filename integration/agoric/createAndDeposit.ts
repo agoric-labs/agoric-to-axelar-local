@@ -200,6 +200,8 @@ const approveUsdc = async ({
   );
 };
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
  * Directly invokes the Factory contract using encoded Permit2 payload.
  *
@@ -223,10 +225,12 @@ const invokeFactoryContractDirectly = async ({
   signer,
   permit,
   sig65,
+  waitBeforeCall,
 }: {
   signer: Wallet;
   permit: PermitTransferFrom;
   sig65: `0x${string}`;
+  waitBeforeCall: boolean;
 }) => {
   const tokenOwner = (await signer.getAddress()) as `0x${string}`;
 
@@ -236,6 +240,10 @@ const invokeFactoryContractDirectly = async ({
 
   const ownerStr = `agoric1${Date.now()}`; // to create a unique create2 addr everytime
 
+  if (waitBeforeCall) {
+    console.log("waiting 2min");
+    await sleep(2 * 60 * 1000);
+  }
   const encodedPayload = buildCreateAndDepositPayload({
     ownerStr,
     tokenOwner,
@@ -354,7 +362,7 @@ const main = async () => {
       token: USDC,
       amount: 1n * 1_000_000n,
       nonce: BigInt(Date.now()),
-      deadline: BigInt(Math.floor(Date.now() / 1000) + 60 * 7),
+      deadline: BigInt(Math.floor(Date.now() / 1000) + 60 * 2), // valid for 2min
       spender,
     });
 
@@ -380,10 +388,12 @@ const main = async () => {
     });
   } else {
     console.log("invoking via directly");
+    const waitBeforeCall = hasFlag("wait"); // yarn permit --wait
     await invokeFactoryContractDirectly({
       signer,
       permit,
       sig65: signature65 as `0x${string}`,
+      waitBeforeCall,
     });
   }
 };
