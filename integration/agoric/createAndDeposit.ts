@@ -129,30 +129,6 @@ const ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
 ];
 
-/**
- * Approves USDC for spending by the Permit2 contract.
- */
-
-const approveUsdc = async ({
-  usdcAddr,
-  permit2Addr,
-  amount,
-  signer,
-}: {
-  usdcAddr: string;
-  permit2Addr: string;
-  amount: bigint;
-  signer: Wallet;
-}) => {
-  const usdc = new ethers.Contract(usdcAddr, ERC20_ABI, signer);
-
-  await (await usdc.approve(permit2Addr, amount)).wait();
-  console.log(
-    "USDC allowance to Permit2 (after):",
-    (await usdc.allowance(await signer.getAddress(), permit2Addr)).toString(),
-  );
-};
-
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const FACTORY_ABI = ["function testExecute(bytes payload) external"];
