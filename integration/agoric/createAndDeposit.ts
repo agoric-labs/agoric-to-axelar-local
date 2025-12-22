@@ -443,6 +443,7 @@ const main = async ({
   now = Date.now,
 } = {}) => {
   const hasFlag = (name: string) => argv.includes(`--${name}`);
+  const [waitFlag, viaAxelar] = ["wait", "viaAxelar"].map(hasFlag);
 
   const provider = makeProvider(chain.rpc);
   const signer = new ethers.Wallet(requiredEnv(env, "PRIVATE_KEY"), provider);
@@ -454,14 +455,14 @@ const main = async ({
 
   const orch = makeEVMOrchestrator(signer);
 
-  const waitBeforeCall = hasFlag("wait") // yarn permit --wait
+  const waitBeforeCall = waitFlag // yarn permit --wait
     ? async () => {
         console.log("waiting 2min");
         await sleep(2 * 60 * 1000);
       }
     : async () => {};
 
-  const invokeFactory = hasFlag("viaAxelar") // yarn permit --viaAxelar
+  const invokeFactory = viaAxelar // yarn permit --viaAxelar
     ? createAndDepositViaAxelar
     : invokeFactoryContractDirectly;
 
