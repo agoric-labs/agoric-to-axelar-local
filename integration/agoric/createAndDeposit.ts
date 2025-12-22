@@ -442,11 +442,13 @@ const main = async ({
   makeProvider = (rpc: string) => new ethers.JsonRpcProvider(rpc),
   now = Date.now,
 } = {}) => {
+  // PRIVATE KEY of EOA
+  const PK = requiredEnv(env, "PRIVATE_KEY");
   const hasFlag = (name: string) => argv.includes(`--${name}`);
   const [waitFlag, viaAxelar] = ["wait", "viaAxelar"].map(hasFlag);
 
   const provider = makeProvider(chain.rpc);
-  const signer = new ethers.Wallet(requiredEnv(env, "PRIVATE_KEY"), provider);
+  const signer = new ethers.Wallet(PK, provider);
 
   const walletSigner = makeWalletSigner(provider, signer);
 
