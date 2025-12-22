@@ -195,7 +195,7 @@ type FlowContext = {
  * - Calls the Factory contract to create a new smart wallet
  * - Funds the wallet by consuming the Permit2 permit
  *
- * IMPORTANT:
+ * WARNING:
  * - This should only be used for testing.
  * - In production, the Factory is invoked via Axelar GMP, not directly.
  * - The signer must be the token owner and must have approved Permit2 beforehand.
