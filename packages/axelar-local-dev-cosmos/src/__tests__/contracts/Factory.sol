@@ -219,18 +219,23 @@ contract Factory is AxelarExecutable {
             revert InvalidSourceChain(EXPECTED_SOURCE_CHAIN, sourceChain);
         }
 
-        // Decode creation + deposit data sent from Agoric
-        CreateAndDepositPayload memory p = abi.decode(
-            payload,
-            (CreateAndDepositPayload)
-        );
+        address smartWalletAddress;
 
-        address smartWalletAddress = _createAndDeposit(
-            p.ownerStr,
-            p.tokenOwner,
-            p.permit,
-            p.signature
-        );
+        // Empty payload = simple wallet creation
+        if (payload.length == 0) {
+            smartWalletAddress = _createSmartWallet(sourceAddress);
+        } else {
+            CreateAndDepositPayload memory p = abi.decode(
+                payload,
+                (CreateAndDepositPayload)
+            );
+            smartWalletAddress = _createAndDeposit(
+                p.ownerStr,
+                p.tokenOwner,
+                p.permit,
+                p.signature
+            );
+        }
 
         emit SmartWalletCreated(
             smartWalletAddress,
