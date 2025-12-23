@@ -38,6 +38,8 @@ const config = {
   },
 } as const;
 
+const { freeze } = Object;
+
 /**
  * Builds an Axelar GMP payload by ABI-encoding contract calls.
  *
@@ -321,7 +323,7 @@ const makeUI = (
   }: { now: typeof Date.now; signer: Signer; ems: EVMMessageService },
 ) => {
   const { contracts } = chain;
-  return {
+  const self = freeze({
     async openPortfolio(amount: bigint) {
       const msNow = now();
       const permit: PermitTransferFrom = {
@@ -346,9 +348,41 @@ const makeUI = (
         values,
       );
 
+      await self.ensurePermit2Allowance(amount);
+
+      // not prototyped: the openPortfolio EIP-712 signature
+
       await ems.handleIntent("OpenPortfolio", { signature65, permit, amount });
     },
-  };
+
+    /**
+     * Extend USDC ERC20 API by approving withdraw by Permit2,
+     * unless already done.
+     *
+     * cf. https://medium.com/@rcontreraspimentel/a-comprehensive-guide-to-uniswaps-permit2-d945c7291d88
+     * Jan 16, 2023
+     */
+    async ensurePermit2Allowance(amount: bigint) {
+      await signer.withContract(contracts.USDC, ERC20_ABI, async (usdc) => {
+        const addr = await signer.getAddress();
+        const allowance = await usdc.allowance(addr, contracts.permit2);
+        const sufficient = allowance >= amount;
+        console.log(
+          "USDC allowance to Permit2",
+          allowance,
+          sufficient ? "sufficient" : "insuffient",
+        );
+        if (sufficient) return;
+
+        // XXX should use max amount?
+        await (await usdc.approve(contracts.permit2, amount)).wait();
+
+        const allowancePost = await usdc.allowance(addr, contracts.permit2);
+        console.log("USDC allowance to Permit2 (after):", allowancePost);
+      });
+    },
+  });
+  return self;
 };
 
 const makeEVMHandler = (
@@ -378,16 +412,6 @@ const makeEVMHandler = (
       console.log("sig2098 bytes:", (signature2098.length - 2) / 2);
 
       console.log("real EVM Handler would check sig, hand off to exo/flow");
-
-      await orch.withContract(contracts.USDC, ERC20_ABI, async (usdc) => {
-        await (await usdc.approve(contracts.permit2, amount)).wait();
-        console.log(
-          "USDC allowance to Permit2 (after):",
-          (
-            await usdc.allowance(await orch.getAddress(), contracts.permit2)
-          ).toString(),
-        );
-      });
 
       await waitBeforeCall?.();
 
