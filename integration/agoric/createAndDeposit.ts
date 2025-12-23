@@ -12,20 +12,33 @@ import { AxelarGmpOutgoingMemo } from "./types";
 import { SigningStargateClient } from "@cosmjs/stargate";
 import { addresses, channels, urls } from "./config";
 
-const AXLEAR_GAS_RECEIVER = "axelar1zl3rxpp70lmte2xr6c4lgske2fyuj3hupcsvcd"; // for testnets
-const AXELAR_GAS_AMOUNT = "20000000"; // 20 BLD
-const DESTINATION_EVM_CHAIN = "ethereum-sepolia"; // axelar-id for eth testnet
-const RPC = "https://ethereum-sepolia-rpc.publicnode.com";
-// source: https://docs.uniswap.org/contracts/v4/deployments#sepolia-11155111
-const PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
-// source: https://developers.circle.com/stablecoins/usdc-contract-addresses#testnet
-const USDC = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
+const config = {
+  ethereum: {
+    testnet: {
+      rpc: "https://ethereum-sepolia-rpc.publicnode.com",
+      contracts: {
+        /** source: https://docs.uniswap.org/contracts/v4/deployments#sepolia-11155111 */
+        permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        // Factory address (spender must be Factory) => https://sepolia.etherscan.io/address/0x9F9684d7FA7318698a0030ca16ECC4a01944836b
+        factory: "0x9F9684d7FA7318698a0030ca16ECC4a01944836b",
+        // source: https://developers.circle.com/stablecoins/usdc-contract-addresses#testnet
+        USDC: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+      },
+    },
+  },
+  // axelar testnet
+  axelar: {
+    contracts: {
+      gasReceiver: "axelar1zl3rxpp70lmte2xr6c4lgske2fyuj3hupcsvcd", // for testnets
+    },
+    chainIds: {
+      ethereum: "ethereum-sepolia",
+    },
+    gasEstimate: "20000000", // 20 BLD
+  },
+} as const;
 
-// Factory address (spender must be Factory) => https://sepolia.etherscan.io/address/0x9F9684d7FA7318698a0030ca16ECC4a01944836b
-const FACTORY = "0x9F9684d7FA7318698a0030ca16ECC4a01944836b";
-// PRIVATE KEY of EOA
-const PK = process.env.PRIVATE_KEY;
-if (!PK) throw Error("PRIVATE_KEY is required");
+const { freeze } = Object;
 
 /**
  * Builds an Axelar GMP payload by ABI-encoding contract calls.
@@ -40,7 +53,6 @@ export const buildCreateAndDepositPayload = ({
   tokenOwner,
   permit,
   signature,
-  forAxelar = false,
 }: {
   ownerStr: string;
   tokenOwner: `0x${string}`;
@@ -50,7 +62,6 @@ export const buildCreateAndDepositPayload = ({
     deadline: bigint;
   };
   signature: `0x${string}`;
-  forAxelar?: boolean;
 }) => {
   const abiEncodedData = encodeAbiParameters(
     [
@@ -97,7 +108,6 @@ export const buildCreateAndDepositPayload = ({
     ],
   );
 
-  if (forAxelar) return Array.from(hexToBytes(abiEncodedData));
   return abiEncodedData;
 };
 
@@ -115,92 +125,40 @@ const toEip2098 = (signature65: string): string => {
   return ethers.concat([sig.r, ethers.toBeHex(vsBig, 32)]);
 };
 
-/**
- * Build + sign a Permit2 SignatureTransfer permit, then compact the signature (EIP-2098).
- */
-const createPermit2SignatureTransferPermit = async ({
-  signer,
-  chainId,
-  permit2Address,
-  token,
-  amount,
-  nonce,
-  deadline,
-  spender, // <-- the contract that will call Permit2 to consume this signature
-}: {
-  signer: ethers.Signer;
-  chainId: number;
-  permit2Address: string;
-  token: string;
-  amount: bigint;
-  nonce: bigint;
-  deadline: bigint;
-  spender: string;
-}): Promise<{
-  permit: PermitTransferFrom;
-  signature65: string;
-  signature2098: string;
-  typedData: { domain: any; types: any; values: any };
-}> => {
-  const permit: PermitTransferFrom = {
-    permitted: { token, amount },
-    nonce,
-    deadline,
-    spender,
-  };
-
-  // Uniswap Permit2 SDK generates the correct EIP-712 typed data
-  const { domain, types, values } = SignatureTransfer.getPermitData(
-    permit,
-    permit2Address,
-    chainId,
-  );
-
-  // Sign EIP-712 (returns normal 65-byte signature)
-  const signature65 = await signer.signTypedData(domain as any, types, values);
-
-  // Convert to EIP-2098 compact signature (64 bytes)
-  const signature2098 = toEip2098(signature65);
-
-  return {
-    permit,
-    signature65,
-    signature2098,
-    typedData: { domain, types, values },
-  };
-};
-
-/**
- * Approves USDC for spending by the Permit2 contract.
- */
-
-const approveUsdc = async ({
-  usdcAddr,
-  permit2Addr,
-  amount,
-  signer,
-}: {
-  usdcAddr: string;
-  permit2Addr: string;
-  amount: bigint;
-  signer: Wallet;
-}) => {
-  const ERC20_ABI = [
-    "function approve(address spender, uint256 amount) returns (bool)",
-    "function allowance(address owner, address spender) view returns (uint256)",
-    "function balanceOf(address owner) view returns (uint256)",
-  ];
-
-  const usdc = new ethers.Contract(usdcAddr, ERC20_ABI, signer);
-
-  await (await usdc.approve(permit2Addr, amount)).wait();
-  console.log(
-    "USDC allowance to Permit2 (after):",
-    (await usdc.allowance(await signer.getAddress(), permit2Addr)).toString(),
-  );
-};
+const ERC20_ABI = [
+  "function approve(address spender, uint256 amount) returns (bool)",
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function balanceOf(address owner) view returns (uint256)",
+];
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const FACTORY_ABI = ["function testExecute(bytes payload) external"];
+
+const makeEVMOrchestrator = (signer: ethers.Wallet) => {
+  return {
+    getAddress: async () => (await signer.getAddress()) as `0x${string}`,
+
+    withContract: async <T>(
+      addr: `0x${string}`,
+      abi: string[],
+      callback: (it: ethers.Contract) => T,
+    ) => {
+      const contract = new ethers.Contract(addr, abi, signer);
+      const result = await callback(contract);
+      return result;
+    },
+  };
+};
+type EVMOrchestrator = ReturnType<typeof makeEVMOrchestrator>;
+
+type FlowContext = {
+  contracts: typeof config.ethereum.testnet.contracts;
+  permit: PermitTransferFrom;
+  sig65: `0x${string}`;
+  tokenOwner: `0x${string}`;
+  ownerStr: `${string}1${string}`;
+};
 
 /**
  * Directly invokes the Factory contract using encoded Permit2 payload.
@@ -215,74 +173,62 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * - Calls the Factory contract to create a new smart wallet
  * - Funds the wallet by consuming the Permit2 permit
  *
- * IMPORTANT:
+ * WARNING:
  * - This should only be used for testing.
  * - In production, the Factory is invoked via Axelar GMP, not directly.
  * - The signer must be the token owner and must have approved Permit2 beforehand.
  */
 
-const invokeFactoryContractDirectly = async ({
-  signer,
-  permit,
-  sig65,
-  waitBeforeCall,
-}: {
-  signer: Wallet;
-  permit: PermitTransferFrom;
-  sig65: `0x${string}`;
-  waitBeforeCall: boolean;
-}) => {
-  const tokenOwner = (await signer.getAddress()) as `0x${string}`;
-
-  // --- invoke Factory.testExecute(bytes) ---
-  const FACTORY_ABI = ["function testExecute(bytes payload) external"];
-  const factory = new ethers.Contract(FACTORY, FACTORY_ABI, signer);
-
-  const ownerStr = `agoric1${Date.now()}`; // to create a unique create2 addr everytime
-
-  if (waitBeforeCall) {
-    console.log("waiting 2min");
-    await sleep(2 * 60 * 1000);
-  }
-  const encodedPayload = buildCreateAndDepositPayload({
-    ownerStr,
+const invokeFactoryContractDirectly = async (
+  orch: EVMOrchestrator,
+  {
+    contracts = config.ethereum.testnet.contracts,
+    permit,
+    sig65,
     tokenOwner,
-    permit: {
-      permitted: {
-        token: permit.permitted.token as `0x${string}`,
-        amount: permit.permitted.amount as bigint,
-      },
-      nonce: permit.nonce as bigint,
-      deadline: permit.deadline as bigint,
-    },
-    signature: sig65,
-  });
+    ownerStr,
+  }: FlowContext,
+) => {
+  console.log("invoking via directly");
 
-  const tx = await factory.testExecute(encodedPayload);
-  console.log("testExecute tx:", tx.hash);
-  await tx.wait();
-  console.log("✅ testExecute confirmed");
+  await orch.withContract(contracts.factory, FACTORY_ABI, async (factory) => {
+    // --- invoke Factory.testExecute(bytes) ---
+
+    const encodedPayload = buildCreateAndDepositPayload({
+      ownerStr,
+      tokenOwner,
+      permit: {
+        permitted: {
+          token: permit.permitted.token as `0x${string}`,
+          amount: permit.permitted.amount as bigint,
+        },
+        nonce: permit.nonce as bigint,
+        deadline: permit.deadline as bigint,
+      },
+      signature: sig65,
+    });
+
+    const tx = await factory.testExecute(encodedPayload);
+    console.log("testExecute tx:", tx.hash);
+    await tx.wait();
+    console.log("✅ testExecute confirmed");
+  });
 };
 
 /**
  * Sends a Permit2-based create-and-deposit request to the Factory contract
  * via Axelar GMP from the Agoric chain.
  */
-const createAndDepositViaAxelar = async ({
-  permit,
-  sig65,
-  tokenOwner,
-}: {
-  permit: PermitTransferFrom;
-  sig65: `0x${string}`;
-  tokenOwner: `0x${string}`;
-}) => {
+const createAndDepositViaAxelar = async (
+  orch: EVMOrchestrator,
+  { permit, sig65, tokenOwner, contracts }: FlowContext,
+) => {
   const agoricSigner = await getSigner();
   const accounts = await agoricSigner.getAccounts();
   const agoricOwner = accounts[0].address;
   console.log("Agoric Address:", agoricOwner);
 
-  const encodedPayload = buildCreateAndDepositPayload({
+  const abiEncodedData = buildCreateAndDepositPayload({
     ownerStr: agoricOwner,
     tokenOwner,
     permit: {
@@ -294,17 +240,17 @@ const createAndDepositViaAxelar = async ({
       deadline: permit.deadline as bigint,
     },
     signature: sig65,
-    forAxelar: true,
   });
+  const encodedPayload = Array.from(hexToBytes(abiEncodedData));
 
   const axelarMemo: AxelarGmpOutgoingMemo = {
-    destination_chain: DESTINATION_EVM_CHAIN,
-    destination_address: FACTORY,
-    payload: encodedPayload as number[],
+    destination_chain: config.axelar.chainIds.ethereum,
+    destination_address: contracts.factory,
+    payload: encodedPayload,
     type: 1,
     fee: {
-      amount: AXELAR_GAS_AMOUNT,
-      recipient: AXLEAR_GAS_RECEIVER,
+      amount: config.axelar.gasEstimate,
+      recipient: config.axelar.contracts.gasReceiver,
     },
   };
 
@@ -316,7 +262,7 @@ const createAndDepositViaAxelar = async ({
         receiver: addresses.AXELAR_GMP,
         token: {
           denom: "ubld",
-          amount: AXELAR_GAS_AMOUNT,
+          amount: config.axelar.gasEstimate,
         },
         timeoutTimestamp: (Math.floor(Date.now() / 1000) + 600) * 1e9,
         sourceChannel: channels.AGORIC_DEVNET_TO_AXELAR,
@@ -346,59 +292,192 @@ const createAndDepositViaAxelar = async ({
   console.log("RESPONSE:", response);
 };
 
-const hasFlag = (name: string) => process.argv.includes(`--${name}`);
+const makeWalletSigner = (provider: ethers.Provider, signer: ethers.Wallet) => {
+  return {
+    getChainId: async () => Number((await provider.getNetwork()).chainId),
+    getAddress: async () => (await signer.getAddress()) as `0x${string}`,
+    /** Sign EIP-712 (returns normal 65-byte signature) */
+    signTypedData: (...params: Parameters<typeof signer.signTypedData>) =>
+      signer.signTypedData(...params),
+    withContract: async <T>(
+      addr: `0x${string}`,
+      abi: string[],
+      callback: (it: ethers.Contract) => T,
+    ) => {
+      const contract = new ethers.Contract(addr, abi, signer);
+      const result = await callback(contract);
+      return result;
+    },
+  };
+};
+type Signer = ReturnType<typeof makeWalletSigner>;
 
-const main = async () => {
-  const provider = new ethers.JsonRpcProvider(RPC);
+const addMinutes = (t: number, n: number) => Math.floor(t / 1000) + 60 * n;
 
-  const signer = new ethers.Wallet(PK, provider);
-  const tokenOwner = (await signer.getAddress()) as `0x${string}`;
-
-  const chainId = Number((await provider.getNetwork()).chainId);
-  const spender = FACTORY;
-
-  const { permit, signature65, signature2098 } =
-    await createPermit2SignatureTransferPermit({
-      signer,
-      chainId,
-      permit2Address: PERMIT2,
-      token: USDC,
-      amount: 1n * 1_000_000n,
-      nonce: BigInt(Date.now()),
-      deadline: BigInt(Math.floor(Date.now() / 1000) + 60 * 7), // valid for 2min
-      spender,
-    });
-
-  console.log({ permit });
-  console.log("sig65 bytes:", (signature65.length - 2) / 2);
-  console.log("sig2098 bytes:", (signature2098.length - 2) / 2);
-
-  await approveUsdc({
-    usdcAddr: USDC,
-    permit2Addr: PERMIT2,
-    amount: 1000_000n,
+const makeUI = (
+  chain: typeof config.ethereum.testnet,
+  {
+    now,
     signer,
+    ems,
+  }: { now: typeof Date.now; signer: Signer; ems: EVMMessageService },
+) => {
+  const { contracts } = chain;
+  const self = freeze({
+    async openPortfolio(amount: bigint) {
+      const msNow = now();
+      const permit: PermitTransferFrom = {
+        permitted: { token: contracts.USDC, amount },
+        nonce: BigInt(msNow),
+        deadline: BigInt(addMinutes(msNow, 7)), // valid for 2min
+        spender: contracts.factory,
+      };
+
+      const chainId = await signer.getChainId();
+      // Uniswap Permit2 SDK generates the correct EIP-712 typed data
+      const { domain, types, values } = SignatureTransfer.getPermitData(
+        permit,
+        contracts.permit2,
+        chainId,
+      );
+
+      // Sign EIP-712 (returns normal 65-byte signature)
+      const signature65 = await signer.signTypedData(
+        domain as any,
+        types,
+        values,
+      );
+
+      await self.ensurePermit2Allowance(amount);
+
+      // not prototyped: the openPortfolio EIP-712 signature
+
+      await ems.handleIntent("OpenPortfolio", { signature65, permit, amount });
+    },
+
+    /**
+     * Extend USDC ERC20 API by approving withdraw by Permit2,
+     * unless already done.
+     *
+     * cf. https://medium.com/@rcontreraspimentel/a-comprehensive-guide-to-uniswaps-permit2-d945c7291d88
+     * Jan 16, 2023
+     */
+    async ensurePermit2Allowance(amount: bigint) {
+      await signer.withContract(contracts.USDC, ERC20_ABI, async (usdc) => {
+        const addr = await signer.getAddress();
+        const allowance = await usdc.allowance(addr, contracts.permit2);
+        const sufficient = allowance >= amount;
+        console.log(
+          "USDC allowance to Permit2",
+          allowance,
+          sufficient ? "sufficient" : "insuffient",
+        );
+        if (sufficient) return;
+
+        // XXX should use max amount?
+        await (await usdc.approve(contracts.permit2, amount)).wait();
+
+        const allowancePost = await usdc.allowance(addr, contracts.permit2);
+        console.log("USDC allowance to Permit2 (after):", allowancePost);
+      });
+    },
   });
+  return self;
+};
 
-  const viaAxelar = hasFlag("viaAxelar"); // yarn permit --viaAxelar
+const makeEVMHandler = (
+  orch: EVMOrchestrator,
+  {
+    contracts,
+    ownerStr,
+    invokeFactory,
+    waitBeforeCall,
+  }: {
+    contracts: typeof config.ethereum.testnet.contracts;
+    ownerStr: `${string}1${string}`;
+    invokeFactory: typeof invokeFactoryContractDirectly;
+    waitBeforeCall?: () => Promise<void>;
+  },
+) => {
+  return {
+    async handleIntent(
+      _intent: "OpenPortfolio",
+      { signature65, permit, amount },
+    ) {
+      // Convert to EIP-2098 compact signature (64 bytes)
+      const signature2098 = toEip2098(signature65);
 
-  if (viaAxelar) {
-    console.log("invoking via axelar");
-    await createAndDepositViaAxelar({
-      permit,
-      sig65: signature65 as `0x${string}`,
-      tokenOwner,
-    });
-  } else {
-    console.log("invoking via directly");
-    const waitBeforeCall = hasFlag("wait"); // yarn permit --wait
-    await invokeFactoryContractDirectly({
-      signer,
-      permit,
-      sig65: signature65 as `0x${string}`,
-      waitBeforeCall,
-    });
-  }
+      console.log({ permit });
+      console.log("sig65 bytes:", (signature65.length - 2) / 2);
+      console.log("sig2098 bytes:", (signature2098.length - 2) / 2);
+
+      console.log("real EVM Handler would check sig, hand off to exo/flow");
+
+      await waitBeforeCall?.();
+
+      const tokenOwner = await orch.getAddress();
+      await invokeFactory(orch, {
+        contracts,
+        tokenOwner,
+        permit,
+        sig65: signature65 as `0x${string}`,
+        ownerStr,
+      });
+    },
+  };
+};
+type EVMHandler = ReturnType<typeof makeEVMHandler>;
+type EVMMessageService = EVMHandler; // transparent, for now
+
+const requiredEnv = (env: Record<string, string | undefined>, name: string) => {
+  const value = env[name];
+  if (!value) throw Error(`${name} is required`);
+  return value;
+};
+
+const main = async ({
+  argv = process.argv,
+  env = process.env,
+  chain = config.ethereum.testnet,
+  makeProvider = (rpc: string) => new ethers.JsonRpcProvider(rpc),
+  now = Date.now,
+} = {}) => {
+  // PRIVATE KEY of EOA
+  const PK = requiredEnv(env, "PRIVATE_KEY");
+  const hasFlag = (name: string) => argv.includes(`--${name}`);
+  const [waitFlag, viaAxelar] = ["wait", "viaAxelar"].map(hasFlag);
+
+  const provider = makeProvider(chain.rpc);
+  const signer = new ethers.Wallet(PK, provider);
+
+  const walletSigner = makeWalletSigner(provider, signer);
+
+  // to create a unique create2 addr everytime
+  const ownerStr = `agoric1${now()}` as const;
+
+  const orch = makeEVMOrchestrator(signer);
+
+  const waitBeforeCall = waitFlag // yarn permit --wait
+    ? async () => {
+        console.log("waiting 2min");
+        await sleep(2 * 60 * 1000);
+      }
+    : async () => {};
+
+  const invokeFactory = viaAxelar // yarn permit --viaAxelar
+    ? createAndDepositViaAxelar
+    : invokeFactoryContractDirectly;
+
+  // treat EVM Handler as EVM Message Service
+  // in prod, the former is off-chain while the latter is on chain
+  const ems = makeEVMHandler(orch, {
+    contracts: chain.contracts,
+    ownerStr,
+    waitBeforeCall,
+    invokeFactory,
+  });
+  const ui = makeUI(chain, { now, signer: walletSigner, ems });
+  await ui.openPortfolio(1n * 1_000_000n);
 };
 
 main().catch((e) => {
