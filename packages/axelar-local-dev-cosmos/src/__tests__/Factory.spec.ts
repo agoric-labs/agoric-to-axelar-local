@@ -2,6 +2,9 @@ import AxelarGasService from "@axelar-network/axelar-cgp-solidity/artifacts/cont
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { keccak256, stringToHex, toBytes } from "viem";
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import type { Contract, LogDescription, Log } from "ethers";
+import "@nomicfoundation/hardhat-chai-matchers";
 import {
   approveMessage,
   constructContractCall,
@@ -34,9 +37,9 @@ const computeCreate2Address = async (
 };
 
 const createRemoteEVMAccount = async (
-  axelarGatewayMock,
-  ownerAddress,
-  sourceAddress,
+  axelarGatewayMock: Contract,
+  ownerAddress: string,
+  sourceAddress: string,
 ) => {
   const WalletFactory = await ethers.getContractFactory("Wallet");
   const wallet = await WalletFactory.deploy(
@@ -49,7 +52,11 @@ const createRemoteEVMAccount = async (
 };
 
 describe("Factory", () => {
-  let owner, addr1, factory, axelarGatewayMock, axelarGasServiceMock;
+  let owner: HardhatEthersSigner,
+    addr1: HardhatEthersSigner,
+    factory: Contract,
+    axelarGatewayMock: Contract,
+    axelarGasServiceMock: Contract;
 
   const permit2Mock = "0x31c2F6fcFf4F8759b3Bd5Bf0e1084A055615c768";
 
@@ -132,14 +139,16 @@ describe("Factory", () => {
     const receipt = await provider.getTransactionReceipt(tx.hash);
     const iface = (await ethers.getContractFactory("Factory")).interface;
     const receivedEvent = receipt?.logs
-      .map((log) => {
+      .map((log: Log) => {
         try {
           return iface.parseLog(log);
         } catch {
           return null;
         }
       })
-      .find((parsed) => parsed && parsed.name === "Received");
+      .find(
+        (parsed: LogDescription | null) => parsed && parsed.name === "Received",
+      );
 
     expect(receivedEvent).to.not.be.undefined;
     expect(receivedEvent?.args.sender).to.equal(owner.address);
@@ -242,14 +251,17 @@ describe("Factory", () => {
 
     // Check CallStatus events for each call
     const callStatusEvents = receipt?.logs
-      .map((log) => {
+      .map((log: Log) => {
         try {
           return walletInterface.parseLog(log);
         } catch {
           return null;
         }
       })
-      .filter((parsed) => parsed && parsed.name === "CallStatus");
+      .filter(
+        (parsed: LogDescription | null) =>
+          parsed && parsed.name === "CallStatus",
+      );
 
     expect(callStatusEvents).to.have.lengthOf(2);
     expect(callStatusEvents[0]?.args.callIndex).to.equal(0);
