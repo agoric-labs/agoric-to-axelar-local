@@ -56,9 +56,8 @@ describe("Factory", () => {
     addr1: HardhatEthersSigner,
     factory: Contract,
     axelarGatewayMock: Contract,
-    axelarGasServiceMock: Contract;
-
-  const permit2Mock = "0x31c2F6fcFf4F8759b3Bd5Bf0e1084A055615c768";
+    axelarGasServiceMock: Contract,
+    permit2Mock: Contract;
 
   const abiCoder = new ethers.AbiCoder();
 
@@ -101,11 +100,15 @@ describe("Factory", () => {
       tokenDeployer.target,
     );
 
+    const MockPermit2Factory = await ethers.getContractFactory("MockPermit2");
+    permit2Mock = await MockPermit2Factory.deploy();
+    await permit2Mock.waitForDeployment();
+
     const Contract = await ethers.getContractFactory("Factory");
     factory = await Contract.deploy(
       axelarGatewayMock.target,
       axelarGasServiceMock.target,
-      permit2Mock,
+      permit2Mock.target,
     );
     await factory.waitForDeployment();
 
@@ -361,5 +364,367 @@ describe("Factory", () => {
     await expect(
       factory.execute(commandId, wrongSourceChain, sourceAddr, payload),
     ).to.be.revertedWithCustomError(factory, "InvalidSourceChain");
+  });
+
+  it("should create wallet and deposit tokens using Permit2", async () => {
+    const commandId = getCommandId();
+    const uniqueOwner = "agoric1permit2test001";
+
+    // Deploy a mock ERC20 token
+    const MockERC20Factory = await ethers.getContractFactory("MockERC20");
+    const mockToken = await MockERC20Factory.deploy("Mock Token", "MOCK", 18);
+    await mockToken.waitForDeployment();
+
+    // Mint tokens to addr1 (the tokenOwner)
+    const depositAmount = ethers.parseEther("100");
+    await mockToken.mint(addr1.address, depositAmount);
+    expect(await mockToken.balanceOf(addr1.address)).to.equal(depositAmount);
+
+    // Approve Permit2 to spend tokens on behalf of addr1
+    await mockToken.connect(addr1).approve(permit2Mock.target, depositAmount);
+
+    // Prepare Permit2 permit struct
+    const permit = {
+      permitted: {
+        token: await mockToken.getAddress(),
+        amount: depositAmount,
+      },
+      nonce: 1,
+      deadline: Math.floor(Date.now() / 1000) + 5 * 60, // 5 min from now
+    };
+
+    // Create a mock signature (MockPermit2 validates length but not actual signature)
+    const mockSignature = ethers.hexlify(ethers.randomBytes(65));
+
+    // Encode CreateAndDepositPayload
+    const createAndDepositPayload = abiCoder.encode(
+      [
+        "tuple(string ownerStr, address tokenOwner, tuple(tuple(address token, uint256 amount) permitted, uint256 nonce, uint256 deadline) permit, bytes signature)",
+      ],
+      [
+        {
+          ownerStr: uniqueOwner,
+          tokenOwner: addr1.address,
+          permit: permit,
+          signature: mockSignature,
+        },
+      ],
+    );
+
+    const payloadHash = keccak256(toBytes(createAndDepositPayload));
+
+    await approveMessage({
+      commandId,
+      from: sourceChain,
+      sourceAddress: uniqueOwner,
+      targetAddress: factory.target,
+      payload: payloadHash,
+      owner,
+      AxelarGateway: axelarGatewayMock,
+      abiCoder,
+    });
+
+    // Compute the expected CREATE2 address
+    const expectedWalletAddress = await computeCreate2Address(
+      factory.target.toString(),
+      axelarGatewayMock.target.toString(),
+      axelarGasServiceMock.target.toString(),
+      uniqueOwner,
+    );
+
+    const tx = await factory.execute(
+      commandId,
+      sourceChain,
+      uniqueOwner,
+      createAndDepositPayload,
+    );
+
+    // Verify SmartWalletCreated event was emitted
+    await expect(tx)
+      .to.emit(factory, "SmartWalletCreated")
+      .withArgs(expectedWalletAddress, uniqueOwner, "agoric", uniqueOwner);
+
+    // Verify tokens were transferred to the new wallet
+    expect(await mockToken.balanceOf(expectedWalletAddress)).to.equal(
+      depositAmount,
+    );
+    expect(await mockToken.balanceOf(addr1.address)).to.equal(0);
+  });
+
+  it("should fail createAndDeposit when deadline has expired", async () => {
+    const commandId = getCommandId();
+    const uniqueOwner = "agoric1expiredtest002";
+
+    const MockERC20Factory = await ethers.getContractFactory("MockERC20");
+    const mockToken = await MockERC20Factory.deploy("Mock Token", "MOCK", 18);
+    await mockToken.waitForDeployment();
+
+    const depositAmount = ethers.parseEther("100");
+    await mockToken.mint(addr1.address, depositAmount);
+    await mockToken.connect(addr1).approve(permit2Mock.target, depositAmount);
+
+    const permit = {
+      permitted: {
+        token: await mockToken.getAddress(),
+        amount: depositAmount,
+      },
+      nonce: 10,
+      deadline: Math.floor(Date.now() / 1000) - 60 * 60, // Expired - substract 1 hour from current time
+    };
+
+    const mockSignature = ethers.hexlify(ethers.randomBytes(65));
+
+    const createAndDepositPayload = abiCoder.encode(
+      [
+        "tuple(string ownerStr, address tokenOwner, tuple(tuple(address token, uint256 amount) permitted, uint256 nonce, uint256 deadline) permit, bytes signature)",
+      ],
+      [
+        {
+          ownerStr: uniqueOwner,
+          tokenOwner: addr1.address,
+          permit: permit,
+          signature: mockSignature,
+        },
+      ],
+    );
+
+    const payloadHash = keccak256(toBytes(createAndDepositPayload));
+
+    await approveMessage({
+      commandId,
+      from: sourceChain,
+      sourceAddress: uniqueOwner,
+      targetAddress: factory.target,
+      payload: payloadHash,
+      owner,
+      AxelarGateway: axelarGatewayMock,
+      abiCoder,
+    });
+
+    await expect(
+      factory.execute(
+        commandId,
+        sourceChain,
+        uniqueOwner,
+        createAndDepositPayload,
+      ),
+    ).to.be.revertedWithCustomError(permit2Mock, "SignatureExpired");
+  });
+
+  it("should fail createAndDeposit when nonce is reused", async () => {
+    const commandId1 = getCommandId();
+    const commandId2 = getCommandId();
+
+    const MockERC20Factory = await ethers.getContractFactory("MockERC20");
+    const mockToken = await MockERC20Factory.deploy("Mock Token", "MOCK", 18);
+    await mockToken.waitForDeployment();
+
+    const depositAmount = ethers.parseEther("50");
+    await mockToken.mint(addr1.address, depositAmount * 2n);
+    await mockToken
+      .connect(addr1)
+      .approve(permit2Mock.target, depositAmount * 2n);
+
+    const reusedNonce = 100;
+    const deadline = Math.floor(Date.now() / 1000) + 3600;
+
+    // First transaction with nonce 100
+    const permit1 = {
+      permitted: {
+        token: await mockToken.getAddress(),
+        amount: depositAmount,
+      },
+      nonce: reusedNonce,
+      deadline: deadline,
+    };
+
+    const mockSignature1 = ethers.hexlify(ethers.randomBytes(65));
+
+    const payload1 = abiCoder.encode(
+      [
+        "tuple(string ownerStr, address tokenOwner, tuple(tuple(address token, uint256 amount) permitted, uint256 nonce, uint256 deadline) permit, bytes signature)",
+      ],
+      [
+        {
+          ownerStr: "agoric1user1",
+          tokenOwner: addr1.address,
+          permit: permit1,
+          signature: mockSignature1,
+        },
+      ],
+    );
+
+    const payloadHash1 = keccak256(toBytes(payload1));
+
+    await approveMessage({
+      commandId: commandId1,
+      from: sourceChain,
+      sourceAddress: "agoric1user1",
+      targetAddress: factory.target,
+      payload: payloadHash1,
+      owner,
+      AxelarGateway: axelarGatewayMock,
+      abiCoder,
+    });
+
+    // First transaction should succeed
+    await factory.execute(commandId1, sourceChain, "agoric1user1", payload1);
+
+    // Second transaction with the SAME nonce 100
+    const permit2 = {
+      permitted: {
+        token: await mockToken.getAddress(),
+        amount: depositAmount,
+      },
+      nonce: reusedNonce,
+      deadline: deadline,
+    };
+
+    const mockSignature2 = ethers.hexlify(ethers.randomBytes(65));
+
+    const payload2 = abiCoder.encode(
+      [
+        "tuple(string ownerStr, address tokenOwner, tuple(tuple(address token, uint256 amount) permitted, uint256 nonce, uint256 deadline) permit, bytes signature)",
+      ],
+      [
+        {
+          ownerStr: "agoric1user2",
+          tokenOwner: addr1.address,
+          permit: permit2,
+          signature: mockSignature2,
+        },
+      ],
+    );
+
+    const payloadHash2 = keccak256(toBytes(payload2));
+
+    await approveMessage({
+      commandId: commandId2,
+      from: sourceChain,
+      sourceAddress: "agoric1user2",
+      targetAddress: factory.target,
+      payload: payloadHash2,
+      owner,
+      AxelarGateway: axelarGatewayMock,
+      abiCoder,
+    });
+
+    // Second transaction should fail due to nonce reuse
+    await expect(
+      factory.execute(commandId2, sourceChain, "agoric1user2", payload2),
+    ).to.be.revertedWithCustomError(permit2Mock, "InvalidNonce");
+  });
+
+  it("should correctly distinguish between empty and non-empty payload", async () => {
+    const commandId1 = getCommandId();
+    const commandId2 = getCommandId();
+
+    // Test 1: Empty payload should trigger simple wallet creation
+    const emptyPayload = abiCoder.encode([], []);
+    const emptyPayloadHash = keccak256(toBytes(emptyPayload));
+
+    const sourceAddress = "agoric1testuser123";
+
+    await approveMessage({
+      commandId: commandId1,
+      from: sourceChain,
+      sourceAddress,
+      targetAddress: factory.target,
+      payload: emptyPayloadHash,
+      owner,
+      AxelarGateway: axelarGatewayMock,
+      abiCoder,
+    });
+
+    const expectedWalletAddress1 = await computeCreate2Address(
+      factory.target.toString(),
+      axelarGatewayMock.target.toString(),
+      axelarGasServiceMock.target.toString(),
+      sourceAddress,
+    );
+
+    const tx1 = await factory.execute(
+      commandId1,
+      sourceChain,
+      sourceAddress,
+      emptyPayload,
+    );
+
+    await expect(tx1)
+      .to.emit(factory, "SmartWalletCreated")
+      .withArgs(expectedWalletAddress1, sourceAddress, "agoric", sourceAddress);
+
+    // Test 2: Non-empty payload should trigger createAndDeposit flow
+    const MockERC20Factory = await ethers.getContractFactory("MockERC20");
+    const mockToken = await MockERC20Factory.deploy("Mock Token", "MOCK", 18);
+    await mockToken.waitForDeployment();
+
+    const depositAmount = ethers.parseEther("50");
+    await mockToken.mint(addr1.address, depositAmount);
+    await mockToken.connect(addr1).approve(permit2Mock.target, depositAmount);
+
+    const ownerStr = "agoric1testuser456";
+
+    const permit = {
+      permitted: {
+        token: await mockToken.getAddress(),
+        amount: depositAmount,
+      },
+      nonce: 200,
+      deadline: Math.floor(Date.now() / 1000) + 60 * 60,
+    };
+
+    const mockSignature = ethers.hexlify(ethers.randomBytes(65));
+
+    const nonEmptyPayload = abiCoder.encode(
+      [
+        "tuple(string ownerStr, address tokenOwner, tuple(tuple(address token, uint256 amount) permitted, uint256 nonce, uint256 deadline) permit, bytes signature)",
+      ],
+      [
+        {
+          ownerStr,
+          tokenOwner: addr1.address,
+          permit: permit,
+          signature: mockSignature,
+        },
+      ],
+    );
+
+    const nonEmptyPayloadHash = keccak256(toBytes(nonEmptyPayload));
+
+    await approveMessage({
+      commandId: commandId2,
+      from: sourceChain,
+      sourceAddress: ownerStr,
+      targetAddress: factory.target,
+      payload: nonEmptyPayloadHash,
+      owner,
+      AxelarGateway: axelarGatewayMock,
+      abiCoder,
+    });
+
+    const expectedWalletAddress2 = await computeCreate2Address(
+      factory.target.toString(),
+      axelarGatewayMock.target.toString(),
+      axelarGasServiceMock.target.toString(),
+      ownerStr,
+    );
+
+    // This should succeed and create wallet + deposit tokens
+    const tx2 = await factory.execute(
+      commandId2,
+      sourceChain,
+      ownerStr,
+      nonEmptyPayload,
+    );
+
+    await expect(tx2)
+      .to.emit(factory, "SmartWalletCreated")
+      .withArgs(expectedWalletAddress2, ownerStr, "agoric", ownerStr);
+
+    // Verify tokens were deposited
+    expect(await mockToken.balanceOf(expectedWalletAddress2)).to.equal(
+      depositAmount,
+    );
   });
 });
