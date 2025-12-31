@@ -5,12 +5,17 @@
  */
 
 import { ethers, Wallet } from "ethers";
-import { SignatureTransfer, PermitTransferFrom } from "@uniswap/permit2-sdk";
+import {
+  SignatureTransfer,
+  PermitBatchTransferFrom,
+} from "@uniswap/permit2-sdk";
 import { encodeAbiParameters, hexToBytes } from "viem";
 import { getSigner } from "./axelar-support";
 import { AxelarGmpOutgoingMemo } from "./types";
 import { SigningStargateClient } from "@cosmjs/stargate";
 import { addresses, channels, urls } from "./config";
+
+const SMART_WALLET_OWNER = "agoric1y3e3mlnrkuh6j2qcnlrtap42j8mzw240vwr74j";
 
 const config = {
   ethereum: {
@@ -19,8 +24,8 @@ const config = {
       contracts: {
         /** source: https://docs.uniswap.org/contracts/v4/deployments#sepolia-11155111 */
         permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
-        // Factory address (spender must be Factory) => https://sepolia.etherscan.io/address/0x9F9684d7FA7318698a0030ca16ECC4a01944836b
-        factory: "0x9F9684d7FA7318698a0030ca16ECC4a01944836b",
+        // Factory address (spender must be Factory) => https://sepolia.etherscan.io/address/0x3534aC7177F6D3e5A647551d736B21eB443b3097
+        factory: "0x7bCB9A7Fcf5c18f617f6200915cB0269c032e30C",
         // source: https://developers.circle.com/stablecoins/usdc-contract-addresses#testnet
         USDC: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
       },
@@ -49,18 +54,22 @@ const { freeze } = Object;
  */
 
 export const buildCreateAndDepositPayload = ({
-  ownerStr,
+  lcaOwner,
   tokenOwner,
   permit,
+  witness,
+  witnessTypeString,
   signature,
 }: {
-  ownerStr: string;
+  lcaOwner: string;
   tokenOwner: `0x${string}`;
   permit: {
-    permitted: { token: `0x${string}`; amount: bigint };
+    permitted: Array<{ token: `0x${string}`; amount: bigint }>;
     nonce: bigint;
     deadline: bigint;
   };
+  witness: `0x${string}`;
+  witnessTypeString: string;
   signature: `0x${string}`;
 }) => {
   const abiEncodedData = encodeAbiParameters(
@@ -69,7 +78,7 @@ export const buildCreateAndDepositPayload = ({
         type: "tuple",
         name: "p",
         components: [
-          { name: "ownerStr", type: "string" },
+          { name: "lcaOwner", type: "string" },
           { name: "tokenOwner", type: "address" },
           {
             name: "permit",
@@ -77,7 +86,7 @@ export const buildCreateAndDepositPayload = ({
             components: [
               {
                 name: "permitted",
-                type: "tuple",
+                type: "tuple[]",
                 components: [
                   { name: "token", type: "address" },
                   { name: "amount", type: "uint256" },
@@ -87,22 +96,23 @@ export const buildCreateAndDepositPayload = ({
               { name: "deadline", type: "uint256" },
             ],
           },
+          { name: "witness", type: "bytes32" },
+          { name: "witnessTypeString", type: "string" },
           { name: "signature", type: "bytes" },
         ],
       },
     ],
     [
       {
-        ownerStr,
+        lcaOwner,
         tokenOwner,
         permit: {
-          permitted: {
-            token: permit.permitted.token,
-            amount: permit.permitted.amount,
-          },
+          permitted: permit.permitted,
           nonce: permit.nonce,
           deadline: permit.deadline,
         },
+        witness,
+        witnessTypeString,
         signature,
       },
     ],
@@ -154,10 +164,12 @@ type EVMOrchestrator = ReturnType<typeof makeEVMOrchestrator>;
 
 type FlowContext = {
   contracts: typeof config.ethereum.testnet.contracts;
-  permit: PermitTransferFrom;
+  permit: PermitBatchTransferFrom;
   sig65: `0x${string}`;
   tokenOwner: `0x${string}`;
-  ownerStr: `${string}1${string}`;
+  lcaOwner: string;
+  witness: `0x${string}`;
+  witnessTypeString: string;
 };
 
 /**
@@ -186,25 +198,29 @@ const invokeFactoryContractDirectly = async (
     permit,
     sig65,
     tokenOwner,
-    ownerStr,
+    lcaOwner,
+    witness,
+    witnessTypeString,
   }: FlowContext,
 ) => {
-  console.log("invoking via directly");
+  console.log("invoking Factory.testExecute directly");
 
   await orch.withContract(contracts.factory, FACTORY_ABI, async (factory) => {
     // --- invoke Factory.testExecute(bytes) ---
 
     const encodedPayload = buildCreateAndDepositPayload({
-      ownerStr,
+      lcaOwner,
       tokenOwner,
       permit: {
-        permitted: {
-          token: permit.permitted.token as `0x${string}`,
-          amount: permit.permitted.amount as bigint,
-        },
+        permitted: permit.permitted as Array<{
+          token: `0x${string}`;
+          amount: bigint;
+        }>,
         nonce: permit.nonce as bigint,
         deadline: permit.deadline as bigint,
       },
+      witness,
+      witnessTypeString,
       signature: sig65,
     });
 
@@ -221,24 +237,35 @@ const invokeFactoryContractDirectly = async (
  */
 const createAndDepositViaAxelar = async (
   orch: EVMOrchestrator,
-  { permit, sig65, tokenOwner, contracts }: FlowContext,
+  {
+    permit,
+    sig65,
+    tokenOwner,
+    contracts,
+    witness,
+    witnessTypeString,
+  }: FlowContext,
 ) => {
   const agoricSigner = await getSigner();
   const accounts = await agoricSigner.getAccounts();
   const agoricOwner = accounts[0].address;
   console.log("Agoric Address:", agoricOwner);
 
+  const lcaOwner = SMART_WALLET_OWNER;
+
   const abiEncodedData = buildCreateAndDepositPayload({
-    ownerStr: agoricOwner,
+    lcaOwner,
     tokenOwner,
     permit: {
-      permitted: {
-        token: permit.permitted.token as `0x${string}`,
-        amount: permit.permitted.amount as bigint,
-      },
+      permitted: permit.permitted as Array<{
+        token: `0x${string}`;
+        amount: bigint;
+      }>,
       nonce: permit.nonce as bigint,
       deadline: permit.deadline as bigint,
     },
+    witness,
+    witnessTypeString,
     signature: sig65,
   });
   const encodedPayload = Array.from(hexToBytes(abiEncodedData));
@@ -316,30 +343,60 @@ const addMinutes = (t: number, n: number) => Math.floor(t / 1000) + 60 * n;
 
 const makeUI = (
   chain: typeof config.ethereum.testnet,
-  {
-    now,
-    signer,
-    ems,
-  }: { now: typeof Date.now; signer: Signer; ems: EVMMessageService },
+  { signer, ems }: { signer: Signer; ems: EVMMessageService },
 ) => {
   const { contracts } = chain;
   const self = freeze({
     async openPortfolio(amount: bigint) {
-      const msNow = now();
-      const permit: PermitTransferFrom = {
-        permitted: { token: contracts.USDC, amount },
-        nonce: BigInt(msNow),
-        deadline: BigInt(addMinutes(msNow, 7)), // valid for 2min
+      const permit: PermitBatchTransferFrom = {
+        permitted: [{ token: contracts.USDC, amount }],
+        nonce: Date.now(),
+        deadline: BigInt(addMinutes(Date.now(), 7)),
         spender: contracts.factory,
       };
 
       const chainId = await signer.getChainId();
-      // Uniswap Permit2 SDK generates the correct EIP-712 typed data
+
+      // Define witness type structure for EIP-712 signing
+      const witnessType = {
+        CreateWallet: [
+          { name: "owner", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "factory", type: "address" },
+        ],
+      };
+
+      // Witness type string must follow Permit2's EIP-712 format:
+      // "[WitnessType] witness)[WitnessTypeDefinition]TokenPermissions(address token,uint256 amount)"
+      const witnessTypeString =
+        "CreateWallet witness)CreateWallet(string owner,uint256 chainId,address factory)TokenPermissions(address token,uint256 amount)";
+
+      // Create witness data object for signing
+      const witnessData = {
+        owner: SMART_WALLET_OWNER,
+        chainId: BigInt(chainId),
+        factory: contracts.factory,
+      };
+
+      // Use permitWitnessTransferFrom
       const { domain, types, values } = SignatureTransfer.getPermitData(
         permit,
         contracts.permit2,
         chainId,
+        {
+          witness: witnessData,
+          witnessTypeName: "CreateWallet",
+          witnessType,
+        },
       );
+
+      // Generate witness hash for the contract payload using EIP-712 struct hash
+      // Use TypedDataEncoder to ensure consistency with SDK
+      const witness = ethers.TypedDataEncoder.hashStruct(
+        "CreateWallet",
+        witnessType,
+        witnessData,
+      ) as `0x${string}`;
 
       // Sign EIP-712 (returns normal 65-byte signature)
       const signature65 = await signer.signTypedData(
@@ -348,11 +405,13 @@ const makeUI = (
         values,
       );
 
-      await self.ensurePermit2Allowance(amount);
-
-      // not prototyped: the openPortfolio EIP-712 signature
-
-      await ems.handleIntent("OpenPortfolio", { signature65, permit, amount });
+      await ems.handleIntent("OpenPortfolio", {
+        signature65,
+        permit,
+        amount,
+        witness,
+        witnessTypeString,
+      });
     },
 
     /**
@@ -389,20 +448,31 @@ const makeEVMHandler = (
   orch: EVMOrchestrator,
   {
     contracts,
-    ownerStr,
+
     invokeFactory,
     waitBeforeCall,
   }: {
     contracts: typeof config.ethereum.testnet.contracts;
-    ownerStr: `${string}1${string}`;
-    invokeFactory: typeof invokeFactoryContractDirectly;
+    invokeFactory: any;
     waitBeforeCall?: () => Promise<void>;
   },
 ) => {
   return {
     async handleIntent(
       _intent: "OpenPortfolio",
-      { signature65, permit, amount },
+      {
+        signature65,
+        permit,
+        amount,
+        witness,
+        witnessTypeString,
+      }: {
+        signature65: string;
+        permit: PermitBatchTransferFrom;
+        amount: bigint;
+        witness: `0x${string}`;
+        witnessTypeString: string;
+      },
     ) {
       // Convert to EIP-2098 compact signature (64 bytes)
       const signature2098 = toEip2098(signature65);
@@ -416,12 +486,16 @@ const makeEVMHandler = (
       await waitBeforeCall?.();
 
       const tokenOwner = await orch.getAddress();
+      const lcaOwner = SMART_WALLET_OWNER;
+
       await invokeFactory(orch, {
         contracts,
         tokenOwner,
         permit,
         sig65: signature65 as `0x${string}`,
-        ownerStr,
+        lcaOwner,
+        witness,
+        witnessTypeString,
       });
     },
   };
@@ -452,9 +526,6 @@ const main = async ({
 
   const walletSigner = makeWalletSigner(provider, signer);
 
-  // to create a unique create2 addr everytime
-  const ownerStr = `agoric1${now()}` as const;
-
   const orch = makeEVMOrchestrator(signer);
 
   const waitBeforeCall = waitFlag // yarn permit --wait
@@ -464,7 +535,7 @@ const main = async ({
       }
     : async () => {};
 
-  const invokeFactory = viaAxelar // yarn permit --viaAxelar
+  const invokeFactory = viaAxelar
     ? createAndDepositViaAxelar
     : invokeFactoryContractDirectly;
 
@@ -472,12 +543,11 @@ const main = async ({
   // in prod, the former is off-chain while the latter is on chain
   const ems = makeEVMHandler(orch, {
     contracts: chain.contracts,
-    ownerStr,
     waitBeforeCall,
     invokeFactory,
   });
-  const ui = makeUI(chain, { now, signer: walletSigner, ems });
-  await ui.openPortfolio(1n * 1_000_000n);
+  const ui = makeUI(chain, { signer: walletSigner, ems });
+  await ui.openPortfolio(1n * 1_00_000n);
 };
 
 main().catch((e) => {
