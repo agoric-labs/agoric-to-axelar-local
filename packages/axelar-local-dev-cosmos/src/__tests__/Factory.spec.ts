@@ -96,6 +96,7 @@ describe("Factory", () => {
     factory = await Contract.deploy(
       axelarGatewayMock.target,
       axelarGasServiceMock.target,
+      sourceAddress,
     );
     await factory.waitForDeployment();
 
@@ -329,7 +330,8 @@ describe("Factory", () => {
     const payloadHash = keccak256(toBytes(payload));
 
     const wrongSourceChain = "ethereum"; // Wrong source chain
-    const sourceAddr = "agoric1ee9hr0jyrxhy999y755mp862ljgycmwyp4pl7q";
+    // Use the correct Factory owner so we pass ownership check but fail on source chain
+    const sourceAddr = sourceAddress;
 
     await approveMessage({
       commandId,
@@ -346,5 +348,30 @@ describe("Factory", () => {
     await expect(
       factory.execute(commandId, wrongSourceChain, sourceAddr, payload),
     ).to.be.revertedWithCustomError(factory, "InvalidSourceChain");
+  });
+
+  it("factory contract should fail when caller is not the owner", async () => {
+    const commandId = getCommandId();
+
+    const payload = abiCoder.encode([], []);
+    const payloadHash = keccak256(toBytes(payload));
+
+    const wrongSourceAddr = "agoric1ee9hr0jyrxhy999y755mp862ljgycmwyp4pl7q"; // Different from factory owner
+
+    await approveMessage({
+      commandId,
+      from: sourceChain,
+      sourceAddress: wrongSourceAddr,
+      targetAddress: factory.target,
+      payload: payloadHash,
+      owner,
+      AxelarGateway: axelarGatewayMock,
+      abiCoder,
+    });
+
+    // This should fail because sourceAddress is not the factory owner
+    await expect(
+      factory.execute(commandId, sourceChain, wrongSourceAddr, payload),
+    ).to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount");
   });
 });

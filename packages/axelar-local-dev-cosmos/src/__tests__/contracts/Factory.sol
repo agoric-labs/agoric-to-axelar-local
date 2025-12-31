@@ -20,6 +20,12 @@ interface IPermit2 {
         uint256 deadline;
     }
 
+    struct PermitBatchTransferFrom {
+        TokenPermissions[] permitted;
+        uint256 nonce;
+        uint256 deadline;
+    }
+
     struct SignatureTransferDetails {
         address to;
         uint256 requestedAmount;
@@ -29,6 +35,15 @@ interface IPermit2 {
         PermitTransferFrom calldata permit,
         SignatureTransferDetails calldata transferDetails,
         address owner,
+        bytes calldata signature
+    ) external;
+
+    function permitWitnessTransferFrom(
+        PermitBatchTransferFrom calldata permit,
+        SignatureTransferDetails[] calldata transferDetails,
+        address owner,
+        bytes32 witness,
+        string calldata witnessTypeString,
         bytes calldata signature
     ) external;
 }
@@ -59,12 +74,16 @@ error InvalidSourceChain(string expected, string actual);
 
 // Payload that Factory receives from Axelar to create + deposit in a new Wallet
 struct CreateAndDepositPayload {
-    // the Agoric address string
-    string ownerStr;
+    // the smart wallet owner (the actual owner of the wallet being created)
+    string lcaOwner;
     // EVM address that signed the Permit2 EIP-712 (the token owner on this chain)
     address tokenOwner;
-    // Permit2 SignatureTransfer permit
-    IPermit2.PermitTransferFrom permit;
+    // Permit2 SignatureTransfer batch permit (supports single or multiple tokens)
+    IPermit2.PermitBatchTransferFrom permit;
+    // Witness data for additional context (e.g., hash of wallet address + chainId)
+    bytes32 witness;
+    // EIP-712 type string for witness validation
+    string witnessTypeString;
     // 65-byte or 64-byte (EIP-2098) signature
     bytes signature;
 }
@@ -142,7 +161,7 @@ contract Wallet is AxelarExecutable, Ownable {
     }
 }
 
-contract Factory is AxelarExecutable {
+contract Factory is AxelarExecutable, Ownable {
     using StringToAddress for string;
     using AddressToString for address;
 
@@ -168,8 +187,9 @@ contract Factory is AxelarExecutable {
     constructor(
         address gateway_,
         address gasReceiver_,
-        address permit2_
-    ) payable AxelarExecutable(gateway_) {
+        address permit2_,
+        string memory owner_
+    ) payable AxelarExecutable(gateway_) Ownable(owner_) {
         gasService = IAxelarGasService(gasReceiver_);
         _gateway = gateway_;
         permit2 = IPermit2(permit2_);
@@ -189,45 +209,40 @@ contract Factory is AxelarExecutable {
     }
 
     function _createAndDeposit(
-        string memory ownerStr,
+        string memory lcaOwner,
         address tokenOwner,
-        IPermit2.PermitTransferFrom memory permit,
+        IPermit2.PermitBatchTransferFrom memory permit,
+        bytes32 witness,
+        string memory witnessTypeString,
         bytes memory signature
     ) internal returns (address newWallet) {
         require(tokenOwner != address(0), "tokenOwner=0");
-        require(permit.permitted.token != address(0), "token=0");
-        require(permit.permitted.amount > 0, "amount=0");
+        require(permit.permitted.length > 0, "no tokens");
+        require(permit.permitted[0].token != address(0), "token=0");
+        require(permit.permitted[0].amount > 0, "amount=0");
 
-        newWallet = _createSmartWallet(ownerStr);
+        newWallet = _createSmartWallet(lcaOwner);
 
-        IPermit2.SignatureTransferDetails memory details = IPermit2
-            .SignatureTransferDetails({
+        // Create transfer details array (even if just one token)
+        IPermit2.SignatureTransferDetails[]
+            memory detailsArray = new IPermit2.SignatureTransferDetails[](
+                permit.permitted.length
+            );
+
+        for (uint256 i = 0; i < permit.permitted.length; i++) {
+            detailsArray[i] = IPermit2.SignatureTransferDetails({
                 to: newWallet,
-                requestedAmount: permit.permitted.amount
+                requestedAmount: permit.permitted[i].amount
             });
+        }
 
-        permit2.permitTransferFrom(permit, details, tokenOwner, signature);
-    }
-
-    // Added only for testing directly - should be removed when deploying to production
-    function testExecute(bytes calldata payload) external {
-        CreateAndDepositPayload memory p = abi.decode(
-            payload,
-            (CreateAndDepositPayload)
-        );
-
-        address smartWalletAddress = _createAndDeposit(
-            p.ownerStr,
-            p.tokenOwner,
-            p.permit,
-            p.signature
-        );
-
-        emit SmartWalletCreated(
-            smartWalletAddress,
-            p.ownerStr,
-            EXPECTED_SOURCE_CHAIN,
-            p.ownerStr
+        permit2.permitWitnessTransferFrom(
+            permit,
+            detailsArray,
+            tokenOwner,
+            witness,
+            witnessTypeString,
+            signature
         );
     }
 
@@ -236,27 +251,32 @@ contract Factory is AxelarExecutable {
         string calldata sourceChain,
         string calldata sourceAddress,
         bytes calldata payload
-    ) internal override {
+    ) internal override onlyOwner(sourceAddress) {
         if (keccak256(bytes(sourceChain)) != EXPECTED_SOURCE_CHAIN_HASH) {
             revert InvalidSourceChain(EXPECTED_SOURCE_CHAIN, sourceChain);
         }
 
-        // Decode creation + deposit data sent from Agoric
         CreateAndDepositPayload memory p = abi.decode(
             payload,
             (CreateAndDepositPayload)
         );
 
-        address smartWalletAddress = _createAndDeposit(
-            p.ownerStr,
+        address smartWalletAddress;
+        string memory walletOwner = p.lcaOwner;
+
+        // Wallet creation + deposit
+        smartWalletAddress = _createAndDeposit(
+            p.lcaOwner,
             p.tokenOwner,
             p.permit,
+            p.witness,
+            p.witnessTypeString,
             p.signature
         );
 
         emit SmartWalletCreated(
             smartWalletAddress,
-            sourceAddress,
+            walletOwner,
             sourceChain,
             sourceAddress
         );

@@ -37,4 +37,4 @@ delete_deployments_folder() {
 get_network_config "$network"
 
 delete_deployments_folder "ignition/deployments"
-deploy_contract "./ignition/modules/deployFactory.ts" "$GATEWAY" "$GAS_SERVICE"
+deploy_contract "./ignition/modules/deployFactoryFactory.ts" "$GATEWAY" "$GAS_SERVICE"
