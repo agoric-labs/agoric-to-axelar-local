@@ -10,8 +10,10 @@ error InvalidSourceChain(string expected, string actual);
 contract FactoryFactory is AxelarExecutable {
     address immutable _gateway;
     IAxelarGasService public immutable gasService;
+    address public immutable permit2;
     string private constant EXPECTED_SOURCE_CHAIN = "agoric";
-    bytes32 private constant EXPECTED_SOURCE_CHAIN_HASH = keccak256(bytes(EXPECTED_SOURCE_CHAIN));
+    bytes32 private constant EXPECTED_SOURCE_CHAIN_HASH =
+        keccak256(bytes(EXPECTED_SOURCE_CHAIN));
 
     event FactoryCreated(
         address indexed factory,
@@ -23,10 +25,12 @@ contract FactoryFactory is AxelarExecutable {
 
     constructor(
         address gateway_,
-        address gasReceiver_
+        address gasReceiver_,
+        address permit2_
     ) payable AxelarExecutable(gateway_) {
         gasService = IAxelarGasService(gasReceiver_);
         _gateway = gateway_;
+        permit2 = permit2_;
     }
 
     function _createFactory(string memory owner) internal returns (address) {
@@ -34,6 +38,7 @@ contract FactoryFactory is AxelarExecutable {
             new Factory{salt: keccak256(abi.encodePacked(owner))}(
                 _gateway,
                 address(gasService),
+                permit2,
                 owner
             )
         );

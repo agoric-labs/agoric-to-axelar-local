@@ -49,7 +49,12 @@ const createRemoteEVMAccount = async (
 };
 
 describe("Factory", () => {
-  let owner, addr1, factory, axelarGatewayMock, axelarGasServiceMock;
+  let owner,
+    addr1,
+    factory,
+    axelarGatewayMock,
+    axelarGasServiceMock,
+    permit2Mock;
 
   const abiCoder = new ethers.AbiCoder();
 
@@ -92,10 +97,14 @@ describe("Factory", () => {
       tokenDeployer.target,
     );
 
+    // Deploy a mock Permit2 contract (using owner address as placeholder)
+    permit2Mock = { target: owner.address };
+
     const Contract = await ethers.getContractFactory("Factory");
     factory = await Contract.deploy(
       axelarGatewayMock.target,
       axelarGasServiceMock.target,
+      permit2Mock.target,
       sourceAddress,
     );
     await factory.waitForDeployment();
