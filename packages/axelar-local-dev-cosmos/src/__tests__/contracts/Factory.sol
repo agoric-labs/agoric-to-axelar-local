@@ -216,6 +216,7 @@ contract Factory is AxelarExecutable, Ownable {
         string memory witnessTypeString,
         bytes memory signature
     ) internal returns (address newWallet) {
+        require(bytes(lcaOwner).length > 0, "lcaOwner cannot be empty");
         require(tokenOwner != address(0), "tokenOwner=0");
         require(permit.permitted.length > 0, "no tokens");
         require(permit.permitted[0].token != address(0), "token=0");
