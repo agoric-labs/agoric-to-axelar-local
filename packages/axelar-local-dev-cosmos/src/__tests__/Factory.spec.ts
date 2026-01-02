@@ -98,8 +98,10 @@ describe("Factory", () => {
       tokenDeployer.target,
     );
 
-    // Deploy a mock Permit2 contract (using owner address as placeholder)
-    permit2Mock = { target: owner.address };
+    // Deploy a mock Permit2 contract
+    const MockPermit2Factory = await ethers.getContractFactory("MockPermit2");
+    permit2Mock = await MockPermit2Factory.deploy();
+    await permit2Mock.waitForDeployment();
 
     const Contract = await ethers.getContractFactory("Factory");
     factory = await Contract.deploy(
@@ -160,7 +162,31 @@ describe("Factory", () => {
   it("should create a new remote wallet using Factory", async () => {
     const commandId = getCommandId();
 
-    const payload = abiCoder.encode([], []);
+    // Create a proper CreateAndDepositPayload
+    const createAndDepositPayload = {
+      lcaOwner: sourceAddress,
+      tokenOwner: owner.address,
+      permit: {
+        permitted: [
+          {
+            token: ethers.ZeroAddress, // dummy token address for testing
+            amount: 1000,
+          },
+        ],
+        nonce: 0,
+        deadline: Math.floor(Date.now() / 1000) + 3600, // 1 hour from now
+      },
+      witness: ethers.ZeroHash, // dummy witness
+      witnessTypeString: "CreateWallet(string owner,uint256 chainId,address factory)",
+      signature: "0x" + "00".repeat(65), // dummy signature
+    };
+
+    const payload = abiCoder.encode(
+      [
+        "tuple(string lcaOwner, address tokenOwner, tuple(tuple(address token, uint256 amount)[] permitted, uint256 nonce, uint256 deadline) permit, bytes32 witness, string witnessTypeString, bytes signature)",
+      ],
+      [createAndDepositPayload],
+    );
     const payloadHash = keccak256(toBytes(payload));
 
     await approveMessage({

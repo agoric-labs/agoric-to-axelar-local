@@ -101,8 +101,10 @@ describe("FactoryFactory", () => {
       tokenDeployer.target,
     );
 
-    // Deploy a mock Permit2 contract (using owner address as placeholder)
-    permit2Mock = { target: owner.address };
+    // Deploy a mock Permit2 contract
+    const MockPermit2Factory = await ethers.getContractFactory("MockPermit2");
+    permit2Mock = await MockPermit2Factory.deploy();
+    await permit2Mock.waitForDeployment();
 
     const Contract = await ethers.getContractFactory("FactoryFactory");
     factoryFactory = await Contract.deploy(
