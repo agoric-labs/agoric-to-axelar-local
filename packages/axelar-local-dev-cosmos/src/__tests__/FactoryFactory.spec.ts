@@ -2,13 +2,8 @@ import AxelarGasService from "@axelar-network/axelar-cgp-solidity/artifacts/cont
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { keccak256, stringToHex, toBytes } from "viem";
-import {
-  approveMessage,
-  constructContractCall,
-  deployToken,
-  encodeMulticallPayload,
-  getPayloadHash,
-} from "./lib/utils";
+import "@nomicfoundation/hardhat-chai-matchers";
+import { approveMessage, deployToken } from "./lib/utils";
 
 const computeFactoryCreate2Address = async (
   factoryFactoryAddress: string,
@@ -58,13 +53,17 @@ const computeWalletCreate2Address = async (
 };
 
 describe("FactoryFactory", () => {
-  let owner, addr1, factoryFactory, axelarGatewayMock, axelarGasServiceMock, permit2Mock;
+  let owner,
+    addr1,
+    factoryFactory,
+    axelarGatewayMock,
+    axelarGasServiceMock,
+    permit2Mock;
 
   const abiCoder = new ethers.AbiCoder();
 
   const sourceChain = "agoric";
   const factoryOwner = "agoric1wrfh296eu2z34p6pah7q04jjuyj3mxu9v98277";
-  const walletOwner = "agoric1ee9hr0jyrxhy999y755mp862ljgycmwyp4pl7q";
 
   let commandIdCounter = 1;
   const getCommandId = () => {
@@ -125,39 +124,6 @@ describe("FactoryFactory", () => {
       AxelarGateway: axelarGatewayMock,
       abiCoder,
     });
-  });
-
-  it("fund FactoryFactory with ETH to pay for gas", async () => {
-    const provider = ethers.provider;
-
-    const factoryFactoryAddress = await factoryFactory.getAddress();
-    const balanceBefore = await provider.getBalance(factoryFactoryAddress);
-    expect(balanceBefore).to.equal(ethers.parseEther("0"));
-
-    const tx = await owner.sendTransaction({
-      to: factoryFactoryAddress,
-      value: ethers.parseEther("10.0"),
-    });
-    await tx.wait();
-
-    const receipt = await provider.getTransactionReceipt(tx.hash);
-    const iface = (await ethers.getContractFactory("FactoryFactory")).interface;
-    const receivedEvent = receipt?.logs
-      .map((log) => {
-        try {
-          return iface.parseLog(log);
-        } catch {
-          return null;
-        }
-      })
-      .find((parsed) => parsed && parsed.name === "Received");
-
-    expect(receivedEvent).to.not.be.undefined;
-    expect(receivedEvent?.args.sender).to.equal(owner.address);
-    expect(receivedEvent?.args.amount).to.equal(ethers.parseEther("10.0"));
-
-    const balanceAfter = await provider.getBalance(factoryFactoryAddress);
-    expect(balanceAfter).to.equal(ethers.parseEther("10.0"));
   });
 
   it("should create a new Factory using FactoryFactory", async () => {

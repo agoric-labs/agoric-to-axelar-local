@@ -1,6 +1,7 @@
 import AxelarGasService from "@axelar-network/axelar-cgp-solidity/artifacts/contracts/gas-service/AxelarGasService.sol/AxelarGasService.json";
 import { expect } from "chai";
 import { ethers } from "hardhat";
+import "@nomicfoundation/hardhat-chai-matchers";
 import { keccak256, stringToHex, toBytes } from "viem";
 import {
   approveMessage,
