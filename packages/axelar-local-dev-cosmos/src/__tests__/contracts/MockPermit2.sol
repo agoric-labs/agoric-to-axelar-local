@@ -45,6 +45,11 @@ contract MockPermit2 {
      */
     error InvalidNonce();
 
+    /**
+     * @notice Thrown when the number of tokens in the permit does not match the number of transfer details
+     */
+    error LengthMismatch();
+
     struct TokenPermissions {
         address token;
         uint256 amount;
@@ -52,6 +57,12 @@ contract MockPermit2 {
 
     struct PermitTransferFrom {
         TokenPermissions permitted;
+        uint256 nonce;
+        uint256 deadline;
+    }
+
+    struct PermitBatchTransferFrom {
+        TokenPermissions[] permitted;
         uint256 nonce;
         uint256 deadline;
     }
@@ -103,6 +114,84 @@ contract MockPermit2 {
             transferDetails.to,
             requestedAmount
         );
+    }
+
+    /**
+     * @notice Transfers tokens using a signed permit message with witness data (batch version)
+     * @dev This is the function that Factory.sol uses for createAndDeposit
+     * @dev Matches real Permit2 structure: public function creates dataHash, calls private _permitTransferFrom
+     */
+    function permitWitnessTransferFrom(
+        PermitBatchTransferFrom memory permit,
+        SignatureTransferDetails[] calldata transferDetails,
+        address owner,
+        bytes32 witness,
+        string calldata witnessTypeString,
+        bytes calldata signature
+    ) external {
+        // Real Permit2 does: permit.hashWithWitness(witness, witnessTypeString)
+        // For mock, we create a simple hash to match the structure
+        bytes32 dataHash = keccak256(
+            abi.encode(permit, witness, witnessTypeString)
+        );
+        _permitTransferFrom(
+            permit,
+            transferDetails,
+            owner,
+            dataHash,
+            signature
+        );
+    }
+
+    /**
+     * @notice Transfers tokens using a signed permit messages (private batch implementation)
+     * @dev Matches the exact logic flow of real Permit2's private _permitTransferFrom
+     * @param permit The permit data signed over by the owner
+     * @param transferDetails The spender's requested transfer details for the permitted tokens
+     * @param owner The owner of the tokens to transfer
+     * @param dataHash The hash of permit data (in real Permit2, used for EIP-712 signature verification)
+     * @param signature The signature to verify
+     */
+    function _permitTransferFrom(
+        PermitBatchTransferFrom memory permit,
+        SignatureTransferDetails[] calldata transferDetails,
+        address owner,
+        bytes32 dataHash,
+        bytes calldata signature
+    ) private {
+        uint256 numPermitted = permit.permitted.length;
+
+        if (block.timestamp > permit.deadline)
+            revert SignatureExpired(permit.deadline);
+        if (numPermitted != transferDetails.length) revert LengthMismatch();
+
+        _useUnorderedNonce(owner, permit.nonce);
+
+        // SIGNATURE VERIFICATION:
+        // Real Permit2 does: signature.verify(_hashTypedData(dataHash), owner)
+        // For testing, we skip cryptographic verification and only check signature is non-empty
+        if (signature.length == 0) revert InvalidSigner();
+        // Note: dataHash is computed but not used for verification in mock
+
+        // TOKEN TRANSFERS (batch):
+        // Real Permit2 uses: ERC20(token).safeTransferFrom(owner, to, amount)
+        unchecked {
+            for (uint256 i = 0; i < numPermitted; ++i) {
+                TokenPermissions memory permitted = permit.permitted[i];
+                uint256 requestedAmount = transferDetails[i].requestedAmount;
+
+                if (requestedAmount > permitted.amount)
+                    revert InvalidAmount(permitted.amount);
+
+                if (requestedAmount != 0) {
+                    MockERC20(permitted.token).transferFrom(
+                        owner,
+                        transferDetails[i].to,
+                        requestedAmount
+                    );
+                }
+            }
+        }
     }
 
     /**
