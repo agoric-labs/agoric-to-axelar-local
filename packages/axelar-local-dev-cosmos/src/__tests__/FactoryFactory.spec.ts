@@ -4,6 +4,8 @@ import { ethers } from "hardhat";
 import { keccak256, stringToHex, toBytes } from "viem";
 import "@nomicfoundation/hardhat-chai-matchers";
 import { approveMessage, deployToken } from "./lib/utils";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { Contract } from "ethers";
 
 const computeFactoryCreate2Address = async (
   factoryFactoryAddress: string,
@@ -53,12 +55,12 @@ const computeWalletCreate2Address = async (
 };
 
 describe("FactoryFactory", () => {
-  let owner,
-    addr1,
-    factoryFactory,
-    axelarGatewayMock,
-    axelarGasServiceMock,
-    permit2Mock;
+  let owner: HardhatEthersSigner,
+    addr1: HardhatEthersSigner,
+    factoryFactory: Contract,
+    axelarGatewayMock: Contract,
+    axelarGasServiceMock: Contract,
+    permit2Mock: Contract;
 
   const abiCoder = new ethers.AbiCoder();
 
@@ -203,7 +205,35 @@ describe("FactoryFactory", () => {
 
     // Now create a Wallet using the Factory
     const commandId = getCommandId();
-    const payload = abiCoder.encode([], []);
+
+    // Get the deployed USDC token address
+    const usdcAddress = await axelarGatewayMock.tokenAddresses("USDC");
+
+    const createAndDepositPayload = {
+      lcaOwner: factoryOwner,
+      tokenOwner: owner.address,
+      permit: {
+        permitted: [
+          {
+            token: usdcAddress,
+            amount: 1000,
+          },
+        ],
+        nonce: 0,
+        deadline: Math.floor(Date.now() / 1000) + 3600, // 1 hour from now
+      },
+      witness: ethers.ZeroHash, // dummy witness
+      witnessTypeString:
+        "CreateWallet(string owner,uint256 chainId,address factory)",
+      signature: "0x" + "00".repeat(65), // dummy signature
+    };
+
+    const payload = abiCoder.encode(
+      [
+        "tuple(string lcaOwner, address tokenOwner, tuple(tuple(address token, uint256 amount)[] permitted, uint256 nonce, uint256 deadline) permit, bytes32 witness, string witnessTypeString, bytes signature)",
+      ],
+      [createAndDepositPayload],
+    );
     const payloadHash = keccak256(toBytes(payload));
 
     await approveMessage({

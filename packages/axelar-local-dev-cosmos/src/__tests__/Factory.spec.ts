@@ -10,6 +10,8 @@ import {
   encodeMulticallPayload,
   getPayloadHash,
 } from "./lib/utils";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { Contract, Log, LogDescription } from "ethers";
 
 const computeCreate2Address = async (
   factoryAddress: string,
@@ -35,9 +37,9 @@ const computeCreate2Address = async (
 };
 
 const createRemoteEVMAccount = async (
-  axelarGatewayMock,
-  ownerAddress,
-  sourceAddress,
+  axelarGatewayMock: Contract,
+  ownerAddress: string,
+  sourceAddress: string,
 ) => {
   const WalletFactory = await ethers.getContractFactory("Wallet");
   const wallet = await WalletFactory.deploy(
@@ -50,12 +52,12 @@ const createRemoteEVMAccount = async (
 };
 
 describe("Factory", () => {
-  let owner,
-    addr1,
-    factory,
-    axelarGatewayMock,
-    axelarGasServiceMock,
-    permit2Mock;
+  let owner: HardhatEthersSigner,
+    addr1: HardhatEthersSigner,
+    factory: Contract,
+    axelarGatewayMock: Contract,
+    axelarGasServiceMock: Contract,
+    permit2Mock: Contract;
 
   const abiCoder = new ethers.AbiCoder();
 
@@ -162,6 +164,9 @@ describe("Factory", () => {
   it("should create a new remote wallet using Factory", async () => {
     const commandId = getCommandId();
 
+    // Get the deployed USDC token address
+    const usdcAddress = await axelarGatewayMock.tokenAddresses("USDC");
+
     // Create a proper CreateAndDepositPayload
     const createAndDepositPayload = {
       lcaOwner: sourceAddress,
@@ -169,7 +174,7 @@ describe("Factory", () => {
       permit: {
         permitted: [
           {
-            token: ethers.ZeroAddress, // dummy token address for testing
+            token: usdcAddress,
             amount: 1000,
           },
         ],
@@ -177,7 +182,8 @@ describe("Factory", () => {
         deadline: Math.floor(Date.now() / 1000) + 3600, // 1 hour from now
       },
       witness: ethers.ZeroHash, // dummy witness
-      witnessTypeString: "CreateWallet(string owner,uint256 chainId,address factory)",
+      witnessTypeString:
+        "CreateWallet(string owner,uint256 chainId,address factory)",
       signature: "0x" + "00".repeat(65), // dummy signature
     };
 
@@ -276,14 +282,16 @@ describe("Factory", () => {
 
     // Check CallStatus events for each call
     const callStatusEvents = receipt?.logs
-      .map((log) => {
+      .map((log: Log) => {
         try {
           return walletInterface.parseLog(log);
         } catch {
           return null;
         }
       })
-      .filter((parsed) => parsed && parsed.name === "CallStatus");
+      .filter(
+        (parsed: LogDescription) => parsed && parsed.name === "CallStatus",
+      );
 
     expect(callStatusEvents).to.have.lengthOf(2);
     expect(callStatusEvents[0]?.args.callIndex).to.equal(0);
