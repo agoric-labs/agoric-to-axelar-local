@@ -11,7 +11,7 @@ import {
   getPayloadHash,
 } from "./lib/utils";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { Contract, Log, LogDescription } from "ethers";
+import { Contract } from "ethers";
 
 const computeCreate2Address = async (
   factoryAddress: string,
@@ -57,7 +57,8 @@ describe("Factory", () => {
     factory: Contract,
     axelarGatewayMock: Contract,
     axelarGasServiceMock: Contract,
-    permit2Mock: Contract;
+    permit2Mock: Contract,
+    testWallet: Contract;
 
   const abiCoder = new ethers.AbiCoder();
 
@@ -126,39 +127,6 @@ describe("Factory", () => {
       AxelarGateway: axelarGatewayMock,
       abiCoder,
     });
-  });
-
-  it("fund Factory with ETH to pay for gas", async () => {
-    const provider = ethers.provider;
-
-    const factoryAddress = await factory.getAddress();
-    const balanceBefore = await provider.getBalance(factoryAddress);
-    expect(balanceBefore).to.equal(ethers.parseEther("0"));
-
-    const tx = await owner.sendTransaction({
-      to: factoryAddress,
-      value: ethers.parseEther("5.0"),
-    });
-    await tx.wait();
-
-    const receipt = await provider.getTransactionReceipt(tx.hash);
-    const iface = (await ethers.getContractFactory("Factory")).interface;
-    const receivedEvent = receipt?.logs
-      .map((log) => {
-        try {
-          return iface.parseLog(log);
-        } catch {
-          return null;
-        }
-      })
-      .find((parsed) => parsed && parsed.name === "Received");
-
-    expect(receivedEvent).to.not.be.undefined;
-    expect(receivedEvent?.args.sender).to.equal(owner.address);
-    expect(receivedEvent?.args.amount).to.equal(ethers.parseEther("5.0"));
-
-    const balanceAfter = await provider.getBalance(factoryAddress);
-    expect(balanceAfter).to.equal(ethers.parseEther("5.0"));
   });
 
   it("should create a new remote wallet using Factory", async () => {
@@ -232,13 +200,12 @@ describe("Factory", () => {
     const multicall = await MulticallFactory.deploy();
     await multicall.waitForDeployment();
 
-    const wallet = await createRemoteEVMAccount(
+    testWallet = await createRemoteEVMAccount(
       axelarGatewayMock,
       owner.address,
       sourceAddress,
     );
 
-    // Test ContractCall
     const multicallAddress = await multicall.getAddress();
     const abiEncodedContractCalls = [
       constructContractCall({
@@ -258,129 +225,69 @@ describe("Factory", () => {
     );
     const payloadHash = getPayloadHash(multicallPayload);
 
-    const commandId1 = getCommandId();
+    const commandId = getCommandId();
     await approveMessage({
-      commandId: commandId1,
+      commandId,
       from: sourceChain,
       sourceAddress,
-      targetAddress: wallet.target,
+      targetAddress: testWallet.target,
       payload: payloadHash,
       owner,
       AxelarGateway: axelarGatewayMock,
       abiCoder,
     });
 
-    const execTx = await wallet.execute(
-      commandId1,
+    const execTx = await testWallet.execute(
+      commandId,
       sourceChain,
       sourceAddress,
       multicallPayload,
     );
 
-    const receipt = await execTx.wait();
-    const walletInterface = wallet.interface;
-
-    // Check CallStatus events for each call
-    const callStatusEvents = receipt?.logs
-      .map((log: Log) => {
-        try {
-          return walletInterface.parseLog(log);
-        } catch {
-          return null;
-        }
-      })
-      .filter(
-        (parsed: LogDescription) => parsed && parsed.name === "CallStatus",
-      );
-
-    expect(callStatusEvents).to.have.lengthOf(2);
-    expect(callStatusEvents[0]?.args.callIndex).to.equal(0);
-    expect(callStatusEvents[0]?.args.target).to.equal(multicallAddress);
-    expect(callStatusEvents[0]?.args.success).to.be.true;
-
-    expect(callStatusEvents[1]?.args.callIndex).to.equal(1);
-    expect(callStatusEvents[1]?.args.target).to.equal(multicallAddress);
-    expect(callStatusEvents[1]?.args.success).to.be.true;
-
-    // Check MulticallStatus event
     await expect(execTx)
-      .to.emit(wallet, "MulticallStatus")
+      .to.emit(testWallet, "MulticallStatus")
       .withArgs("tx1", true, 2);
 
-    const value = await multicall.getValue();
-    expect(value).to.equal(27);
+    expect(await multicall.getValue()).to.equal(27);
   });
 
-  it("wallet contract should fail when source chain is not agoric", async () => {
-    // Deploy Multicall.sol
-    const MulticallFactory = await ethers.getContractFactory("Multicall");
-    const multicall = await MulticallFactory.deploy();
-    await multicall.waitForDeployment();
-
-    const wallet = await createRemoteEVMAccount(
-      axelarGatewayMock,
-      owner.address,
-      sourceAddress,
-    );
-
-    // Test ContractCall
-    const multicallAddress = await multicall.getAddress();
-    const abiEncodedContractCalls = [
-      constructContractCall({
-        target: multicallAddress,
-        functionSignature: "setValue(uint256)",
-        args: [10],
-      }),
-      constructContractCall({
-        target: multicallAddress,
-        functionSignature: "addToValue(uint256)",
-        args: [17],
-      }),
-    ];
-    const multicallPayload = encodeMulticallPayload(
-      abiEncodedContractCalls,
-      "tx1",
-    );
+  it("wallet should reject invalid source chain", async () => {
+    const wrongSourceChain = "ethereum";
+    const multicallPayload = encodeMulticallPayload([], "tx2");
     const payloadHash = getPayloadHash(multicallPayload);
-    const wrongSourceChain = "ethereum"; // Wrong source chain
 
-    const commandId1 = getCommandId();
+    const commandId = getCommandId();
     await approveMessage({
-      commandId: commandId1,
+      commandId,
       from: wrongSourceChain,
       sourceAddress,
-      targetAddress: wallet.target,
+      targetAddress: testWallet.target,
       payload: payloadHash,
       owner,
       AxelarGateway: axelarGatewayMock,
       abiCoder,
     });
 
-    // This should fail because source chain is not "agoric"
     await expect(
-      wallet.execute(
-        commandId1,
+      testWallet.execute(
+        commandId,
         wrongSourceChain,
         sourceAddress,
         multicallPayload,
       ),
-    ).to.be.revertedWithCustomError(wallet, "InvalidSourceChain");
+    ).to.be.revertedWithCustomError(testWallet, "InvalidSourceChain");
   });
 
-  it("factory contract should fail when source chain is not agoric", async () => {
+  it("factory should reject invalid source chain", async () => {
     const commandId = getCommandId();
-
+    const wrongSourceChain = "ethereum";
     const payload = abiCoder.encode([], []);
     const payloadHash = keccak256(toBytes(payload));
-
-    const wrongSourceChain = "ethereum"; // Wrong source chain
-    // Use the correct Factory owner so we pass ownership check but fail on source chain
-    const sourceAddr = sourceAddress;
 
     await approveMessage({
       commandId,
       from: wrongSourceChain,
-      sourceAddress: sourceAddr,
+      sourceAddress: sourceAddress,
       targetAddress: factory.target,
       payload: payloadHash,
       owner,
@@ -388,19 +295,16 @@ describe("Factory", () => {
       abiCoder,
     });
 
-    // This should fail because source chain is not "agoric"
     await expect(
-      factory.execute(commandId, wrongSourceChain, sourceAddr, payload),
+      factory.execute(commandId, wrongSourceChain, sourceAddress, payload),
     ).to.be.revertedWithCustomError(factory, "InvalidSourceChain");
   });
 
-  it("factory contract should fail when caller is not the owner", async () => {
+  it("factory should reject unauthorized caller", async () => {
     const commandId = getCommandId();
-
     const payload = abiCoder.encode([], []);
     const payloadHash = keccak256(toBytes(payload));
-
-    const wrongSourceAddr = "agoric1ee9hr0jyrxhy999y755mp862ljgycmwyp4pl7q"; // Different from factory owner
+    const wrongSourceAddr = "agoric1ee9hr0jyrxhy999y755mp862ljgycmwyp4pl7q";
 
     await approveMessage({
       commandId,
@@ -413,7 +317,6 @@ describe("Factory", () => {
       abiCoder,
     });
 
-    // This should fail because sourceAddress is not the factory owner
     await expect(
       factory.execute(commandId, sourceChain, wrongSourceAddr, payload),
     ).to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount");

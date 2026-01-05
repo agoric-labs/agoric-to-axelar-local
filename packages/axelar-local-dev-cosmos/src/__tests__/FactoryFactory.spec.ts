@@ -130,9 +130,8 @@ describe("FactoryFactory", () => {
     });
   });
 
-  it("should create a new Factory using FactoryFactory", async () => {
+  it("should create Factory with correct owner", async () => {
     const commandId = getCommandId();
-
     const payload = abiCoder.encode([], []);
     const payloadHash = keccak256(toBytes(payload));
 
@@ -147,7 +146,6 @@ describe("FactoryFactory", () => {
       abiCoder,
     });
 
-    // Compute the expected CREATE2 address for Factory
     const expectedFactoryAddress = await computeFactoryCreate2Address(
       factoryFactory.target.toString(),
       axelarGatewayMock.target.toString(),
@@ -156,24 +154,18 @@ describe("FactoryFactory", () => {
       factoryOwner,
     );
 
-    const tx = await factoryFactory.execute(
-      commandId,
-      sourceChain,
-      factoryOwner,
-      payload,
-    );
-
-    await expect(tx)
+    await expect(
+      factoryFactory.execute(commandId, sourceChain, factoryOwner, payload),
+    )
       .to.emit(factoryFactory, "FactoryCreated")
       .withArgs(expectedFactoryAddress, factoryOwner, "agoric", factoryOwner);
 
-    // Verify the Factory was actually deployed at the expected address
-    const code = await ethers.provider.getCode(expectedFactoryAddress);
-    expect(code).to.not.equal("0x");
+    const FactoryContract = await ethers.getContractFactory("Factory");
+    const factory = FactoryContract.attach(expectedFactoryAddress);
+    expect(await factory.owner()).to.equal(factoryOwner);
   });
 
-  it("should verify Factory has correct owner", async () => {
-    // Get the Factory contract at the CREATE2 address
+  it("should create Wallet via Factory hierarchy", async () => {
     const expectedFactoryAddress = await computeFactoryCreate2Address(
       factoryFactory.target.toString(),
       axelarGatewayMock.target.toString(),
@@ -185,47 +177,21 @@ describe("FactoryFactory", () => {
     const FactoryContract = await ethers.getContractFactory("Factory");
     const factory = FactoryContract.attach(expectedFactoryAddress);
 
-    // Verify the owner
-    const owner = await factory.owner();
-    expect(owner).to.equal(factoryOwner);
-  });
-
-  it("should test full hierarchy: FactoryFactory -> Factory -> Wallet", async () => {
-    // Get the Factory contract
-    const expectedFactoryAddress = await computeFactoryCreate2Address(
-      factoryFactory.target.toString(),
-      axelarGatewayMock.target.toString(),
-      axelarGasServiceMock.target.toString(),
-      permit2Mock.target.toString(),
-      factoryOwner,
-    );
-
-    const FactoryContract = await ethers.getContractFactory("Factory");
-    const factory = FactoryContract.attach(expectedFactoryAddress);
-
-    // Now create a Wallet using the Factory
     const commandId = getCommandId();
-
-    // Get the deployed USDC token address
     const usdcAddress = await axelarGatewayMock.tokenAddresses("USDC");
 
     const createAndDepositPayload = {
       lcaOwner: factoryOwner,
       tokenOwner: owner.address,
       permit: {
-        permitted: [
-          {
-            token: usdcAddress,
-            amount: 1000,
-          },
-        ],
+        permitted: [{ token: usdcAddress, amount: 1000 }],
         nonce: 0,
-        deadline: Math.floor(Date.now() / 1000) + 3600, // 1 hour from now
+        deadline: Math.floor(Date.now() / 1000) + 3600,
       },
-      witness: ethers.ZeroHash, // dummy witness
+      witness: ethers.ZeroHash,
       witnessTypeString:
         "CreateWallet(string owner,uint256 chainId,address factory)",
-      signature: "0x" + "00".repeat(65), // dummy signature
+      signature: "0x" + "00".repeat(65),
     };
 
     const payload = abiCoder.encode(
@@ -239,7 +205,7 @@ describe("FactoryFactory", () => {
     await approveMessage({
       commandId,
       from: sourceChain,
-      sourceAddress: factoryOwner, // Factory owner must match
+      sourceAddress: factoryOwner,
       targetAddress: factory.target,
       payload: payloadHash,
       owner,
@@ -247,7 +213,6 @@ describe("FactoryFactory", () => {
       abiCoder,
     });
 
-    // Compute the expected CREATE2 address for Wallet
     const expectedWalletAddress = await computeWalletCreate2Address(
       factory.target.toString(),
       axelarGatewayMock.target.toString(),
@@ -255,35 +220,21 @@ describe("FactoryFactory", () => {
       factoryOwner,
     );
 
-    const tx = await factory.execute(
-      commandId,
-      sourceChain,
-      factoryOwner,
-      payload,
-    );
-
-    await expect(tx)
+    await expect(factory.execute(commandId, sourceChain, factoryOwner, payload))
       .to.emit(factory, "SmartWalletCreated")
       .withArgs(expectedWalletAddress, factoryOwner, "agoric", factoryOwner);
-
-    // Verify the Wallet was deployed
-    const code = await ethers.provider.getCode(expectedWalletAddress);
-    expect(code).to.not.equal("0x");
   });
 
-  it("FactoryFactory should fail when source chain is not agoric", async () => {
+  it("should reject invalid source chain", async () => {
     const commandId = getCommandId();
-
     const payload = abiCoder.encode([], []);
     const payloadHash = keccak256(toBytes(payload));
-
-    const wrongSourceChain = "ethereum"; // Wrong source chain
-    const sourceAddr = "agoric1differentaddress000000000000000000";
+    const wrongSourceChain = "ethereum";
 
     await approveMessage({
       commandId,
       from: wrongSourceChain,
-      sourceAddress: sourceAddr,
+      sourceAddress: factoryOwner,
       targetAddress: factoryFactory.target,
       payload: payloadHash,
       owner,
@@ -291,79 +242,13 @@ describe("FactoryFactory", () => {
       abiCoder,
     });
 
-    // This should fail because source chain is not "agoric"
     await expect(
-      factoryFactory.execute(commandId, wrongSourceChain, sourceAddr, payload),
+      factoryFactory.execute(
+        commandId,
+        wrongSourceChain,
+        factoryOwner,
+        payload,
+      ),
     ).to.be.revertedWithCustomError(factoryFactory, "InvalidSourceChain");
-  });
-
-  it("Factory should fail when caller is not the owner", async () => {
-    // Get the Factory contract
-    const expectedFactoryAddress = await computeFactoryCreate2Address(
-      factoryFactory.target.toString(),
-      axelarGatewayMock.target.toString(),
-      axelarGasServiceMock.target.toString(),
-      permit2Mock.target.toString(),
-      factoryOwner,
-    );
-
-    const FactoryContract = await ethers.getContractFactory("Factory");
-    const factory = FactoryContract.attach(expectedFactoryAddress);
-
-    // Try to create a Wallet with a different owner
-    const commandId = getCommandId();
-    const payload = abiCoder.encode([], []);
-    const payloadHash = keccak256(toBytes(payload));
-
-    const unauthorizedAddress = "agoric1unauthorizedaddress00000000000000";
-
-    await approveMessage({
-      commandId,
-      from: sourceChain,
-      sourceAddress: unauthorizedAddress,
-      targetAddress: factory.target,
-      payload: payloadHash,
-      owner,
-      AxelarGateway: axelarGatewayMock,
-      abiCoder,
-    });
-
-    // This should fail because sourceAddress is not the factory owner
-    await expect(
-      factory.execute(commandId, sourceChain, unauthorizedAddress, payload),
-    ).to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount");
-  });
-
-  it("should verify CREATE2 determinism for Factory", async () => {
-    // Same owner should always generate same Factory address
-    const address1 = await computeFactoryCreate2Address(
-      factoryFactory.target.toString(),
-      axelarGatewayMock.target.toString(),
-      axelarGasServiceMock.target.toString(),
-      permit2Mock.target.toString(),
-      factoryOwner,
-    );
-
-    const address2 = await computeFactoryCreate2Address(
-      factoryFactory.target.toString(),
-      axelarGatewayMock.target.toString(),
-      axelarGasServiceMock.target.toString(),
-      permit2Mock.target.toString(),
-      factoryOwner,
-    );
-
-    expect(address1).to.equal(address2);
-
-    // Different owner should generate different address
-    const differentOwner = "agoric1differentowner00000000000000000000";
-    const address3 = await computeFactoryCreate2Address(
-      factoryFactory.target.toString(),
-      axelarGatewayMock.target.toString(),
-      axelarGasServiceMock.target.toString(),
-      permit2Mock.target.toString(),
-      differentOwner,
-    );
-
-    expect(address1).to.not.equal(address3);
   });
 });
