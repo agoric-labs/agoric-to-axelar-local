@@ -4,7 +4,7 @@
  * then invoke Factory.testExecute(bytes payload).
  */
 
-import { ethers, Wallet } from "ethers";
+import { ethers } from "ethers";
 import {
   SignatureTransfer,
   PermitBatchTransferFrom,
@@ -16,6 +16,7 @@ import { SigningStargateClient } from "@cosmjs/stargate";
 import { addresses, channels, urls } from "./config";
 
 const SMART_WALLET_OWNER = "agoric1y3e3mlnrkuh6j2qcnlrtap42j8mzw240vwr74j";
+const EVM_CHAIN = "arbitrum";
 
 const config = {
   ethereum: {
@@ -31,6 +32,19 @@ const config = {
       },
     },
   },
+  arbitrum: {
+    testnet: {
+      rpc: "https://arbitrum-sepolia-rpc.publicnode.com/",
+      contracts: {
+        /** source: https://docs.uniswap.org/contracts/v4/deployments#arbitrum-sepolia-421614 */
+        permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        // https://sepolia.arbiscan.io/address/0x4BD898791Dc02dCc50EaB1Cfd48b22F621979198
+        factory: "0x4BD898791Dc02dCc50EaB1Cfd48b22F621979198",
+        // source: https://developers.circle.com/stablecoins/usdc-contract-addresses#testnet
+        USDC: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d",
+      },
+    },
+  },
   // axelar testnet
   axelar: {
     contracts: {
@@ -38,6 +52,7 @@ const config = {
     },
     chainIds: {
       ethereum: "ethereum-sepolia",
+      arbitrum: "arbitrum-sepolia",
     },
     gasEstimate: "20000000", // 20 BLD
   },
@@ -162,14 +177,21 @@ const makeEVMOrchestrator = (signer: ethers.Wallet) => {
 };
 type EVMOrchestrator = ReturnType<typeof makeEVMOrchestrator>;
 
+type ChainContracts = {
+  permit2: `0x${string}`;
+  factory: `0x${string}`;
+  USDC: `0x${string}`;
+};
+
 type FlowContext = {
-  contracts: typeof config.ethereum.testnet.contracts;
+  contracts: ChainContracts;
   permit: PermitBatchTransferFrom;
   sig65: `0x${string}`;
   tokenOwner: `0x${string}`;
   lcaOwner: string;
   witness: `0x${string}`;
   witnessTypeString: string;
+  chainId?: keyof typeof config.axelar.chainIds;
 };
 
 /**
@@ -244,6 +266,7 @@ const createAndDepositViaAxelar = async (
     contracts,
     witness,
     witnessTypeString,
+    chainId = "ethereum",
   }: FlowContext,
 ) => {
   const agoricSigner = await getSigner();
@@ -271,7 +294,7 @@ const createAndDepositViaAxelar = async (
   const encodedPayload = Array.from(hexToBytes(abiEncodedData));
 
   const axelarMemo: AxelarGmpOutgoingMemo = {
-    destination_chain: config.axelar.chainIds.ethereum,
+    destination_chain: config.axelar.chainIds[chainId],
     destination_address: contracts.factory,
     payload: encodedPayload,
     type: 1,
@@ -341,8 +364,13 @@ type Signer = ReturnType<typeof makeWalletSigner>;
 
 const addMinutes = (t: number, n: number) => Math.floor(t / 1000) + 60 * n;
 
+type ChainConfig = {
+  rpc: string;
+  contracts: ChainContracts;
+};
+
 const makeUI = (
-  chain: typeof config.ethereum.testnet,
+  chain: ChainConfig,
   { signer, ems }: { signer: Signer; ems: EVMMessageService },
 ) => {
   const { contracts } = chain;
@@ -351,7 +379,7 @@ const makeUI = (
       const permit: PermitBatchTransferFrom = {
         permitted: [{ token: contracts.USDC, amount }],
         nonce: Date.now(),
-        deadline: BigInt(addMinutes(Date.now(), 7)),
+        deadline: BigInt(addMinutes(Date.now(), 15)),
         spender: contracts.factory,
       };
 
@@ -448,13 +476,14 @@ const makeEVMHandler = (
   orch: EVMOrchestrator,
   {
     contracts,
-
     invokeFactory,
     waitBeforeCall,
+    chainId,
   }: {
-    contracts: typeof config.ethereum.testnet.contracts;
+    contracts: ChainContracts;
     invokeFactory: any;
     waitBeforeCall?: () => Promise<void>;
+    chainId?: keyof typeof config.axelar.chainIds;
   },
 ) => {
   return {
@@ -496,6 +525,7 @@ const makeEVMHandler = (
         lcaOwner,
         witness,
         witnessTypeString,
+        chainId,
       });
     },
   };
@@ -512,7 +542,7 @@ const requiredEnv = (env: Record<string, string | undefined>, name: string) => {
 const main = async ({
   argv = process.argv,
   env = process.env,
-  chain = config.ethereum.testnet,
+  chain = config[EVM_CHAIN].testnet,
   makeProvider = (rpc: string) => new ethers.JsonRpcProvider(rpc),
   now = Date.now,
 } = {}) => {
@@ -545,8 +575,10 @@ const main = async ({
     contracts: chain.contracts,
     waitBeforeCall,
     invokeFactory,
+    chainId: EVM_CHAIN,
   });
   const ui = makeUI(chain, { signer: walletSigner, ems });
+  await ui.ensurePermit2Allowance(1n * 1_00_000n);
   await ui.openPortfolio(1n * 1_00_000n);
 };
 
