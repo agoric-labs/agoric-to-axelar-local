@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "permit": "vite-node agoric/createAndDeposit.ts",
+    "create-factory": "vite-node agoric/createOwnableFactory.ts",
     "make-acc": "makeAccount=true node scripts/make-account.mjs",
     "get-addr": "node scripts/make-account.mjs",
     "setup": "node scripts/setup-gmp.mjs",

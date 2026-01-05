@@ -17,6 +17,7 @@ import {
 const AxelarIds = {
   Avalanche: "Avalanche",
   Ethereum: "ethereum-sepolia",
+  Arbitrum: "arbitrum-sepolia",
 };
 
 export type ContractKey = "aavePool" | "compound" | "usdc";
@@ -45,6 +46,15 @@ export const axelarChainsMap: Record<AxelarChain, ChainConfig> = {
       usdc: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
     },
   },
+  Arbitrum: {
+    contractAddresses: {
+      // Placeholder addresses for Arbitrum Sepolia
+      aavePool: "0x",
+      compound: "0x",
+      // Source: https://developers.circle.com/stablecoins/usdc-contract-addresses
+      usdc: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d",
+    },
+  },
 };
 
 export const createRemoteEVMAccount = async (
@@ -54,6 +64,20 @@ export const createRemoteEVMAccount = async (
 
   await sendGmp({
     destinationAddress: factoryAddress,
+    destinationEVMChain: AxelarIds[destinationEVMChain] as AxelarChain,
+    type: AxelarGMPMessageType.ContractCall,
+    gasAmount,
+    contractInvocationData: [],
+  });
+};
+
+export const createOwnableFactory = async (
+  gmpArgs: BaseGmpArgs & { factoryFactoryAddress: `0x${string}` },
+) => {
+  const { destinationEVMChain, gasAmount, factoryFactoryAddress } = gmpArgs;
+
+  await sendGmp({
+    destinationAddress: factoryFactoryAddress,
     destinationEVMChain: AxelarIds[destinationEVMChain] as AxelarChain,
     type: AxelarGMPMessageType.ContractCall,
     gasAmount,
@@ -198,7 +222,7 @@ export const supplyToCompound = async (
 
   await sendGmp({
     destinationAddress: remoteEVMAddress,
-    destinationEVMChain: 'ethereum-sepolia',
+    destinationEVMChain: "ethereum-sepolia",
     type: AxelarGMPMessageType.ContractCall,
     gasAmount,
     contractInvocationData: [

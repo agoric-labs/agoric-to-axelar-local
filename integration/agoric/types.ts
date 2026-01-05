@@ -43,6 +43,7 @@ export type AbiEncodedContractCall = {
 export const AxelarChains = /** @type {const} */ {
   Ethereum: "Ethereum",
   Avalanche: "Avalanche",
+  Arbitrum: "Arbitrum",
 };
 
 export type AxelarChain = keyof typeof AxelarChains;

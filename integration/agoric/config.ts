@@ -26,3 +26,8 @@ export const FACTORY_ADDRESS = {
   // https://sepolia.etherscan.io/address/0x726cAF5f0BA64AF97337c6Db80F5d26Aa9DEAE75
   Ethereum: "0x726cAF5f0BA64AF97337c6Db80F5d26Aa9DEAE75",
 };
+
+export const FACTORY_FACTORY_ADDRESS = {
+  // https://sepolia.arbiscan.io/address/0x52F4bfa3542cCE1bD93688728813E0ca91729024
+  Arbitrum: "0x52F4bfa3542cCE1bD93688728813E0ca91729024",
+};
