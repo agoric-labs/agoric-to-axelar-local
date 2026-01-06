@@ -138,17 +138,6 @@ contract DepositFactory is AxelarExecutable, Ownable {
             requestedAmount: permit.permitted[0].amount
         });
 
-        // NOTE: Witness validation is not enforced at the contract level.
-        // The witness should contain: keccak256(abi.encode(
-        //     keccak256("CreateWallet(string owner,uint256 chainId,address factory)"),
-        //     keccak256(bytes(lcaOwner)),
-        //     block.chainid,
-        //     address(this)
-        // ))
-        //
-        // Also current witness data contents are DUMMY/PLACEHOLDER values.
-        // The witness type structure and fields need to be finalized before production.
-
         permit2.permitWitnessTransferFrom(
             permit,
             detailsArray,
