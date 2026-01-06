@@ -43,4 +43,21 @@ delete_deployments_folder() {
 get_network_config "$network"
 
 delete_deployments_folder "ignition/deployments"
-deploy_contract "./ignition/modules/deployFactoryFactory.ts" "$GATEWAY" "$GAS_SERVICE" "$PERMIT2"
+
+case $contract_type in
+    factory)
+        echo "Deploying Factory (simple version without Permit2)..."
+        GATEWAY_CONTRACT="$GATEWAY" \
+            GAS_SERVICE_CONTRACT="$GAS_SERVICE" \
+            npx hardhat ignition deploy "./ignition/modules/deployFactory.ts" --network "$network" --verify
+        ;;
+    factory-factory)
+        echo "Deploying FactoryFactory (with Permit2 support)..."
+        deploy_contract "./ignition/modules/deployFactoryFactory.ts" "$GATEWAY" "$GAS_SERVICE" "$PERMIT2"
+        ;;
+    *)
+        echo "Error: Invalid contract type '$contract_type'"
+        echo "Valid options: 'factory' or 'factory-factory'"
+        exit 1
+        ;;
+esac
