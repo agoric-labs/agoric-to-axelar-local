@@ -22,27 +22,14 @@ interface IPermit2 {
         uint256 deadline;
     }
 
-    struct PermitBatchTransferFrom {
-        TokenPermissions[] permitted;
-        uint256 nonce;
-        uint256 deadline;
-    }
-
     struct SignatureTransferDetails {
         address to;
         uint256 requestedAmount;
     }
 
-    function permitTransferFrom(
+    function permitWitnessTransferFrom(
         PermitTransferFrom calldata permit,
         SignatureTransferDetails calldata transferDetails,
-        address owner,
-        bytes calldata signature
-    ) external;
-
-    function permitWitnessTransferFrom(
-        PermitBatchTransferFrom calldata permit,
-        SignatureTransferDetails[] calldata transferDetails,
         address owner,
         bytes32 witness,
         string calldata witnessTypeString,
@@ -56,8 +43,8 @@ struct CreateAndDepositPayload {
     string lcaOwner;
     // EVM address that signed the Permit2 EIP-712 (the token owner on this chain)
     address tokenOwner;
-    // Permit2 SignatureTransfer batch permit (supports single or multiple tokens)
-    IPermit2.PermitBatchTransferFrom permit;
+    // Permit2 SignatureTransfer permit (supports single token)
+    IPermit2.PermitTransferFrom permit;
     // Witness data for additional context (e.g., hash of wallet address + chainId)
     bytes32 witness;
     // EIP-712 type string for witness validation
@@ -116,42 +103,27 @@ contract DepositFactory is AxelarExecutable, Ownable {
     function _createAndDeposit(
         string memory lcaOwner,
         address tokenOwner,
-        IPermit2.PermitBatchTransferFrom memory permit,
+        IPermit2.PermitTransferFrom memory permit,
         bytes32 witness,
         string memory witnessTypeString,
         bytes memory signature
     ) internal returns (address newWallet) {
         require(bytes(lcaOwner).length > 0, "lcaOwner cannot be empty");
         require(tokenOwner != address(0), "tokenOwner=0");
-        require(permit.permitted.length > 0, "no tokens");
-        require(permit.permitted[0].token != address(0), "token=0");
-        require(permit.permitted[0].amount > 0, "amount=0");
+        require(permit.permitted.token != address(0), "token=0");
+        require(permit.permitted.amount > 0, "amount=0");
 
         newWallet = _createSmartWallet(lcaOwner);
 
-        // Create transfer details array for single token
-        IPermit2.SignatureTransferDetails[]
-            memory detailsArray = new IPermit2.SignatureTransferDetails[](1);
-
-        detailsArray[0] = IPermit2.SignatureTransferDetails({
-            to: newWallet,
-            requestedAmount: permit.permitted[0].amount
-        });
-
-        // NOTE: Witness validation is not enforced at the contract level.
-        // The witness should contain: keccak256(abi.encode(
-        //     keccak256("CreateWallet(string owner,uint256 chainId,address factory)"),
-        //     keccak256(bytes(lcaOwner)),
-        //     block.chainid,
-        //     address(this)
-        // ))
-        //
-        // Also current witness data contents are DUMMY/PLACEHOLDER values.
-        // The witness type structure and fields need to be finalized before production.
+        IPermit2.SignatureTransferDetails memory details = IPermit2
+            .SignatureTransferDetails({
+                to: newWallet,
+                requestedAmount: permit.permitted.amount
+            });
 
         permit2.permitWitnessTransferFrom(
             permit,
-            detailsArray,
+            details,
             tokenOwner,
             witness,
             witnessTypeString,
