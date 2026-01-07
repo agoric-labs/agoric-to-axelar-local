@@ -146,12 +146,10 @@ describe("DepositFactory", () => {
       lcaOwner: sourceAddress,
       tokenOwner: owner.address,
       permit: {
-        permitted: [
-          {
-            token: testToken.target,
-            amount: 1000,
-          },
-        ],
+        permitted: {
+          token: testToken.target,
+          amount: 1000,
+        },
         nonce: 0,
         deadline: Math.floor(Date.now() / 1000) + 3600, // 1 hour from now
       },
@@ -163,7 +161,7 @@ describe("DepositFactory", () => {
 
     const payload = abiCoder.encode(
       [
-        "tuple(string lcaOwner, address tokenOwner, tuple(tuple(address token, uint256 amount)[] permitted, uint256 nonce, uint256 deadline) permit, bytes32 witness, string witnessTypeString, bytes signature)",
+        "tuple(string lcaOwner, address tokenOwner, tuple(tuple(address token, uint256 amount) permitted, uint256 nonce, uint256 deadline) permit, bytes32 witness, string witnessTypeString, bytes signature)",
       ],
       [createAndDepositPayload],
     );
@@ -346,12 +344,10 @@ describe("DepositFactory", () => {
       lcaOwner: "agoric1testexpired",
       tokenOwner: owner.address,
       permit: {
-        permitted: [
-          {
-            token: testToken.target,
-            amount: 1000,
-          },
-        ],
+        permitted: {
+          token: testToken.target,
+          amount: 1000,
+        },
         nonce: 100,
         deadline: expiredDeadline,
       },
@@ -363,7 +359,7 @@ describe("DepositFactory", () => {
 
     const payload = abiCoder.encode(
       [
-        "tuple(string lcaOwner, address tokenOwner, tuple(tuple(address token, uint256 amount)[] permitted, uint256 nonce, uint256 deadline) permit, bytes32 witness, string witnessTypeString, bytes signature)",
+        "tuple(string lcaOwner, address tokenOwner, tuple(tuple(address token, uint256 amount) permitted, uint256 nonce, uint256 deadline) permit, bytes32 witness, string witnessTypeString, bytes signature)",
       ],
       [createAndDepositPayload],
     );
@@ -407,12 +403,10 @@ describe("DepositFactory", () => {
       lcaOwner: "agoric1testnonce1",
       tokenOwner: owner.address,
       permit: {
-        permitted: [
-          {
-            token: testToken.target,
-            amount: 1000,
-          },
-        ],
+        permitted: {
+          token: testToken.target,
+          amount: 1000,
+        },
         nonce: sharedNonce,
         deadline: validDeadline,
       },
@@ -424,7 +418,7 @@ describe("DepositFactory", () => {
 
     const encodedPayload1 = abiCoder.encode(
       [
-        "tuple(string lcaOwner, address tokenOwner, tuple(tuple(address token, uint256 amount)[] permitted, uint256 nonce, uint256 deadline) permit, bytes32 witness, string witnessTypeString, bytes signature)",
+        "tuple(string lcaOwner, address tokenOwner, tuple(tuple(address token, uint256 amount) permitted, uint256 nonce, uint256 deadline) permit, bytes32 witness, string witnessTypeString, bytes signature)",
       ],
       [payload1],
     );
@@ -454,12 +448,10 @@ describe("DepositFactory", () => {
       lcaOwner: "agoric1testnonce2",
       tokenOwner: owner.address,
       permit: {
-        permitted: [
-          {
-            token: testToken.target,
-            amount: 1000,
-          },
-        ],
+        permitted: {
+          token: testToken.target,
+          amount: 1000,
+        },
         nonce: sharedNonce, // Same nonce!
         deadline: validDeadline,
       },
@@ -471,7 +463,7 @@ describe("DepositFactory", () => {
 
     const encodedPayload2 = abiCoder.encode(
       [
-        "tuple(string lcaOwner, address tokenOwner, tuple(tuple(address token, uint256 amount)[] permitted, uint256 nonce, uint256 deadline) permit, bytes32 witness, string witnessTypeString, bytes signature)",
+        "tuple(string lcaOwner, address tokenOwner, tuple(tuple(address token, uint256 amount) permitted, uint256 nonce, uint256 deadline) permit, bytes32 witness, string witnessTypeString, bytes signature)",
       ],
       [payload2],
     );

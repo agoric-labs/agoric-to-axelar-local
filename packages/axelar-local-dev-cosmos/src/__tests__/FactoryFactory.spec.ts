@@ -192,7 +192,7 @@ describe("FactoryFactory", () => {
       lcaOwner: factoryOwner,
       tokenOwner: owner.address,
       permit: {
-        permitted: [{ token: testToken.target, amount: 1000 }],
+        permitted: { token: testToken.target, amount: 1000 },
         nonce: 0,
         deadline: Math.floor(Date.now() / 1000) + 3600,
       },
@@ -204,7 +204,7 @@ describe("FactoryFactory", () => {
 
     const payload = abiCoder.encode(
       [
-        "tuple(string lcaOwner, address tokenOwner, tuple(tuple(address token, uint256 amount)[] permitted, uint256 nonce, uint256 deadline) permit, bytes32 witness, string witnessTypeString, bytes signature)",
+        "tuple(string lcaOwner, address tokenOwner, tuple(tuple(address token, uint256 amount) permitted, uint256 nonce, uint256 deadline) permit, bytes32 witness, string witnessTypeString, bytes signature)",
       ],
       [createAndDepositPayload],
     );
