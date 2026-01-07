@@ -175,3 +175,76 @@ contract DepositFactory is AxelarExecutable, Ownable {
         emit Received(msg.sender, msg.value);
     }
 }
+
+/**
+ * @notice Minimal CREATE2 deployer for deterministic DepositFactory addresses
+ * @dev Allows deployment of DepositFactory with predictable addresses across chains
+ */
+contract DepositFactoryDeployer {
+    event DepositFactoryDeployed(
+        address indexed factory,
+        string indexed owner,
+        bytes32 salt
+    );
+
+    /**
+     * @notice Deploy a DepositFactory using CREATE2 for deterministic address
+     * @param gateway_ Axelar gateway address
+     * @param gasReceiver_ Axelar gas service address
+     * @param permit2_ Permit2 contract address
+     * @param owner_ LCA address that will own the factory
+     * @param salt Salt for CREATE2 deployment (use keccak256(abi.encodePacked(owner_)) for owner-based determinism)
+     * @return factory The address of the deployed DepositFactory
+     */
+    function deployDepositFactory(
+        address gateway_,
+        address gasReceiver_,
+        address permit2_,
+        string memory owner_,
+        bytes32 salt
+    ) external returns (address factory) {
+        factory = address(
+            new DepositFactory{salt: salt}(
+                gateway_,
+                gasReceiver_,
+                permit2_,
+                owner_
+            )
+        );
+
+        emit DepositFactoryDeployed(factory, owner_, salt);
+    }
+
+    /**
+     * @notice Compute the address of a DepositFactory before deployment
+     * @param gateway_ Axelar gateway address
+     * @param gasReceiver_ Axelar gas service address
+     * @param permit2_ Permit2 contract address
+     * @param owner_ LCA address that will own the factory
+     * @param salt Salt for CREATE2 deployment
+     * @return predicted The predicted address of the DepositFactory
+     */
+    function computeDepositFactoryAddress(
+        address gateway_,
+        address gasReceiver_,
+        address permit2_,
+        string memory owner_,
+        bytes32 salt
+    ) external view returns (address predicted) {
+        bytes memory bytecode = abi.encodePacked(
+            type(DepositFactory).creationCode,
+            abi.encode(gateway_, gasReceiver_, permit2_, owner_)
+        );
+
+        bytes32 hash = keccak256(
+            abi.encodePacked(
+                bytes1(0xff),
+                address(this),
+                salt,
+                keccak256(bytecode)
+            )
+        );
+
+        predicted = address(uint160(uint256(hash)));
+    }
+}

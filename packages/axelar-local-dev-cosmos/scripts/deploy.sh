@@ -9,16 +9,17 @@ if [[ $# -eq 0 ]]; then
     echo ""
     echo "Arguments:"
     echo "  network        - Target network to deploy to"
-    echo "  contract_type  - Optional: 'factory' or 'factory-factory' (default: factory-factory)"
+    echo "  contract_type  - Optional: 'factory', 'deposit-factory', or 'factory-factory' (default: factory-factory)"
     echo ""
     echo "Supported networks:"
     echo "  Mainnets: avax, arb, base, eth, opt, pol"
     echo "  Testnets: eth-sepolia, fuji, base-sepolia, opt-sepolia, arb-sepolia"
     echo ""
     echo "Examples:"
-    echo "  $0 eth-sepolia                    # Deploy FactoryFactory"
-    echo "  $0 eth-sepolia factory-factory    # Deploy FactoryFactory"
-    echo "  $0 eth-sepolia factory            # Deploy Factory (simple)"
+    echo "  $0 eth-sepolia                      # Deploy FactoryFactory"
+    echo "  $0 eth-sepolia factory-factory      # Deploy FactoryFactory"
+    echo "  $0 eth-sepolia factory              # Deploy Factory (simple)"
+    echo "  $0 eth-sepolia deposit-factory      # Deploy DepositFactory with CREATE2 (requires OWNER_ADDRESS env var)"
     exit 0
 fi
 
@@ -58,13 +59,25 @@ case $contract_type in
             GAS_SERVICE_CONTRACT="$GAS_SERVICE" \
             npx hardhat ignition deploy "./ignition/modules/deployFactory.ts" --network "$network" --verify
         ;;
+    deposit-factory)
+        echo "Deploying DepositFactory with CREATE2 (deterministic address)..."
+        if [ -z "$OWNER_ADDRESS" ]; then
+            echo "Error: OWNER_ADDRESS environment variable is required for deposit-factory deployment"
+            exit 1
+        fi
+        GATEWAY_CONTRACT="$GATEWAY" \
+            GAS_SERVICE_CONTRACT="$GAS_SERVICE" \
+            PERMIT2_CONTRACT="$PERMIT2" \
+            OWNER_ADDRESS="$OWNER_ADDRESS" \
+            npx hardhat ignition deploy "./ignition/modules/deployDepositFactory.ts" --network "$network" --verify
+        ;;
     factory-factory)
         echo "Deploying FactoryFactory (with Permit2 support)..."
         deploy_contract "./ignition/modules/deployFactoryFactory.ts" "$GATEWAY" "$GAS_SERVICE" "$PERMIT2"
         ;;
     *)
         echo "Error: Invalid contract type '$contract_type'"
-        echo "Valid options: 'factory' or 'factory-factory'"
+        echo "Valid options: 'factory', 'deposit-factory', or 'factory-factory'"
         exit 1
         ;;
 esac
