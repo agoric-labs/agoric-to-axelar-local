@@ -37,7 +37,8 @@
     "lint": "prettier --check .",
     "lint:fix": "prettier --write .",
     "test:proxy": "yarn --cwd packages/axelar-local-dev-cosmos test:proxy",
-    "coverage:proxy": "lerna exec --scope=@axelar-network/axelar-local-dev-cosmos npm run coverage:proxy"
+    "coverage:proxy": "lerna exec --scope=@axelar-network/axelar-local-dev-cosmos npm run coverage:proxy",
+    "decode": "cd integration && npx --silent vite-node decode-payload.ts"
   },
   "devDependencies": {
     "chai-as-promised": "^8.0.1",

@@ -10,7 +10,8 @@
     "supply-aave": "vite-node agoric/main.ts supply-aave",
     "withdraw-aave": "vite-node agoric/main.ts withdraw-aave",
     "supply-compound": "vite-node agoric/main.ts supply-compound",
-    "withdraw-compound": "vite-node agoric/main.ts withdraw-compound"
+    "withdraw-compound": "vite-node agoric/main.ts withdraw-compound",
+    "decode": "vite-node decode-payload.ts"
   },
   "keywords": [],
   "author": "",
