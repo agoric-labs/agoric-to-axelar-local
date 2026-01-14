@@ -8,7 +8,6 @@
   },
   "scripts": {
     "deploy": "cd packages/axelar-local-dev-cosmos && ./scripts/deploy.sh",
-    "deploy:factory": "cd packages/axelar-local-dev-cosmos && ./scripts/deploy.sh",
     "deploy:wallethelper": "cd packages/axelar-local-dev-cosmos && ./scripts/deploy.sh $NETWORK wallethelper",
     "deploy:wallethelper:mainnet": "NETWORK=${NETWORK:-eth} npm run deploy:wallethelper",
     "deploy:wallethelper:testnet": "NETWORK=${NETWORK:-eth-sepolia} npm run deploy:wallethelper",
