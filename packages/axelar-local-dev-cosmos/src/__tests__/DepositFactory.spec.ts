@@ -141,6 +141,14 @@ describe("DepositFactory", () => {
     await testToken.mint(owner.address, 10000);
     await testToken.approve(permit2Mock.target, ethers.MaxUint256);
 
+    // Compute the expected CREATE2 address
+    const expectedWalletAddress = await computeCreate2Address(
+      factory.target.toString(),
+      axelarGatewayMock.target.toString(),
+      axelarGasServiceMock.target.toString(),
+      sourceAddress,
+    );
+
     // Create a proper CreateAndDepositPayload
     const createAndDepositPayload = {
       lcaOwner: sourceAddress,
@@ -157,11 +165,12 @@ describe("DepositFactory", () => {
       witnessTypeString:
         "CreateWallet(string owner,uint256 chainId,address factory)",
       signature: "0x" + "00".repeat(65), // dummy signature
+      expectedWalletAddress: expectedWalletAddress,
     };
 
     const payload = abiCoder.encode(
       [
-        "tuple(string lcaOwner, address tokenOwner, tuple(tuple(address token, uint256 amount) permitted, uint256 nonce, uint256 deadline) permit, bytes32 witness, string witnessTypeString, bytes signature)",
+        "tuple(string lcaOwner, address tokenOwner, tuple(tuple(address token, uint256 amount) permitted, uint256 nonce, uint256 deadline) permit, bytes32 witness, string witnessTypeString, bytes signature, address expectedWalletAddress)",
       ],
       [createAndDepositPayload],
     );
@@ -178,14 +187,6 @@ describe("DepositFactory", () => {
       abiCoder,
     });
 
-    // Compute the expected CREATE2 address
-    const expectedWalletAddress = await computeCreate2Address(
-      factory.target.toString(),
-      axelarGatewayMock.target.toString(),
-      axelarGasServiceMock.target.toString(),
-      sourceAddress,
-    );
-
     const tx = await factory.execute(
       commandId,
       sourceChain,
@@ -195,7 +196,7 @@ describe("DepositFactory", () => {
 
     await expect(tx)
       .to.emit(factory, "SmartWalletCreated")
-      .withArgs(expectedWalletAddress, sourceAddress, "agoric", sourceAddress);
+      .withArgs(expectedWalletAddress, sourceAddress, "agoric");
   });
 
   it("should use the remote wallet to call other contracts", async () => {
@@ -338,10 +339,20 @@ describe("DepositFactory", () => {
     await testToken.mint(owner.address, 10000);
     await testToken.approve(permit2Mock.target, ethers.MaxUint256);
 
+    const lcaOwner = "agoric1testexpired";
+
+    // Compute the expected CREATE2 address
+    const expectedWalletAddress = await computeCreate2Address(
+      factory.target.toString(),
+      axelarGatewayMock.target.toString(),
+      axelarGasServiceMock.target.toString(),
+      lcaOwner,
+    );
+
     // Create payload with EXPIRED deadline (in the past)
     const expiredDeadline = Math.floor(Date.now() / 1000) - 3600; // 1 hour ago
     const createAndDepositPayload = {
-      lcaOwner: "agoric1testexpired",
+      lcaOwner: lcaOwner,
       tokenOwner: owner.address,
       permit: {
         permitted: {
@@ -355,11 +366,12 @@ describe("DepositFactory", () => {
       witnessTypeString:
         "CreateWallet(string owner,uint256 chainId,address factory)",
       signature: "0x" + "00".repeat(65),
+      expectedWalletAddress: expectedWalletAddress,
     };
 
     const payload = abiCoder.encode(
       [
-        "tuple(string lcaOwner, address tokenOwner, tuple(tuple(address token, uint256 amount) permitted, uint256 nonce, uint256 deadline) permit, bytes32 witness, string witnessTypeString, bytes signature)",
+        "tuple(string lcaOwner, address tokenOwner, tuple(tuple(address token, uint256 amount) permitted, uint256 nonce, uint256 deadline) permit, bytes32 witness, string witnessTypeString, bytes signature, address expectedWalletAddress)",
       ],
       [createAndDepositPayload],
     );
@@ -398,9 +410,27 @@ describe("DepositFactory", () => {
     const sharedNonce = 200;
     const validDeadline = Math.floor(Date.now() / 1000) + 3600;
 
+    const lcaOwner1 = "agoric1testnonce1";
+    const lcaOwner2 = "agoric1testnonce2";
+
+    // Compute expected CREATE2 addresses
+    const expectedWalletAddress1 = await computeCreate2Address(
+      factory.target.toString(),
+      axelarGatewayMock.target.toString(),
+      axelarGasServiceMock.target.toString(),
+      lcaOwner1,
+    );
+
+    const expectedWalletAddress2 = await computeCreate2Address(
+      factory.target.toString(),
+      axelarGatewayMock.target.toString(),
+      axelarGasServiceMock.target.toString(),
+      lcaOwner2,
+    );
+
     // First transaction with nonce 200
     const payload1 = {
-      lcaOwner: "agoric1testnonce1",
+      lcaOwner: lcaOwner1,
       tokenOwner: owner.address,
       permit: {
         permitted: {
@@ -414,11 +444,12 @@ describe("DepositFactory", () => {
       witnessTypeString:
         "CreateWallet(string owner,uint256 chainId,address factory)",
       signature: "0x" + "00".repeat(65),
+      expectedWalletAddress: expectedWalletAddress1,
     };
 
     const encodedPayload1 = abiCoder.encode(
       [
-        "tuple(string lcaOwner, address tokenOwner, tuple(tuple(address token, uint256 amount) permitted, uint256 nonce, uint256 deadline) permit, bytes32 witness, string witnessTypeString, bytes signature)",
+        "tuple(string lcaOwner, address tokenOwner, tuple(tuple(address token, uint256 amount) permitted, uint256 nonce, uint256 deadline) permit, bytes32 witness, string witnessTypeString, bytes signature, address expectedWalletAddress)",
       ],
       [payload1],
     );
@@ -445,7 +476,7 @@ describe("DepositFactory", () => {
 
     // Second transaction with SAME nonce 200 (should fail)
     const payload2 = {
-      lcaOwner: "agoric1testnonce2",
+      lcaOwner: lcaOwner2,
       tokenOwner: owner.address,
       permit: {
         permitted: {
@@ -459,11 +490,12 @@ describe("DepositFactory", () => {
       witnessTypeString:
         "CreateWallet(string owner,uint256 chainId,address factory)",
       signature: "0x" + "00".repeat(65),
+      expectedWalletAddress: expectedWalletAddress2,
     };
 
     const encodedPayload2 = abiCoder.encode(
       [
-        "tuple(string lcaOwner, address tokenOwner, tuple(tuple(address token, uint256 amount) permitted, uint256 nonce, uint256 deadline) permit, bytes32 witness, string witnessTypeString, bytes signature)",
+        "tuple(string lcaOwner, address tokenOwner, tuple(tuple(address token, uint256 amount) permitted, uint256 nonce, uint256 deadline) permit, bytes32 witness, string witnessTypeString, bytes signature, address expectedWalletAddress)",
       ],
       [payload2],
     );
