@@ -14,7 +14,7 @@ export const testFactory = async () => {
     defaultAxelarChainInfo,
   );
 
-  const Factory = require("../artifacts/src/__tests__/contracts/Factory.sol/Factory.json");
+  const Factory = require("../artifacts/src/contracts/Factory.sol/Factory.json");
 
   const ethereumNetwork = await createNetwork({ name: "Ethereum" });
   const factoryContract = await deployContract(

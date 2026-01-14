@@ -46,8 +46,8 @@ export const testWallet = async () => {
   // address present on agoric with BLD
   const senderAddress = "agoric1estsewt6jqsx77pwcxkn5ah0jqgu8rhgflwfdl";
 
-  const Factory = require("../artifacts/src/__tests__/contracts/Factory.sol/Factory.json");
-  const WalletContract = require("../artifacts/src/__tests__/contracts/Factory.sol/Wallet.json");
+  const Factory = require("../artifacts/src/contracts/Factory.sol/Factory.json");
+  const WalletContract = require("../artifacts/src/contracts/Factory.sol/Wallet.json");
 
   const ethereumNetwork = await createNetwork({ name: "Ethereum" });
   const factoryContract = await deployContract(

@@ -17,13 +17,13 @@ export const relayBasic = async () => {
 
   const multiCallContract = await deployContract(
     ethereumNetwork.userWallets[0],
-    require("../artifacts/src/__tests__/contracts/Multicall.sol/Multicall.json"),
+    require("../artifacts/src/contracts/Multicall.sol/Multicall.json"),
   );
   console.log("MultiCall Contract Address:", multiCallContract.address);
 
   const factoryContract = await deployContract(
     ethereumNetwork.userWallets[0],
-    require("../artifacts/src/__tests__/contracts/Factory.sol/Factory.json"),
+    require("../artifacts/src/contracts/Factory.sol/Factory.json"),
     [ethereumNetwork.gateway.address, ethereumNetwork.gasService.address],
   );
   console.log("Factory Contract Address:", factoryContract.address);
