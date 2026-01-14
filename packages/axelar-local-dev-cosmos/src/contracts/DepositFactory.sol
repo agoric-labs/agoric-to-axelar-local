@@ -8,6 +8,11 @@ import {Ownable} from "./Ownable.sol";
 import {Wallet} from "./Wallet.sol";
 
 error InvalidSourceChain(string expected, string actual);
+error WalletAddressMismatch(address expected, address actual);
+error EmptyLcaOwner();
+error InvalidTokenOwner();
+error InvalidToken();
+error InvalidAmount();
 
 // Minimal version taken from: https://github.com/Uniswap/permit2/blob/cc56ad0f3439c502c246fc5cfcc3db92bb8b7219/src/interfaces/IPermit2.sol
 interface IPermit2 {
@@ -51,6 +56,8 @@ struct CreateAndDepositPayload {
     string witnessTypeString;
     // 65-byte or 64-byte (EIP-2098) signature
     bytes signature;
+    // Expected wallet address computed via create2 on sending side
+    address expectedWalletAddress;
 }
 
 contract DepositFactory is AxelarExecutable, Ownable {
@@ -70,8 +77,7 @@ contract DepositFactory is AxelarExecutable, Ownable {
     event SmartWalletCreated(
         address indexed wallet,
         string owner,
-        string sourceChain,
-        string sourceAddress
+        string sourceChain
     );
 
     event Received(address indexed sender, uint256 amount);
@@ -106,14 +112,20 @@ contract DepositFactory is AxelarExecutable, Ownable {
         IPermit2.PermitTransferFrom memory permit,
         bytes32 witness,
         string memory witnessTypeString,
-        bytes memory signature
+        bytes memory signature,
+        address expectedWalletAddress
     ) internal returns (address newWallet) {
-        require(bytes(lcaOwner).length > 0, "lcaOwner cannot be empty");
-        require(tokenOwner != address(0), "tokenOwner=0");
-        require(permit.permitted.token != address(0), "token=0");
-        require(permit.permitted.amount > 0, "amount=0");
+        if (bytes(lcaOwner).length == 0) revert EmptyLcaOwner();
+        if (tokenOwner == address(0)) revert InvalidTokenOwner();
+        if (permit.permitted.token == address(0)) revert InvalidToken();
+        if (permit.permitted.amount == 0) revert InvalidAmount();
 
         newWallet = _createSmartWallet(lcaOwner);
+
+        // Validate that created wallet matches expected address
+        if (newWallet != expectedWalletAddress) {
+            revert WalletAddressMismatch(expectedWalletAddress, newWallet);
+        }
 
         IPermit2.SignatureTransferDetails memory details = IPermit2
             .SignatureTransferDetails({
@@ -156,15 +168,11 @@ contract DepositFactory is AxelarExecutable, Ownable {
             p.permit,
             p.witness,
             p.witnessTypeString,
-            p.signature
+            p.signature,
+            p.expectedWalletAddress
         );
 
-        emit SmartWalletCreated(
-            smartWalletAddress,
-            walletOwner,
-            sourceChain,
-            sourceAddress
-        );
+        emit SmartWalletCreated(smartWalletAddress, walletOwner, sourceChain);
     }
 
     receive() external payable {

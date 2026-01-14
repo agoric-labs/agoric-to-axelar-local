@@ -7,6 +7,7 @@ import {StringToAddress, AddressToString} from "@updated-axelar-network/axelar-g
 import {Wallet} from "./Wallet.sol";
 
 error InvalidSourceChain(string expected, string actual);
+error WalletAddressMismatch(address expected, address actual);
 
 contract Factory is AxelarExecutable {
     using StringToAddress for string;
@@ -21,8 +22,7 @@ contract Factory is AxelarExecutable {
     event SmartWalletCreated(
         address indexed wallet,
         string owner,
-        string sourceChain,
-        string sourceAddress
+        string sourceChain
     );
 
     event Received(address indexed sender, uint256 amount);
@@ -57,13 +57,22 @@ contract Factory is AxelarExecutable {
         if (keccak256(bytes(sourceChain)) != EXPECTED_SOURCE_CHAIN_HASH) {
             revert InvalidSourceChain(EXPECTED_SOURCE_CHAIN, sourceChain);
         }
+
+        // Decode expected wallet address from payload
+        address expectedWalletAddress = abi.decode(payload, (address));
+
+        // Create the wallet
         address smartWalletAddress = _createSmartWallet(sourceAddress);
-        emit SmartWalletCreated(
-            smartWalletAddress,
-            sourceAddress,
-            sourceChain,
-            sourceAddress
-        );
+
+        // Validate that created wallet matches expected address
+        if (smartWalletAddress != expectedWalletAddress) {
+            revert WalletAddressMismatch(
+                expectedWalletAddress,
+                smartWalletAddress
+            );
+        }
+
+        emit SmartWalletCreated(smartWalletAddress, sourceAddress, sourceChain);
     }
 
     receive() external payable {
