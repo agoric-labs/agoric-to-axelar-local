@@ -12,7 +12,7 @@ if [[ $# -eq 0 ]]; then
     echo "  owner_type     - Optional: 'ymax0' or 'ymax1' (default: ymax0)"
     echo ""
     echo "Supported networks:"
-    echo "  Mainnets: avax, arb, base, eth, opt, pol"
+    echo "  Mainnets: avax, arb, base, eth, opt"
     echo "  Testnets: eth-sepolia, fuji, base-sepolia, opt-sepolia, arb-sepolia"
     echo ""
     echo "Examples:"
