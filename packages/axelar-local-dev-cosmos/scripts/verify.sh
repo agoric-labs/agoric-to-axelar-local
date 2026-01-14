@@ -46,4 +46,4 @@ npx hardhat verify --network "$network" \
     "$GATEWAY" \
     "$GAS_SERVICE" \
     "$owner" \
-    --contract "src/__tests__/contracts/Factory.sol:Wallet"
+    --contract "src/contracts/Factory.sol:Wallet"

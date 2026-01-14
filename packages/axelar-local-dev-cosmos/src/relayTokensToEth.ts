@@ -16,7 +16,7 @@ export const relayDataToEth = async () => {
     defaultAxelarChainInfo,
   );
 
-  const CallContractWithToken = require("../artifacts/src/__tests__/contracts/ContractCallWithToken.sol/CallContractWithToken.json");
+  const CallContractWithToken = require("../artifacts/src/contracts/ContractCallWithToken.sol/CallContractWithToken.json");
 
   const ethereumNetwork = await createNetwork({ name: "Ethereum" });
   const ethereumContract = await deployContract(

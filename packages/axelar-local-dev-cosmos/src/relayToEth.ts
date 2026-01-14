@@ -16,7 +16,7 @@ export const relayDataToEth = async () => {
     defaultAxelarChainInfo,
   );
 
-  const SendReceive = require("../artifacts/src/__tests__/contracts/SendReceive.sol/SendReceive.json");
+  const SendReceive = require("../artifacts/src/contracts/SendReceive.sol/SendReceive.json");
 
   const ethereumNetwork = await createNetwork({ name: "Ethereum" });
   const ethereumContract = await deployContract(

@@ -14,7 +14,7 @@ import {
   IBCRelayerService,
   defaultAxelarChainInfo,
 } from "../..";
-import SendReceive from "../../../artifacts/src/__tests__/contracts/SendReceive.sol/SendReceive.json";
+import SendReceive from "../../../artifacts/src/contracts/SendReceive.sol/SendReceive.json";
 
 describe("Relayer", () => {
   let cosmosRelayer: AxelarRelayerService;

@@ -119,7 +119,7 @@ const config: HardhatUserConfig = {
     ...(PRIVATE_KEY ? mainnets : {}),
   },
   paths: {
-    sources: "./src/__tests__/contracts",
+    sources: "./src/contracts",
   },
   mocha: {
     timeout: 200000,
