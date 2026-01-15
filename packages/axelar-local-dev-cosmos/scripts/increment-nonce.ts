@@ -147,49 +147,157 @@ const incrementNonceOnChain = async (
   }
 };
 
+const printUsage = () => {
+  console.log("\nUsage: npx ts-node increment-nonce.ts [options]");
+  console.log("\nOptions:");
+  console.log(
+    "  --testnet                Use testnet chains instead of mainnet",
+  );
+  console.log(
+    '  --chains "chain1,chain2" Sync only specific chains (comma-separated)',
+  );
+  console.log("  --help                   Show this help message");
+  console.log("\nExamples:");
+  console.log("  npx ts-node increment-nonce.ts");
+  console.log('  npx ts-node increment-nonce.ts --chains "avax"');
+  console.log('  npx ts-node increment-nonce.ts --chains "avax,base,arb"');
+  console.log('  npx ts-node increment-nonce.ts --testnet --chains "fuji"');
+  console.log("\nAvailable Mainnet Chains:");
+  console.log("  - eth (Ethereum)");
+  console.log("  - avax (Avalanche)");
+  console.log("  - arb (Arbitrum)");
+  console.log("  - opt (Optimism)");
+  console.log("  - base (Base)");
+  console.log("\nAvailable Testnet Chains:");
+  console.log("  - eth-sepolia (Eth Sepolia)");
+  console.log("  - fuji (Fuji)");
+  console.log("  - arb-sepolia (Arb Sepolia)");
+  console.log("  - opt-sepolia (Opt Sepolia)");
+  console.log("  - base-sepolia (Base Sepolia)");
+  console.log();
+};
+
 const main = async () => {
   const args = process.argv.slice(2);
+
+  // Check for help flag
+  if (args.includes("--help") || args.includes("-h")) {
+    printUsage();
+    process.exit(0);
+  }
+
   const isTestnet = args.includes("--testnet");
-  const CHAINS = isTestnet ? TESTNET_CHAINS : MAINNET_CHAINS;
+  const allChains = isTestnet ? TESTNET_CHAINS : MAINNET_CHAINS;
   const network = isTestnet ? "Testnet" : "Mainnet";
 
-  console.log("\n" + "=".repeat(80));
-  console.log("Intelligent Nonce Synchronization Across All Chains");
-  console.log(`Network: ${network}`);
-  console.log("=".repeat(80) + "\n");
+  // Chain name aliases matching network-config.sh
+  const chainAliases: Record<string, string> = {
+    eth: "ethereum",
+    avax: "avalanche",
+    arb: "arbitrum",
+    opt: "optimism",
+    base: "base",
+    "eth-sepolia": "eth sepolia",
+    fuji: "fuji",
+    "base-sepolia": "base sepolia",
+    "arb-sepolia": "arb sepolia",
+    "opt-sepolia": "opt sepolia",
+  };
+
+  // Parse --chains flag
+  const chainsArgIndex = args.findIndex((arg) => arg === "--chains");
+  let CHAINS = allChains;
+
+  if (chainsArgIndex !== -1 && args[chainsArgIndex + 1]) {
+    const selectedChainNames = args[chainsArgIndex + 1]
+      .split(",")
+      .map((name) => name.trim().toLowerCase());
+
+    CHAINS = allChains.filter((chain) => {
+      const chainNameLower = chain.name.toLowerCase();
+
+      return selectedChainNames.some((selected) => {
+        // Check if it's an alias
+        const aliasMatch = chainAliases[selected];
+        if (aliasMatch && chainNameLower === aliasMatch) {
+          return true;
+        }
+
+        // Direct substring match
+        return (
+          chainNameLower.includes(selected) || selected.includes(chainNameLower)
+        );
+      });
+    });
+
+    if (CHAINS.length === 0) {
+      console.error("\n❌ Error: No matching chains found!");
+      console.error("\nAvailable chains:");
+      allChains.forEach((chain) =>
+        console.error(`  - ${chain.name.toLowerCase()}`),
+      );
+      console.error(
+        '\nUsage: --chains "ethereum,base,avalanche,arbitrum,optimism"',
+      );
+      process.exit(1);
+    }
+
+    console.log("\n" + "=".repeat(80));
+    console.log("Intelligent Nonce Synchronization");
+    console.log(`Network: ${network}`);
+    console.log(`Selected Chains: ${CHAINS.map((c) => c.name).join(", ")}`);
+    console.log("=".repeat(80) + "\n");
+  } else {
+    console.log("\n" + "=".repeat(80));
+    console.log("Intelligent Nonce Synchronization Across All Chains");
+    console.log(`Network: ${network}`);
+    console.log("=".repeat(80) + "\n");
+  }
 
   const wallet = new ethers.Wallet(PRIVATE_KEY!);
   const address = await wallet.getAddress();
 
   console.log(`Wallet address: ${address}\n`);
 
-  // Step 1: Fetch nonces from all chains
+  // Step 1: Fetch nonces from ALL chains (to find global max)
   console.log("📊 Fetching current nonces from all chains...\n");
-  const nonceInfos: ChainNonceInfo[] = [];
+  const allNonceInfos: ChainNonceInfo[] = [];
 
-  for (const chain of CHAINS) {
+  for (const chain of allChains) {
     try {
       const info = await getNonceForChain(chain, wallet);
-      nonceInfos.push(info);
+      allNonceInfos.push(info);
+      const isSelected = CHAINS.some((c) => c.chainId === chain.chainId);
+      const marker = isSelected ? "✓" : " ";
       console.log(
-        `   ${info.chain.padEnd(15)} (Chain ${info.chainId.toString().padEnd(6)}): Nonce ${info.nonce}`,
+        ` ${marker} ${info.chain.padEnd(15)} (Chain ${info.chainId.toString().padEnd(6)}): Nonce ${info.nonce}`,
       );
     } catch (error) {
       console.error(`   ❌ Failed to fetch nonce for ${chain.name}`);
     }
   }
 
-  // Step 2: Find the maximum nonce and calculate target
-  const maxNonce = Math.max(...nonceInfos.map((info) => info.nonce));
+  // Step 2: Find the maximum nonce across ALL chains
+  const maxNonce = Math.max(...allNonceInfos.map((info) => info.nonce));
   // Target is maxNonce - 1 because deployment transaction will increment it
-  const targetNonce = maxNonce - 1;
+  const targetNonce = maxNonce === 0 ? 0 : maxNonce - 1;
+
+  if (maxNonce === 0) {
+    console.log(`\n✅ All chains are at nonce 0, ready for first deployment`);
+    console.log("=".repeat(80) + "\n");
+    return;
+  }
 
   console.log(`\n📈 Highest nonce across all chains: ${maxNonce}`);
-  console.log(`🎯 Target nonce for deployment preparation: ${targetNonce}`);
-  console.log(`   (Deployment transaction will increment to ${maxNonce})`);
+  console.log(`🎯 Target nonce for deployment: ${targetNonce}`);
+  console.log(`   (Deployment will use nonce ${targetNonce})`);
 
-  // Step 3: Find chains that need increment
-  const chainsToIncrement = nonceInfos.filter(
+  // Step 3: Find SELECTED chains that need increment
+  const selectedNonceInfos = allNonceInfos.filter((info) =>
+    CHAINS.some((c) => c.chainId === info.chainId),
+  );
+
+  const chainsToIncrement = selectedNonceInfos.filter(
     (info) => info.nonce < targetNonce,
   );
 
@@ -231,9 +339,9 @@ const main = async () => {
     }
   }
 
-  // Step 6: Verify final nonces
+  // Step 6: Verify final nonces for selected chains
   console.log("\n" + "=".repeat(80));
-  console.log("🔍 Verifying final nonces...\n");
+  console.log("🔍 Verifying final nonces for selected chains...\n");
 
   for (const chain of CHAINS) {
     try {
