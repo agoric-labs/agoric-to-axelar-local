@@ -156,12 +156,18 @@ const printUsage = () => {
   console.log(
     '  --chains "chain1,chain2" Sync only specific chains (comma-separated)',
   );
+  console.log(
+    "  --target-nonce <number>  Sync to a specific nonce (default: auto-detect from highest)",
+  );
   console.log("  --help                   Show this help message");
   console.log("\nExamples:");
   console.log("  npx ts-node increment-nonce.ts");
   console.log('  npx ts-node increment-nonce.ts --chains "avax"');
   console.log('  npx ts-node increment-nonce.ts --chains "avax,base,arb"');
-  console.log('  npx ts-node increment-nonce.ts --testnet --chains "fuji"');
+  console.log("  npx ts-node increment-nonce.ts --target-nonce 5");
+  console.log(
+    '  npx ts-node increment-nonce.ts --testnet --chains "fuji" --target-nonce 3',
+  );
   console.log("\nAvailable Mainnet Chains:");
   console.log("  - eth (Ethereum)");
   console.log("  - avax (Avalanche)");
@@ -279,18 +285,35 @@ const main = async () => {
 
   // Step 2: Find the maximum nonce across ALL chains
   const maxNonce = Math.max(...allNonceInfos.map((info) => info.nonce));
-  // Target is maxNonce - 1 because deployment transaction will increment it
-  const targetNonce = maxNonce === 0 ? 0 : maxNonce - 1;
 
-  if (maxNonce === 0) {
-    console.log(`\n✅ All chains are at nonce 0, ready for first deployment`);
-    console.log("=".repeat(80) + "\n");
-    return;
+  // Check for --target-nonce flag
+  const targetNonceArgIndex = args.findIndex((arg) => arg === "--target-nonce");
+  let targetNonce: number;
+
+  if (targetNonceArgIndex !== -1 && args[targetNonceArgIndex + 1]) {
+    const specifiedNonce = parseInt(args[targetNonceArgIndex + 1], 10);
+    if (isNaN(specifiedNonce) || specifiedNonce < 0) {
+      console.error("\n❌ Error: Invalid target nonce value");
+      console.error("Target nonce must be a non-negative integer");
+      process.exit(1);
+    }
+    targetNonce = specifiedNonce;
+    console.log(`\n📈 Highest nonce across all chains: ${maxNonce}`);
+    console.log(`🎯 Target nonce (specified): ${targetNonce}`);
+  } else {
+    // Auto-detect: Target is maxNonce - 1 because deployment transaction will increment it
+    targetNonce = maxNonce === 0 ? 0 : maxNonce - 1;
+
+    if (maxNonce === 0) {
+      console.log(`\n✅ All chains are at nonce 0, ready for first deployment`);
+      console.log("=".repeat(80) + "\n");
+      return;
+    }
+
+    console.log(`\n📈 Highest nonce across all chains: ${maxNonce}`);
+    console.log(`🎯 Target nonce (auto-detected): ${targetNonce}`);
+    console.log(`   (Deployment will use nonce ${targetNonce})`);
   }
-
-  console.log(`\n📈 Highest nonce across all chains: ${maxNonce}`);
-  console.log(`🎯 Target nonce for deployment: ${targetNonce}`);
-  console.log(`   (Deployment will use nonce ${targetNonce})`);
 
   // Step 3: Find SELECTED chains that need increment
   const selectedNonceInfos = allNonceInfos.filter((info) =>
