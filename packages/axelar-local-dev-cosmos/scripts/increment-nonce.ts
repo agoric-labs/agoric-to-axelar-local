@@ -17,7 +17,7 @@ interface ChainConfig {
   nativeToken: string;
 }
 
-const CHAINS: ChainConfig[] = [
+const MAINNET_CHAINS: ChainConfig[] = [
   {
     name: "Ethereum",
     rpcUrl: `https://mainnet.infura.io/v3/${INFURA_KEY}`,
@@ -46,6 +46,39 @@ const CHAINS: ChainConfig[] = [
     name: "Optimism",
     rpcUrl: "https://mainnet.optimism.io",
     chainId: 10,
+    nativeToken: "ETH",
+  },
+];
+
+const TESTNET_CHAINS: ChainConfig[] = [
+  {
+    name: "Eth Sepolia",
+    rpcUrl: "https://ethereum-sepolia-rpc.publicnode.com",
+    chainId: 11155111,
+    nativeToken: "ETH",
+  },
+  {
+    name: "Base Sepolia",
+    rpcUrl: "https://sepolia.base.org",
+    chainId: 84532,
+    nativeToken: "ETH",
+  },
+  {
+    name: "Fuji",
+    rpcUrl: "https://api.avax-test.network/ext/bc/C/rpc",
+    chainId: 43113,
+    nativeToken: "AVAX",
+  },
+  {
+    name: "Arb Sepolia",
+    rpcUrl: "https://sepolia-rollup.arbitrum.io/rpc",
+    chainId: 421614,
+    nativeToken: "ETH",
+  },
+  {
+    name: "Opt Sepolia",
+    rpcUrl: "https://sepolia.optimism.io",
+    chainId: 11155420,
     nativeToken: "ETH",
   },
 ];
@@ -115,8 +148,14 @@ const incrementNonceOnChain = async (
 };
 
 const main = async () => {
+  const args = process.argv.slice(2);
+  const isTestnet = args.includes("--testnet");
+  const CHAINS = isTestnet ? TESTNET_CHAINS : MAINNET_CHAINS;
+  const network = isTestnet ? "Testnet" : "Mainnet";
+
   console.log("\n" + "=".repeat(80));
   console.log("Intelligent Nonce Synchronization Across All Chains");
+  console.log(`Network: ${network}`);
   console.log("=".repeat(80) + "\n");
 
   const wallet = new ethers.Wallet(PRIVATE_KEY!);
