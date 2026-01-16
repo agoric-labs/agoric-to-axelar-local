@@ -1,10 +1,7 @@
-#!/usr/bin/env ts-node
+#!/usr/bin/env vite-node
 
-import { exec } from "child_process";
-import { promisify } from "util";
+import { spawn } from "child_process";
 import * as path from "path";
-
-const execAsync = promisify(exec);
 
 const CHAINS = {
   mainnet: ["avax", "arb", "base", "eth", "opt", "pol"],
@@ -47,40 +44,44 @@ const deployToChain = async (
     "../packages/axelar-local-dev-cosmos/scripts/deploy.sh",
   );
 
-  const args = [chain, contract, ownerType].filter(Boolean).join(" ");
-  const command = `${scriptPath} ${args}`;
+  const args = [chain, contract, ownerType].filter(Boolean);
 
   console.log(`\n🚀 Deploying ${contract} to ${chain}...`);
-  console.log(`   Command: ${command}`);
 
-  try {
-    const { stdout, stderr } = await execAsync(command, {
+  return new Promise((resolve) => {
+    const child = spawn(scriptPath, args, {
       cwd: path.resolve(__dirname, "../packages/axelar-local-dev-cosmos"),
+      env: { ...process.env },
+      stdio: "inherit", // Inherit stdio to show output in real-time
     });
 
-    console.log(`✅ Successfully deployed to ${chain}`);
-    if (stdout) {
-      console.log(`   Output: ${stdout.trim()}`);
-    }
+    child.on("close", (code) => {
+      if (code === 0) {
+        console.log(`\n✅ Successfully deployed to ${chain}`);
+        resolve({
+          chain,
+          success: true,
+        });
+      } else {
+        console.error(`\n❌ Failed to deploy to ${chain} (exit code: ${code})`);
+        resolve({
+          chain,
+          success: false,
+          error: `Deployment failed with exit code ${code}`,
+        });
+      }
+    });
 
-    return {
-      chain,
-      success: true,
-      output: stdout,
-    };
-  } catch (error: any) {
-    console.error(`❌ Failed to deploy to ${chain}`);
-    console.error(`   Error: ${error.message}`);
-    if (error.stderr) {
-      console.error(`   Details: ${error.stderr}`);
-    }
-
-    return {
-      chain,
-      success: false,
-      error: error.message,
-    };
-  }
+    child.on("error", (error) => {
+      console.error(`\n❌ Failed to deploy to ${chain}`);
+      console.error(`   Error: ${error.message}`);
+      resolve({
+        chain,
+        success: false,
+        error: error.message,
+      });
+    });
+  });
 };
 
 /**
