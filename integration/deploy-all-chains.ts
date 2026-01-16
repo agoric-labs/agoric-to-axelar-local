@@ -49,13 +49,19 @@ const deployToChain = async (
   console.log(`\n🚀 Deploying ${contract} to ${chain}...`);
 
   return new Promise((resolve) => {
+    // Use 'yes' command to auto-confirm all prompts
+    const yesProcess = spawn("yes", ["y"], {
+      stdio: ["ignore", "pipe", "inherit"],
+    });
+
     const child = spawn(scriptPath, args, {
       cwd: path.resolve(__dirname, "../packages/axelar-local-dev-cosmos"),
       env: { ...process.env },
-      stdio: "inherit", // Inherit stdio to show output in real-time
+      stdio: [yesProcess.stdout, "inherit", "inherit"],
     });
 
     child.on("close", (code) => {
+      yesProcess.kill();
       if (code === 0) {
         console.log(`\n✅ Successfully deployed to ${chain}`);
         resolve({
@@ -73,6 +79,7 @@ const deployToChain = async (
     });
 
     child.on("error", (error) => {
+      yesProcess.kill(); // Kill the yes process
       console.error(`\n❌ Failed to deploy to ${chain}`);
       console.error(`   Error: ${error.message}`);
       resolve({
