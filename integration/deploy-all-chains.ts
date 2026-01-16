@@ -22,6 +22,7 @@ interface DeployOptions {
   ownerType?: "ymax0" | "ymax1"; // Owner type (for depositFactory)
   parallel?: boolean; // Run deployments in parallel
   continueOnError?: boolean; // Continue even if one deployment fails
+  syncNonces?: boolean; // Sync nonces before deployment for same address
 }
 
 interface DeployResult {
@@ -30,6 +31,50 @@ interface DeployResult {
   output?: string;
   error?: string;
 }
+
+/**
+ * Run nonce sync script before deployments
+ */
+const syncNonces = async (chains: string[]): Promise<boolean> => {
+  console.log(
+    "\n🔄 Syncing nonces across chains for consistent contract addresses...\n",
+  );
+
+  const isTestnet = chains.some((c) => CHAINS.testnet.includes(c));
+  const scriptPath = path.resolve(
+    __dirname,
+    "../packages/axelar-local-dev-cosmos/scripts/increment-nonce.ts",
+  );
+
+  const args = ["--chains", chains.join(",")];
+  if (isTestnet) {
+    args.push("--testnet");
+  }
+
+  return new Promise((resolve) => {
+    const child = spawn("npx", ["ts-node", scriptPath, ...args], {
+      cwd: path.resolve(__dirname, "../packages/axelar-local-dev-cosmos"),
+      stdio: "inherit",
+    });
+
+    child.on("close", (code) => {
+      if (code === 0) {
+        console.log("\n✅ Nonce synchronization complete\n");
+        resolve(true);
+      } else {
+        console.error(
+          `\n❌ Nonce synchronization failed (exit code: ${code})\n`,
+        );
+        resolve(false);
+      }
+    });
+
+    child.on("error", (error) => {
+      console.error(`\n❌ Failed to run nonce sync: ${error.message}\n`);
+      resolve(false);
+    });
+  });
+};
 
 /**
  * Deploy contracts to a specific chain
@@ -103,6 +148,7 @@ const deployToAllChains = async (
     ownerType,
     parallel = false,
     continueOnError = true,
+    syncNonces: shouldSyncNonces = false,
   } = options;
 
   console.log("═══════════════════════════════════════════════════════════");
@@ -115,7 +161,18 @@ const deployToAllChains = async (
   console.log(`Chains: ${chains.join(", ")}`);
   console.log(`Mode: ${parallel ? "Parallel" : "Sequential"}`);
   console.log(`Continue on Error: ${continueOnError}`);
+  console.log(`Sync Nonces: ${shouldSyncNonces ? "Yes" : "No"}`);
   console.log("═══════════════════════════════════════════════════════════\n");
+
+  // Sync nonces before deployment if requested
+  if (shouldSyncNonces) {
+    const syncSuccess = await syncNonces(chains);
+    if (!syncSuccess) {
+      console.error(
+        "⚠️  Nonce sync failed, but continuing with deployment...\n",
+      );
+    }
+  }
 
   const results: DeployResult[] = [];
 
