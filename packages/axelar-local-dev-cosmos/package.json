@@ -24,9 +24,10 @@
     "relayWithTokens": "ts-node scripts/runner.ts relayWithTokens",
     "testWallet": "ts-node scripts/runner.ts testWallet",
     "testFactory": "ts-node scripts/runner.ts testFactory",
-    "test:proxy": "hardhat test src/__tests__/Factory.spec.ts",
+    "test:proxy": "hardhat test src/__tests__/Factory.spec.ts src/__tests__/DepositFactory.spec.ts",
     "coverage:proxy": "npx hardhat coverage --testfiles src/__tests__/Factory.spec.ts",
-    "verify": "./scripts/verify.sh"
+    "verify": "./scripts/verify.sh",
+    "deploy": "./scripts/deploy.sh"
   },
   "dependencies": {
     "@axelar-network/axelar-local-dev": "^2.3.2",

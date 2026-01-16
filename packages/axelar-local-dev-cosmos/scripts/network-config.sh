@@ -11,31 +11,39 @@ get_network_config() {
     avax)
         GATEWAY='0x5029C0EFf6C34351a0CEc334542cDb22c7928f78'
         GAS_SERVICE='0x2d5d7d31F671F86C782533cc367F14109a082712'
+        # source: https://docs.uniswap.org/contracts/v4/deployments#avalanche-43114
+        PERMIT2='0x000000000022D473030F116dDEE9F6B43aC78BA3'
         ;;
     arb)
         GATEWAY='0xe432150cce91c13a887f7D836923d5597adD8E31'
         GAS_SERVICE='0x2d5d7d31F671F86C782533cc367F14109a082712'
+        # source: https://docs.uniswap.org/contracts/v4/deployments#arbitrum-one-42161
+        PERMIT2='0x000000000022D473030F116dDEE9F6B43aC78BA3'
         ;;
     base)
         GATEWAY='0xe432150cce91c13a887f7D836923d5597adD8E31'
         GAS_SERVICE='0x2d5d7d31F671F86C782533cc367F14109a082712'
+        # source: https://docs.uniswap.org/contracts/v4/deployments#base-8453
+        PERMIT2='0x000000000022D473030F116dDEE9F6B43aC78BA3'
         ;;
     eth)
         GATEWAY='0x4F4495243837681061C4743b74B3eEdf548D56A5'
         GAS_SERVICE='0x2d5d7d31F671F86C782533cc367F14109a082712'
+        # source: https://docs.uniswap.org/contracts/v4/deployments#ethereum-1
+        PERMIT2='0x000000000022D473030F116dDEE9F6B43aC78BA3'
         ;;
     opt)
         GATEWAY='0xe432150cce91c13a887f7D836923d5597adD8E31'
         GAS_SERVICE='0x2d5d7d31F671F86C782533cc367F14109a082712'
-        ;;
-    pol)
-        GATEWAY='0x6f015F16De9fC8791b234eF68D486d2bF203FBA8'
-        GAS_SERVICE='0x2d5d7d31F671F86C782533cc367F14109a082712'
+        # source: https://docs.uniswap.org/contracts/v4/deployments#optimism-10
+        PERMIT2='0x000000000022D473030F116dDEE9F6B43aC78BA3'
         ;;
     # Testnets
     eth-sepolia)
         GATEWAY='0xe432150cce91c13a887f7D836923d5597adD8E31'
         GAS_SERVICE='0xbE406F0189A0B4cf3A05C286473D23791Dd44Cc6'
+        # source: https://docs.uniswap.org/contracts/v4/deployments#sepolia-11155111
+        PERMIT2='0x000000000022D473030F116dDEE9F6B43aC78BA3'
         ;;
     fuji)
         GATEWAY='0xC249632c2D40b9001FE907806902f63038B737Ab'
@@ -44,6 +52,8 @@ get_network_config() {
     base-sepolia)
         GATEWAY='0xe432150cce91c13a887f7D836923d5597adD8E31'
         GAS_SERVICE='0xbE406F0189A0B4cf3A05C286473D23791Dd44Cc6'
+        # source: https://docs.uniswap.org/contracts/v4/deployments#base-sepolia-84532
+        PERMIT2='0x000000000022D473030F116dDEE9F6B43aC78BA3'
         ;;
     opt-sepolia)
         GATEWAY='0xe432150cce91c13a887f7D836923d5597adD8E31'
@@ -52,6 +62,8 @@ get_network_config() {
     arb-sepolia)
         GATEWAY='0xe1cE95479C84e9809269227C7F8524aE051Ae77a'
         GAS_SERVICE='0xbE406F0189A0B4cf3A05C286473D23791Dd44Cc6'
+        # source: https://docs.uniswap.org/contracts/v4/deployments#arbitrum-sepolia-421614
+        PERMIT2='0x000000000022D473030F116dDEE9F6B43aC78BA3'
         ;;
     *)
         echo "Invalid network specified"

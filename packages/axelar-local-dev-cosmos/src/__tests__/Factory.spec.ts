@@ -149,7 +149,16 @@ describe("Factory", () => {
   it("should create a new remote wallet using Factory", async () => {
     const commandId = getCommandId();
 
-    const payload = abiCoder.encode([], []);
+    // Compute the expected CREATE2 address
+    const expectedWalletAddress = await computeCreate2Address(
+      factory.target.toString(),
+      axelarGatewayMock.target.toString(),
+      axelarGasServiceMock.target.toString(),
+      sourceAddress,
+    );
+
+    // Include expected wallet address in payload
+    const payload = abiCoder.encode(["address"], [expectedWalletAddress]);
     const payloadHash = keccak256(toBytes(payload));
 
     await approveMessage({
@@ -163,14 +172,6 @@ describe("Factory", () => {
       abiCoder,
     });
 
-    // Compute the expected CREATE2 address
-    const expectedWalletAddress = await computeCreate2Address(
-      factory.target.toString(),
-      axelarGatewayMock.target.toString(),
-      axelarGasServiceMock.target.toString(),
-      sourceAddress,
-    );
-
     const tx = await factory.execute(
       commandId,
       sourceChain,
@@ -180,7 +181,7 @@ describe("Factory", () => {
 
     await expect(tx)
       .to.emit(factory, "SmartWalletCreated")
-      .withArgs(expectedWalletAddress, sourceAddress, "agoric", sourceAddress);
+      .withArgs(expectedWalletAddress, sourceAddress, "agoric");
   });
 
   it("should use the remote wallet to call other contracts", async () => {
@@ -325,11 +326,19 @@ describe("Factory", () => {
   it("factory contract should fail when source chain is not agoric", async () => {
     const commandId = getCommandId();
 
-    const payload = abiCoder.encode([], []);
-    const payloadHash = keccak256(toBytes(payload));
-
     const wrongSourceChain = "ethereum"; // Wrong source chain
     const sourceAddr = "agoric1ee9hr0jyrxhy999y755mp862ljgycmwyp4pl7q";
+
+    // Compute expected wallet address (even though the call will fail)
+    const expectedWalletAddress = await computeCreate2Address(
+      factory.target.toString(),
+      axelarGatewayMock.target.toString(),
+      axelarGasServiceMock.target.toString(),
+      sourceAddr,
+    );
+
+    const payload = abiCoder.encode(["address"], [expectedWalletAddress]);
+    const payloadHash = keccak256(toBytes(payload));
 
     await approveMessage({
       commandId,
