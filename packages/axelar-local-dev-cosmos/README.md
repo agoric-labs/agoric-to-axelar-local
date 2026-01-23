@@ -82,3 +82,33 @@ await relay({
 - For implementation details, see our [Local Example](docs/example.md) and [Axelar Example](https://github.com/axelarnetwork/axelar-examples/tree/feat/add-cosmos-examples/examples/cosmos/call-contract).
 
 > The Local Example utilizes the same contracts as in the Axelar Examples.
+
+## Mainnet Deployment
+
+### Ethereum Mainnet Gas Settings
+
+**IMPORTANT:** Before deploying to Ethereum mainnet, always check current gas prices to avoid dropped transactions.
+
+Ethereum mainnet is prone to gas spikes, and transactions can be dropped from the mempool if gas settings are too low. The default configuration uses EIP-1559 gas settings:
+
+- `maxFeePerGas`: 100 gwei (maximum fee you're willing to pay)
+- `maxPriorityFeePerGas`: 2 gwei (tip to validators)
+
+**Before deployment:**
+
+1. Check current gas prices at https://etherscan.io/gastracker
+2. Compare the current base fee and priority fee with the configured values in `hardhat.config.ts:71-72`
+3. If network is congested (base fee > 80 gwei), increase `maxFeePerGas` to 150-200 gwei
+4. Adjust the values in the configuration file if needed before running deployment scripts
+
+**Example adjustment for high congestion:**
+
+```typescript
+eth: {
+  // ...
+  maxFeePerGas: 150_000_000_000, // 150 gwei for congested periods
+  maxPriorityFeePerGas: 3_000_000_000, // 3 gwei priority fee
+}
+```
+
+These settings ensure your transactions will be processed even during network congestion, preventing deployment failures and wasted gas fees.
