@@ -147,20 +147,27 @@ const checkAndSyncNonces = async (chains: string[]): Promise<boolean> => {
   // Nonces differ, need to sync
   const maxNonce = Math.max(...nonces);
   const minNonce = Math.min(...nonces);
+  const targetNonce = maxNonce; // Sync all chains to the highest nonce
 
   console.log(
     `\n⚠️  Nonces differ across chains (min: ${minNonce}, max: ${maxNonce})`,
   );
+  console.log(`🎯 Target nonce: ${targetNonce}`);
   console.log("   Running nonce synchronization...\n");
 
-  // Run the increment-nonce.ts script
+  // Run the increment-nonce.ts script with target nonce
   const isTestnet = chains.some((c) => CHAINS.testnet.includes(c));
   const scriptPath = path.resolve(
     __dirname,
     "../packages/axelar-local-dev-cosmos/scripts/increment-nonce.ts",
   );
 
-  const args = ["--chains", chains.join(",")];
+  const args = [
+    "--chains",
+    chains.join(","),
+    "--target-nonce",
+    targetNonce.toString(),
+  ];
   if (isTestnet) {
     args.push("--testnet");
   }
