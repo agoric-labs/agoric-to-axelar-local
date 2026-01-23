@@ -2,6 +2,48 @@
 
 import { spawn } from "child_process";
 import * as path from "path";
+import { ethers } from "ethers";
+import { config } from "dotenv";
+import {
+  ChainConfig,
+  MAINNET_CHAINS,
+  TESTNET_CHAINS,
+  CHAIN_ALIASES,
+} from "./chain-config.js";
+
+config();
+
+const { PRIVATE_KEY } = process.env;
+
+interface ChainNonceInfo {
+  chain: string;
+  chainId: number;
+  nonce: number;
+  provider: ethers.JsonRpcProvider;
+}
+
+const getNonceForChain = async (
+  chainConfig: ChainConfig,
+  wallet: ethers.Wallet,
+): Promise<ChainNonceInfo> => {
+  try {
+    const provider = new ethers.JsonRpcProvider(chainConfig.rpcUrl);
+    const connectedWallet = wallet.connect(provider);
+    const nonce = await provider.getTransactionCount(
+      await connectedWallet.getAddress(),
+    );
+
+    return {
+      chain: chainConfig.name,
+      chainId: chainConfig.chainId,
+      nonce,
+      provider,
+    };
+  } catch (error) {
+    console.error(`Error fetching nonce for ${chainConfig.name}:`, error);
+    throw error;
+  }
+};
 
 const CHAINS = {
   mainnet: ["avax", "arb", "base", "eth", "opt", "pol"],
@@ -22,7 +64,6 @@ interface DeployOptions {
   ownerType?: "ymax0" | "ymax1"; // Owner type (for depositFactory)
   parallel?: boolean; // Run deployments in parallel
   continueOnError?: boolean; // Continue even if one deployment fails
-  syncNonces?: boolean; // Sync nonces before deployment for same address
 }
 
 interface DeployResult {
@@ -32,14 +73,87 @@ interface DeployResult {
   error?: string;
 }
 
-/**
- * Run nonce sync script before deployments
- */
-const syncNonces = async (chains: string[]): Promise<boolean> => {
-  console.log(
-    "\n🔄 Syncing nonces across chains for consistent contract addresses...\n",
-  );
+const getChainConfigs = (chains: string[]): ChainConfig[] => {
+  const isTestnet = chains.some((c) => CHAINS.testnet.includes(c));
+  const allChainConfigs = isTestnet ? TESTNET_CHAINS : MAINNET_CHAINS;
 
+  return allChainConfigs.filter((config) => {
+    const chainNameLower = config.name.toLowerCase();
+    return chains.some((selected) => {
+      const selectedLower = selected.toLowerCase();
+      // Check if it's an alias
+      const aliasMatch = CHAIN_ALIASES[selectedLower];
+      if (aliasMatch && chainNameLower === aliasMatch) {
+        return true;
+      }
+      // Direct substring match
+      return (
+        chainNameLower.includes(selectedLower) ||
+        selectedLower.includes(chainNameLower)
+      );
+    });
+  });
+};
+
+const checkAndSyncNonces = async (chains: string[]): Promise<boolean> => {
+  if (!PRIVATE_KEY) {
+    console.log(
+      "\n⚠️  PRIVATE_KEY not set, skipping nonce synchronization check\n",
+    );
+    return true;
+  }
+
+  console.log("\n🔍 Checking nonces across selected chains...\n");
+
+  const wallet = new ethers.Wallet(PRIVATE_KEY);
+  const address = await wallet.getAddress();
+  console.log(`   Wallet address: ${address}`);
+
+  const chainConfigs = getChainConfigs(chains);
+
+  if (chainConfigs.length === 0) {
+    console.log("   ⚠️  Could not map chain names to configurations\n");
+    return true;
+  }
+
+  // Fetch nonces from all selected chains
+  const nonceInfos: ChainNonceInfo[] = [];
+  for (const config of chainConfigs) {
+    try {
+      const info = await getNonceForChain(config, wallet);
+      nonceInfos.push(info);
+      console.log(`   ${info.chain.padEnd(15)}: Nonce ${info.nonce}`);
+    } catch (error) {
+      console.error(`   ❌ Failed to fetch nonce for ${config.name}`);
+    }
+  }
+
+  if (nonceInfos.length === 0) {
+    console.log("   ⚠️  Could not fetch any nonces\n");
+    return true;
+  }
+
+  // Check if all nonces are the same
+  const nonces = nonceInfos.map((info) => info.nonce);
+  const allSame = nonces.every((n) => n === nonces[0]);
+
+  if (allSame) {
+    console.log(
+      `\n✅ All chains have the same nonce (${nonces[0]}), no sync needed\n`,
+    );
+    return true;
+  }
+
+  // Nonces differ, need to sync
+  const maxNonce = Math.max(...nonces);
+  const minNonce = Math.min(...nonces);
+
+  console.log(
+    `\n⚠️  Nonces differ across chains (min: ${minNonce}, max: ${maxNonce})`,
+  );
+  console.log("   Running nonce synchronization...\n");
+
+  // Run the increment-nonce.ts script
   const isTestnet = chains.some((c) => CHAINS.testnet.includes(c));
   const scriptPath = path.resolve(
     __dirname,
@@ -57,7 +171,7 @@ const syncNonces = async (chains: string[]): Promise<boolean> => {
       stdio: "inherit",
     });
 
-    child.on("close", (code) => {
+    child.on("close", (code: number | null) => {
       if (code === 0) {
         console.log("\n✅ Nonce synchronization complete\n");
         resolve(true);
@@ -89,7 +203,7 @@ const deployToChain = async (
     "../packages/axelar-local-dev-cosmos/scripts/deploy.sh",
   );
 
-  const args = [chain, contract, ownerType].filter(Boolean);
+  const args = [chain, contract, ownerType].filter(Boolean) as string[];
 
   console.log(`\n🚀 Deploying ${contract} to ${chain}...`);
 
@@ -105,7 +219,7 @@ const deployToChain = async (
       stdio: [yesProcess.stdout, "inherit", "inherit"],
     });
 
-    child.on("close", (code) => {
+    child.on("close", (code: number | null) => {
       yesProcess.kill();
       if (code === 0) {
         console.log(`\n✅ Successfully deployed to ${chain}`);
@@ -148,7 +262,6 @@ const deployToAllChains = async (
     ownerType,
     parallel = false,
     continueOnError = true,
-    syncNonces: shouldSyncNonces = false,
   } = options;
 
   console.log("═══════════════════════════════════════════════════════════");
@@ -161,17 +274,13 @@ const deployToAllChains = async (
   console.log(`Chains: ${chains.join(", ")}`);
   console.log(`Mode: ${parallel ? "Parallel" : "Sequential"}`);
   console.log(`Continue on Error: ${continueOnError}`);
-  console.log(`Sync Nonces: ${shouldSyncNonces ? "Yes" : "No"}`);
   console.log("═══════════════════════════════════════════════════════════\n");
 
-  // Sync nonces before deployment if requested
-  if (shouldSyncNonces) {
-    const syncSuccess = await syncNonces(chains);
-    if (!syncSuccess) {
-      console.error(
-        "⚠️  Nonce sync failed, but continuing with deployment...\n",
-      );
-    }
+  // Sync nonces before deployment
+  const syncSuccess = await checkAndSyncNonces(chains);
+  if (!syncSuccess) {
+    console.error("❌ Nonce sync failed, aborting deployment.\n");
+    process.exit(1);
   }
 
   const results: DeployResult[] = [];
@@ -183,17 +292,18 @@ const deployToAllChains = async (
     );
     const allResults = await Promise.allSettled(promises);
 
-    allResults.forEach((result, index) => {
+    for (let i = 0; i < allResults.length; i++) {
+      const result = allResults[i];
       if (result.status === "fulfilled") {
         results.push(result.value);
       } else {
         results.push({
-          chain: chains[index],
+          chain: chains[i],
           success: false,
           error: result.reason?.message || "Unknown error",
         });
       }
-    });
+    }
   } else {
     // Deploy to chains sequentially
     for (const chain of chains) {
@@ -221,15 +331,15 @@ const printSummary = (results: DeployResult[]) => {
   const failed = results.filter((r) => !r.success);
 
   console.log(`\n✅ Successful: ${successful.length}`);
-  successful.forEach((r) => {
+  for (const r of successful) {
     console.log(`   - ${r.chain}`);
-  });
+  }
 
   if (failed.length > 0) {
     console.log(`\n❌ Failed: ${failed.length}`);
-    failed.forEach((r) => {
+    for (const r of failed) {
       console.log(`   - ${r.chain}: ${r.error}`);
-    });
+    }
   }
 
   console.log(`\n📈 Total: ${results.length} deployments`);
@@ -239,9 +349,6 @@ const printSummary = (results: DeployResult[]) => {
   console.log("═══════════════════════════════════════════════════════════\n");
 };
 
-/**
- * Parse command line arguments
- */
 const parseArgs = (): DeployOptions => {
   const args = process.argv.slice(2);
   const options: DeployOptions = {
@@ -317,9 +424,6 @@ const parseArgs = (): DeployOptions => {
   return options;
 };
 
-/**
- * Print help message
- */
 const printHelp = () => {
   console.log(`
 🌐 Multi-Chain Deployment Script
@@ -340,6 +444,8 @@ Options:
 Supported Chains:
   Mainnet: ${CHAINS.mainnet.join(", ")}
   Testnet: ${CHAINS.testnet.join(", ")}
+
+Note: Nonces are automatically checked and synchronized if they differ across chains.
 
 Examples:
   # Deploy factory to all chains sequentially
@@ -365,7 +471,6 @@ const main = async () => {
     const results = await deployToAllChains(options);
     printSummary(results);
 
-    // Exit with error code if any deployment failed
     const hasFailures = results.some((r) => !r.success);
     process.exit(hasFailures ? 1 : 0);
   } catch (error: any) {
