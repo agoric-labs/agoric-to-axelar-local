@@ -306,13 +306,22 @@ const deployToAllChains = async (
     }
   } else {
     // Deploy to chains sequentially
-    for (const chain of chains) {
+    // Always deploy to eth first, then others
+    // Rationale: ETH deployments can fail due to gas spikes. Better to attempt ETH first.
+    // If it fails, we can sync nonces on other chains for the same address before retrying.
+    const sortedChains = [...chains].sort((a, b) => {
+      if (a === "eth") return -1;
+      if (b === "eth") return 1;
+      return 0;
+    });
+
+    for (const chain of sortedChains) {
       const result = await deployToChain(chain, contract, ownerType);
       results.push(result);
 
-      if (!result.success && !continueOnError) {
+      if (!result.success) {
         console.error(
-          "\n❌ Deployment failed. Stopping due to continueOnError=false",
+          "\n❌ Deployment failed. Stopping sequential deployment.",
         );
         break;
       }
