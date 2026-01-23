@@ -63,6 +63,14 @@ const mainnets = {
     url: `https://mainnet.infura.io/v3/${INFURA_KEY}`,
     chainId: 1,
     accounts: [PRIVATE_KEY as string],
+    // EIP-1559 gas settings to prevent dropped transactions
+    // e.g: https://agoricopco.slack.com/archives/C07EPJXLR4P/p1768460445249779?thread_ts=1768460118.517409&cid=C07EPJXLR4P
+    // ETH mainnet is prone to gas spikes; without these settings, transactions can be dropped from mempool
+    // Check current gas prices at https://etherscan.io/gastracker before deploying
+    // Adjust maxFeePerGas higher during network congestion (e.g., 150-200 gwei for busy periods)
+    maxFeePerGas: 100_000_000_000, // 100 gwei max (adjust based on network conditions)
+    maxPriorityFeePerGas: 2_000_000_000, // 2 gwei priority fee (tip to validators)
+    timeout: 300000, // 5 minutes timeout for transaction confirmation
   },
   // Source: https://docs.optimism.io/superchain/networks
   opt: {
