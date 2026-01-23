@@ -132,10 +132,11 @@ const incrementNonceOnChain = async (
       `   Sending transaction ${i + 1}/${noncesToIncrement} (nonce: ${currentNonce})...`,
     );
 
+    // Let ethers estimate gas automatically - different chains have different minimums
+    // (e.g., Arbitrum requires more than the standard 21000)
     const tx = await connectedWallet.sendTransaction({
       to: address,
       value: 0,
-      gasLimit: 21000,
       nonce: currentNonce,
     });
 
@@ -359,6 +360,8 @@ const main = async () => {
         `\n❌ Failed to increment nonce on ${chainInfo.chain}:`,
         error,
       );
+      console.error("\n❌ Nonce synchronization failed, aborting.");
+      process.exit(1);
     }
   }
 

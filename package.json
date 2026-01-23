@@ -8,6 +8,7 @@
   },
   "scripts": {
     "deploy": "cd packages/axelar-local-dev-cosmos && ./scripts/deploy.sh",
+    "deploy:all": "cd integration && npx --silent vite-node deploy-all-chains.ts",
     "deploy:wallethelper": "cd packages/axelar-local-dev-cosmos && ./scripts/deploy.sh $NETWORK wallethelper",
     "deploy:wallethelper:mainnet": "NETWORK=${NETWORK:-eth} npm run deploy:wallethelper",
     "deploy:wallethelper:testnet": "NETWORK=${NETWORK:-eth-sepolia} npm run deploy:wallethelper",
@@ -39,7 +40,8 @@
     "coverage:proxy": "lerna exec --scope=@axelar-network/axelar-local-dev-cosmos npm run coverage:proxy",
     "decode": "cd integration && npx --silent vite-node decode-payload.ts",
     "check-balance": "cd integration && npx --silent vite-node check-wallet-balance.ts",
-    "sync-nonces": "cd packages/axelar-local-dev-cosmos && npx ts-node scripts/increment-nonce.ts"
+    "sync-nonces": "cd packages/axelar-local-dev-cosmos && npx ts-node scripts/increment-nonce.ts",
+    "check-gas": "cd packages/axelar-local-dev-cosmos && npx ts-node scripts/check-gas-price.ts"
   },
   "devDependencies": {
     "chai-as-promised": "^8.0.1",
