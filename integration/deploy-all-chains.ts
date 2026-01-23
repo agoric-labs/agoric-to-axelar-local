@@ -95,12 +95,14 @@ const getChainConfigs = (chains: string[]): ChainConfig[] => {
   });
 };
 
-const checkAndSyncNonces = async (chains: string[]): Promise<boolean> => {
+const checkAndSyncNonces = async (
+  chains: string[],
+): Promise<{ success: boolean; synced: boolean }> => {
   if (!PRIVATE_KEY) {
     console.log(
       "\n⚠️  PRIVATE_KEY not set, skipping nonce synchronization check\n",
     );
-    return true;
+    return { success: true, synced: false };
   }
 
   console.log("\n🔍 Checking nonces across selected chains...\n");
@@ -113,7 +115,7 @@ const checkAndSyncNonces = async (chains: string[]): Promise<boolean> => {
 
   if (chainConfigs.length === 0) {
     console.log("   ⚠️  Could not map chain names to configurations\n");
-    return true;
+    return { success: true, synced: false };
   }
 
   // Fetch nonces from all selected chains
@@ -130,7 +132,7 @@ const checkAndSyncNonces = async (chains: string[]): Promise<boolean> => {
 
   if (nonceInfos.length === 0) {
     console.log("   ⚠️  Could not fetch any nonces\n");
-    return true;
+    return { success: true, synced: false };
   }
 
   // Check if all nonces are the same
@@ -141,7 +143,7 @@ const checkAndSyncNonces = async (chains: string[]): Promise<boolean> => {
     console.log(
       `\n✅ All chains have the same nonce (${nonces[0]}), no sync needed\n`,
     );
-    return true;
+    return { success: true, synced: false };
   }
 
   // Nonces differ, need to sync
@@ -181,18 +183,18 @@ const checkAndSyncNonces = async (chains: string[]): Promise<boolean> => {
     child.on("close", (code: number | null) => {
       if (code === 0) {
         console.log("\n✅ Nonce synchronization complete\n");
-        resolve(true);
+        resolve({ success: true, synced: true });
       } else {
         console.error(
           `\n❌ Nonce synchronization failed (exit code: ${code})\n`,
         );
-        resolve(false);
+        resolve({ success: false, synced: true });
       }
     });
 
     child.on("error", (error) => {
       console.error(`\n❌ Failed to run nonce sync: ${error.message}\n`);
-      resolve(false);
+      resolve({ success: false, synced: true });
     });
   });
 };
@@ -284,10 +286,20 @@ const deployToAllChains = async (
   console.log("═══════════════════════════════════════════════════════════\n");
 
   // Sync nonces before deployment
-  const syncSuccess = await checkAndSyncNonces(chains);
-  if (!syncSuccess) {
+  const syncResult = await checkAndSyncNonces(chains);
+  if (!syncResult.success) {
     console.error("❌ Nonce sync failed, aborting deployment.\n");
     process.exit(1);
+  }
+
+  // Wait for nonce sync transactions to get enough confirmations
+  // Hardhat Ignition requires at least 5 confirmations before deploying
+  if (syncResult.synced) {
+    console.log(
+      "⏳ Waiting 60 seconds for nonce sync transactions to confirm...\n",
+    );
+    await new Promise((resolve) => setTimeout(resolve, 60000));
+    console.log("✅ Ready to deploy\n");
   }
 
   const results: DeployResult[] = [];
