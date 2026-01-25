@@ -37,9 +37,9 @@ abstract contract Ownable {
      * @dev Initializes the contract setting the address provided by the deployer as the initial owner.
      */
     constructor(string memory initialOwner) {
-        // if (initialOwner == address(0)) {
-        //     revert OwnableInvalidOwner(address(0));
-        // }
+        if (bytes(initialOwner).length == 0) {
+            revert OwnableInvalidOwner(initialOwner);
+        }
         _transferOwnership(initialOwner);
     }
 
