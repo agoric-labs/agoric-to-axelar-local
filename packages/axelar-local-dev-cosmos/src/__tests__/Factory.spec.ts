@@ -378,4 +378,27 @@ describe("Factory", () => {
       factory.execute(commandId, wrongSourceChain, sourceAddr, payload),
     ).to.be.revertedWithCustomError(factory, "InvalidSourceChain");
   });
+
+  it("creating same wallet twice should succeed", async () => {
+    const sourceAddr = "agoric1idempotent1234567890abcdefghijklmnopqr";
+
+    const expectedWalletAddress = await computeCreate2Address(
+      factory.target.toString(),
+      axelarGatewayMock.target.toString(),
+      axelarGasServiceMock.target.toString(),
+      sourceAddr,
+    );
+
+    // Create wallet first time
+    const tx1 = await factory.createWallet(sourceAddr, expectedWalletAddress);
+    await expect(tx1)
+      .to.emit(factory, "SmartWalletCreated")
+      .withArgs(expectedWalletAddress, sourceAddr, "agoric");
+
+    // Create wallet second time - should succeed and emit event again
+    const tx2 = await factory.createWallet(sourceAddr, expectedWalletAddress);
+    await expect(tx2)
+      .to.emit(factory, "SmartWalletCreated")
+      .withArgs(expectedWalletAddress, sourceAddr, "agoric");
+  });
 });

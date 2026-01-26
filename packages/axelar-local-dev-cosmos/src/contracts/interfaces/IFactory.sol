@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 interface IFactory {
     error InvalidSourceChain(string expected, string actual);
     error WalletAddressMismatch(address expected, address actual);
+    error InvalidWalletAtAddress(address wallet);
 
     event SmartWalletCreated(
         address indexed wallet,
