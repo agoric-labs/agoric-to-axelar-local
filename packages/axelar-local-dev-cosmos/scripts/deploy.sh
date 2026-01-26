@@ -63,6 +63,13 @@ case "$contract" in
         ;;
 
     depositFactory)
+        if [ -z "$FACTORY" ]; then
+            echo "Error: FACTORY environment variable is not set"
+            echo "Please set FACTORY=0x... before deploying DepositFactory"
+            echo "Example: FACTORY=0x1234...abcd npm run deploy eth-sepolia depositFactory"
+            exit 1
+        fi
+
         # Validate owner type for DepositFactory
         if [[ "$owner_type" != "ymax0" && "$owner_type" != "ymax1" ]]; then
             echo "Error: Invalid owner type '$owner_type'"
