@@ -3,27 +3,15 @@ pragma solidity ^0.8.20;
 
 import {AxelarExecutable} from "@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol";
 import {IAxelarGasService} from "@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IAxelarGasService.sol";
-import {StringToAddress, AddressToString} from "@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/libs/AddressString.sol";
+import {IFactory} from "./interfaces/IFactory.sol";
 import {Wallet} from "./Wallet.sol";
 
-error InvalidSourceChain(string expected, string actual);
-error WalletAddressMismatch(address expected, address actual);
-
-contract Factory is AxelarExecutable {
-    using StringToAddress for string;
-    using AddressToString for address;
-
+contract Factory is IFactory, AxelarExecutable {
     address immutable _gateway;
     IAxelarGasService public immutable gasService;
     string private constant EXPECTED_SOURCE_CHAIN = "agoric";
     bytes32 private constant EXPECTED_SOURCE_CHAIN_HASH =
         keccak256(bytes(EXPECTED_SOURCE_CHAIN));
-
-    event SmartWalletCreated(
-        address indexed wallet,
-        string owner,
-        string sourceChain
-    );
 
     event Received(address indexed sender, uint256 amount);
 
@@ -35,17 +23,75 @@ contract Factory is AxelarExecutable {
         _gateway = gateway_;
     }
 
+    /**
+     * @dev Check if a valid Wallet with the correct owner exists at the given address
+     *
+     * Note: Since CREATE2 uses keccak256(ownerAddress) as the salt, the owner is
+     * cryptographically built into the wallet's address. If a contract exists at the
+     * expected CREATE2 address, it must have been created with that owner. However,
+     * we still verify the owner as a redundant check for defense in depth - it ensures
+     * the contract at that address is actually a valid Wallet and not something else.
+     *
+     * @return true if valid wallet exists with matching owner, false otherwise
+     */
+    function _isValidExistingWallet(
+        address walletAddress,
+        string calldata expectedOwner
+    ) internal view returns (bool) {
+        if (walletAddress.code.length == 0) {
+            return false;
+        }
+
+        try Wallet(payable(walletAddress)).owner() returns (
+            string memory existingOwner
+        ) {
+            return
+                keccak256(bytes(existingOwner)) ==
+                keccak256(bytes(expectedOwner));
+        } catch {
+            return false;
+        }
+    }
+
     function _createSmartWallet(
-        string memory owner
-    ) internal returns (address) {
-        address newWallet = address(
-            new Wallet{salt: keccak256(abi.encodePacked(owner))}(
+        string calldata ownerAddress,
+        address expectedWalletAddress
+    ) internal {
+        try
+            new Wallet{salt: keccak256(abi.encodePacked(ownerAddress))}(
                 _gateway,
                 address(gasService),
-                owner
+                ownerAddress
             )
-        );
-        return newWallet;
+        returns (Wallet wallet) {
+            // Wallet created successfully
+            address newWallet = address(wallet);
+            if (newWallet != expectedWalletAddress) {
+                revert IFactory.WalletAddressMismatch(
+                    expectedWalletAddress,
+                    newWallet
+                );
+            }
+
+            emit IFactory.SmartWalletCreated(
+                newWallet,
+                ownerAddress,
+                EXPECTED_SOURCE_CHAIN
+            );
+            return;
+        } catch {
+            // Creation failed - check if valid wallet already exists
+            if (_isValidExistingWallet(expectedWalletAddress, ownerAddress)) {
+                emit IFactory.SmartWalletCreated(
+                    expectedWalletAddress,
+                    ownerAddress,
+                    EXPECTED_SOURCE_CHAIN
+                );
+                return;
+            }
+
+            revert IFactory.InvalidWalletAtAddress(expectedWalletAddress);
+        }
     }
 
     function _execute(
@@ -55,24 +101,28 @@ contract Factory is AxelarExecutable {
         bytes calldata payload
     ) internal override {
         if (keccak256(bytes(sourceChain)) != EXPECTED_SOURCE_CHAIN_HASH) {
-            revert InvalidSourceChain(EXPECTED_SOURCE_CHAIN, sourceChain);
+            revert IFactory.InvalidSourceChain(
+                EXPECTED_SOURCE_CHAIN,
+                sourceChain
+            );
         }
 
         // Decode expected wallet address from payload
         address expectedWalletAddress = abi.decode(payload, (address));
 
         // Create the wallet
-        address smartWalletAddress = _createSmartWallet(sourceAddress);
+        _createSmartWallet(sourceAddress, expectedWalletAddress);
+    }
 
-        // Validate that created wallet matches expected address
-        if (smartWalletAddress != expectedWalletAddress) {
-            revert WalletAddressMismatch(
-                expectedWalletAddress,
-                smartWalletAddress
-            );
-        }
-
-        emit SmartWalletCreated(smartWalletAddress, sourceAddress, sourceChain);
+    /**
+     * @param ownerAddress The agoric LCA
+     * @param expectedWalletAddress The expected EVM address for the new Wallet
+     */
+    function createWallet(
+        string calldata ownerAddress,
+        address expectedWalletAddress
+    ) external {
+        _createSmartWallet(ownerAddress, expectedWalletAddress);
     }
 
     receive() external payable {

@@ -55,6 +55,7 @@ describe("Factory", () => {
 
   const sourceChain = "agoric";
   const sourceAddress = "agoric1wrfh296eu2z34p6pah7q04jjuyj3mxu9v98277";
+  const sourceAddress2 = "agoric1ee9hr0jyrxhy999y755mp862ljgycmwyp4pl7q";
 
   let commandIdCounter = 1;
   const getCommandId = () => {
@@ -182,6 +183,27 @@ describe("Factory", () => {
     await expect(tx)
       .to.emit(factory, "SmartWalletCreated")
       .withArgs(expectedWalletAddress, sourceAddress, "agoric");
+  });
+
+  it("should create a new remote wallet using public method", async () => {
+    const commandId = getCommandId();
+
+    // Compute the expected CREATE2 address
+    const expectedWalletAddress = await computeCreate2Address(
+      factory.target.toString(),
+      axelarGatewayMock.target.toString(),
+      axelarGasServiceMock.target.toString(),
+      sourceAddress2,
+    );
+
+    const tx = await factory.createWallet(
+      sourceAddress2,
+      expectedWalletAddress,
+    );
+
+    await expect(tx)
+      .to.emit(factory, "SmartWalletCreated")
+      .withArgs(expectedWalletAddress, sourceAddress2, "agoric");
   });
 
   it("should use the remote wallet to call other contracts", async () => {
@@ -355,5 +377,28 @@ describe("Factory", () => {
     await expect(
       factory.execute(commandId, wrongSourceChain, sourceAddr, payload),
     ).to.be.revertedWithCustomError(factory, "InvalidSourceChain");
+  });
+
+  it("creating same wallet twice should succeed", async () => {
+    const sourceAddr = "agoric1idempotent1234567890abcdefghijklmnopqr";
+
+    const expectedWalletAddress = await computeCreate2Address(
+      factory.target.toString(),
+      axelarGatewayMock.target.toString(),
+      axelarGasServiceMock.target.toString(),
+      sourceAddr,
+    );
+
+    // Create wallet first time
+    const tx1 = await factory.createWallet(sourceAddr, expectedWalletAddress);
+    await expect(tx1)
+      .to.emit(factory, "SmartWalletCreated")
+      .withArgs(expectedWalletAddress, sourceAddr, "agoric");
+
+    // Create wallet second time - should succeed and emit event again
+    const tx2 = await factory.createWallet(sourceAddr, expectedWalletAddress);
+    await expect(tx2)
+      .to.emit(factory, "SmartWalletCreated")
+      .withArgs(expectedWalletAddress, sourceAddr, "agoric");
   });
 });
