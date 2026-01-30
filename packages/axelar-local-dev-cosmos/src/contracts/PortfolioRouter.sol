@@ -12,6 +12,12 @@ import { IPortfolioRouter, IPermit2, DepositPermit, RouterPayload } from './inte
  * @dev Handles account creation, deposits, and multicalls atomically.
  *      Each RemoteAccount is owned by this router, enabling future migration
  *      by deploying a new router and transferring ownership.
+ *
+ *      Migration to a new router can be done via multicall:
+ *      Agoric sends a message with multiCalls containing:
+ *        target: remoteAccountAddress
+ *        data: abi.encodeCall(Ownable.transferOwnership, (newRouterAddress))
+ *      This makes RemoteAccount call itself to transfer ownership to the new router.
  */
 contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
     string private _agoricLCA; // immutable
@@ -145,7 +151,7 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
         address accountAddress
     ) internal {
         try factory.provide(portfolioLCA, accountAddress, address(this)) returns (bool created) {
-            emit RemoteAccountStatus(id, true, created, accountAddress, portfolioLCA, "");
+            emit RemoteAccountStatus(id, true, created, accountAddress, portfolioLCA, '');
         } catch (bytes memory reason) {
             emit RemoteAccountStatus(id, false, false, accountAddress, portfolioLCA, reason);
         }
