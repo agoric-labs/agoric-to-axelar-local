@@ -7,8 +7,7 @@ import { RemoteAccount } from './RemoteAccount.sol';
 /**
  * @title Factory (RemoteAccountFactory)
  * @notice A simplified CREATE2 factory for deploying RemoteAccount contracts
- * @dev No longer an AxelarExecutable - just a plain factory contract.
- *      The PortfolioRouter calls provide() to create/verify RemoteAccounts.
+ * @dev The PortfolioRouter calls provide() to create/verify RemoteAccounts.
  */
 contract Factory is IRemoteAccountFactory {
     bytes32 public immutable override remoteAccountCodeHash;
@@ -17,27 +16,6 @@ contract Factory is IRemoteAccountFactory {
 
     constructor() {
         remoteAccountCodeHash = keccak256(type(RemoteAccount).creationCode);
-    }
-
-    /**
-     * @notice Compute the CREATE2 address for a RemoteAccount
-     * @param portfolioLCA The controller string (used as salt via keccak256)
-     * @return The deterministic address where the RemoteAccount will be deployed
-     */
-    function computeAddress(string calldata portfolioLCA) public view override returns (address) {
-        bytes32 salt = keccak256(bytes(portfolioLCA));
-        bytes memory constructorArgs = abi.encode(portfolioLCA);
-        bytes32 initCodeHash = keccak256(
-            abi.encodePacked(type(RemoteAccount).creationCode, constructorArgs)
-        );
-        return
-            address(
-                uint160(
-                    uint256(
-                        keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initCodeHash))
-                    )
-                )
-            );
     }
 
     /**
@@ -103,11 +81,9 @@ contract Factory is IRemoteAccountFactory {
             // and not on transferable owner
             newAccount.transferOwnership(routerAddress);
 
-            emit RemoteAccountProvided(newAccount, portfolioLCA, routerAddress, true);
             return true;
         } catch {
             if (_isValidExistingAccount(expectedAddress, portfolioLCA, routerAddress)) {
-                emit RemoteAccountProvided(expectedAddress, portfolioLCA, routerAddress, false);
                 return false;
             }
 
