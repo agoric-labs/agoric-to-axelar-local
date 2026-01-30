@@ -467,4 +467,110 @@ describe('PortfolioRouter', () => {
         expect(decodedError?.args.expected).to.equal(wrongAddress);
         expect(decodedError?.args.actual).to.equal(expectedCorrectAddress);
     });
+
+    it('should reject when ownership was transferred away from router', async () => {
+        const commandId1 = getCommandId();
+        const commandId2 = getCommandId();
+        const txId1 = 'tx6';
+        const txId2 = 'tx7';
+        const transferTestLCA = 'agoric1transfertest123456789abcdefghij';
+
+        const expectedAccountAddress = await computeRemoteAccountAddress(
+            factory.target.toString(),
+            transferTestLCA,
+            router.target.toString(),
+        );
+
+        // Step 1: Create account via router
+        const payload1 = encodeRouterPayload({
+            id: txId1,
+            portfolioLCA: transferTestLCA,
+            remoteAccountAddress: expectedAccountAddress,
+            provideAccount: true,
+            depositPermit: [],
+            multiCalls: [],
+        });
+
+        const payloadHash1 = keccak256(toBytes(payload1));
+
+        await approveMessage({
+            commandId: commandId1,
+            from: sourceChain,
+            sourceAddress: agoricLCA,
+            targetAddress: router.target,
+            payload: payloadHash1,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        await router.execute(commandId1, sourceChain, agoricLCA, payload1);
+
+        // Step 2: Transfer ownership away from router (impersonate router)
+        const RemoteAccountContract = await ethers.getContractFactory('RemoteAccount');
+        const account = RemoteAccountContract.attach(expectedAccountAddress);
+
+        await ethers.provider.send('hardhat_impersonateAccount', [router.target.toString()]);
+        await owner.sendTransaction({ to: router.target, value: ethers.parseEther('1') });
+        const routerSigner = await ethers.getSigner(router.target.toString());
+
+        await account.connect(routerSigner).transferOwnership(addr1.address);
+        await ethers.provider.send('hardhat_stopImpersonatingAccount', [router.target.toString()]);
+
+        // Verify ownership transferred
+        expect(await account.owner()).to.equal(addr1.address);
+
+        // Step 3: Try to provide again via router - should fail
+        const payload2 = encodeRouterPayload({
+            id: txId2,
+            portfolioLCA: transferTestLCA,
+            remoteAccountAddress: expectedAccountAddress,
+            provideAccount: true,
+            depositPermit: [],
+            multiCalls: [],
+        });
+
+        const payloadHash2 = keccak256(toBytes(payload2));
+
+        await approveMessage({
+            commandId: commandId2,
+            from: sourceChain,
+            sourceAddress: agoricLCA,
+            targetAddress: router.target,
+            payload: payloadHash2,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        const tx = await router.execute(commandId2, sourceChain, agoricLCA, payload2);
+        const receipt = await tx.wait();
+
+        const routerInterface = router.interface;
+        const parsedLogs = receipt?.logs
+            .map((log: { topics: string[]; data: string }) => {
+                try {
+                    return routerInterface.parseLog(log);
+                } catch {
+                    return null;
+                }
+            })
+            .filter(Boolean);
+
+        const accountStatusEvent = parsedLogs.find(
+            (e: { name: string }) => e?.name === 'RemoteAccountStatus',
+        );
+
+        expect(accountStatusEvent?.args.id.hash).to.equal(keccak256(toBytes(txId2)));
+        expect(accountStatusEvent?.args.success).to.be.false;
+
+        // Decode the error - should be InvalidAccountAtAddress
+        const reason = accountStatusEvent?.args.reason;
+        expect(reason).to.not.equal('0x');
+
+        const factoryInterface = factory.interface;
+        const decodedError = factoryInterface.parseError(reason);
+        expect(decodedError?.name).to.equal('InvalidAccountAtAddress');
+        expect(decodedError?.args.account).to.equal(expectedAccountAddress);
+    });
 });
