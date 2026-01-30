@@ -56,7 +56,13 @@ interface IPortfolioRouter {
     error InvalidSourceAddress(string expected, string actual);
 
     event OperationError(string operation, bytes reason);
-    event AccountProvided(address indexed account, string indexed controller);
+    event AccountProvided(
+        string indexed id,
+        bool success,
+        address indexed account,
+        string indexed controller,
+        bytes reason
+    );
     event DepositExecuted(
         address indexed account,
         address indexed tokenOwner,
