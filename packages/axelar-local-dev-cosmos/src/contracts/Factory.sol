@@ -1,128 +1,148 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.20;
 
-import {AxelarExecutable} from "@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol";
-import {IAxelarGasService} from "@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IAxelarGasService.sol";
-import {IFactory} from "./interfaces/IFactory.sol";
-import {Wallet} from "./Wallet.sol";
+import {IRemoteAccountFactory} from "./interfaces/IRemoteAccountFactory.sol";
+import {RemoteAccount} from "./RemoteAccount.sol";
 
-contract Factory is IFactory, AxelarExecutable {
-    address immutable _gateway;
-    IAxelarGasService public immutable gasService;
-    string private constant EXPECTED_SOURCE_CHAIN = "agoric";
-    bytes32 private constant EXPECTED_SOURCE_CHAIN_HASH =
-        keccak256(bytes(EXPECTED_SOURCE_CHAIN));
+/**
+ * @title Factory (RemoteAccountFactory)
+ * @notice A simplified CREATE2 factory for deploying RemoteAccount contracts
+ * @dev No longer an AxelarExecutable - just a plain factory contract.
+ *      The PortfolioRouter calls provide() to create/verify RemoteAccounts.
+ */
+contract Factory is IRemoteAccountFactory {
+    bytes32 public immutable override remoteAccountCodeHash;
 
     event Received(address indexed sender, uint256 amount);
 
-    constructor(
-        address gateway_,
-        address gasReceiver_
-    ) payable AxelarExecutable(gateway_) {
-        gasService = IAxelarGasService(gasReceiver_);
-        _gateway = gateway_;
+    constructor() {
+        remoteAccountCodeHash = keccak256(type(RemoteAccount).creationCode);
     }
 
     /**
-     * @dev Check if a valid Wallet with the correct owner exists at the given address
-     *
-     * Note: Since CREATE2 uses keccak256(ownerAddress) as the salt, the owner is
-     * cryptographically built into the wallet's address. If a contract exists at the
-     * expected CREATE2 address, it must have been created with that owner. However,
-     * we still verify the owner as a redundant check for defense in depth - it ensures
-     * the contract at that address is actually a valid Wallet and not something else.
-     *
-     * @return true if valid wallet exists with matching owner, false otherwise
+     * @notice Compute the CREATE2 address for a RemoteAccount
+     * @param portfolioLCA The controller string (used as salt via keccak256)
+     * @param routerAddress The owner address (PortfolioRouter)
+     * @return The deterministic address where the RemoteAccount will be deployed
      */
-    function _isValidExistingWallet(
-        address walletAddress,
-        string calldata expectedOwner
+    function computeAddress(
+        string calldata portfolioLCA,
+        address routerAddress
+    ) public view override returns (address) {
+        bytes32 salt = keccak256(bytes(portfolioLCA));
+        bytes memory constructorArgs = abi.encode(routerAddress, portfolioLCA);
+        bytes32 initCodeHash = keccak256(
+            abi.encodePacked(type(RemoteAccount).creationCode, constructorArgs)
+        );
+        return
+            address(
+                uint160(
+                    uint256(
+                        keccak256(
+                            abi.encodePacked(
+                                bytes1(0xff),
+                                address(this),
+                                salt,
+                                initCodeHash
+                            )
+                        )
+                    )
+                )
+            );
+    }
+
+    /**
+     * @notice Check if a valid RemoteAccount exists at the given address
+     * @dev Verifies codehash, controller, and owner for defense in depth
+     * @param accountAddress The address to check
+     * @param expectedController The expected controller string
+     * @param expectedOwner The expected owner address
+     * @return true if valid account exists with matching controller and owner
+     */
+    function _isValidExistingAccount(
+        address accountAddress,
+        string calldata expectedController,
+        address expectedOwner
     ) internal view returns (bool) {
-        if (walletAddress.code.length == 0) {
+        if (accountAddress.code.length == 0) {
             return false;
         }
 
-        try Wallet(payable(walletAddress)).owner() returns (
-            string memory existingOwner
+        try RemoteAccount(payable(accountAddress)).controller() returns (
+            string memory existingController
         ) {
-            return
-                keccak256(bytes(existingOwner)) ==
-                keccak256(bytes(expectedOwner));
+            if (
+                keccak256(bytes(existingController)) !=
+                keccak256(bytes(expectedController))
+            ) {
+                return false;
+            }
         } catch {
             return false;
         }
-    }
 
-    function _createSmartWallet(
-        string calldata ownerAddress,
-        address expectedWalletAddress
-    ) internal {
-        try
-            new Wallet{salt: keccak256(abi.encodePacked(ownerAddress))}(
-                _gateway,
-                address(gasService),
-                ownerAddress
-            )
-        returns (Wallet wallet) {
-            // Wallet created successfully
-            address newWallet = address(wallet);
-            if (newWallet != expectedWalletAddress) {
-                revert IFactory.WalletAddressMismatch(
-                    expectedWalletAddress,
-                    newWallet
-                );
+        try RemoteAccount(payable(accountAddress)).owner() returns (
+            address existingOwner
+        ) {
+            if (existingOwner != expectedOwner) {
+                return false;
             }
-
-            emit IFactory.SmartWalletCreated(
-                newWallet,
-                ownerAddress,
-                EXPECTED_SOURCE_CHAIN
-            );
-            return;
         } catch {
-            // Creation failed - check if valid wallet already exists
-            if (_isValidExistingWallet(expectedWalletAddress, ownerAddress)) {
-                emit IFactory.SmartWalletCreated(
-                    expectedWalletAddress,
-                    ownerAddress,
-                    EXPECTED_SOURCE_CHAIN
-                );
-                return;
-            }
-
-            revert IFactory.InvalidWalletAtAddress(expectedWalletAddress);
-        }
-    }
-
-    function _execute(
-        bytes32 /*commandId*/,
-        string calldata sourceChain,
-        string calldata sourceAddress,
-        bytes calldata payload
-    ) internal override {
-        if (keccak256(bytes(sourceChain)) != EXPECTED_SOURCE_CHAIN_HASH) {
-            revert IFactory.InvalidSourceChain(
-                EXPECTED_SOURCE_CHAIN,
-                sourceChain
-            );
+            return false;
         }
 
-        // Decode expected wallet address from payload
-        address expectedWalletAddress = abi.decode(payload, (address));
-
-        // Create the wallet
-        _createSmartWallet(sourceAddress, expectedWalletAddress);
+        return true;
     }
 
     /**
-     * @param ownerAddress The agoric LCA
-     * @param expectedWalletAddress The expected EVM address for the new Wallet
+     * @notice Provide a RemoteAccount - creates if new, verifies if exists
+     * @dev Idempotent: calling multiple times with same params is safe
+     * @param portfolioLCA The controller string for the RemoteAccount
+     * @param expectedAddress The expected CREATE2 address (for verification)
+     * @param routerAddress The owner address (PortfolioRouter)
+     * @return The address of the RemoteAccount (created or existing)
      */
-    function createWallet(
-        string calldata ownerAddress,
-        address expectedWalletAddress
-    ) external {
-        _createSmartWallet(ownerAddress, expectedWalletAddress);
+    function provide(
+        string calldata portfolioLCA,
+        address expectedAddress,
+        address routerAddress
+    ) external override returns (address) {
+        bytes32 salt = keccak256(bytes(portfolioLCA));
+
+        try new RemoteAccount{salt: salt}(routerAddress, portfolioLCA) returns (
+            RemoteAccount account
+        ) {
+            address newAccount = address(account);
+            if (newAccount != expectedAddress) {
+                revert AddressMismatch(expectedAddress, newAccount);
+            }
+
+            emit RemoteAccountProvided(
+                newAccount,
+                portfolioLCA,
+                routerAddress,
+                true
+            );
+            return newAccount;
+        } catch {
+            if (
+                _isValidExistingAccount(
+                    expectedAddress,
+                    portfolioLCA,
+                    routerAddress
+                )
+            ) {
+                emit RemoteAccountProvided(
+                    expectedAddress,
+                    portfolioLCA,
+                    routerAddress,
+                    false
+                );
+                return expectedAddress;
+            }
+
+            revert InvalidAccountAtAddress(expectedAddress);
+        }
     }
 
     receive() external payable {
