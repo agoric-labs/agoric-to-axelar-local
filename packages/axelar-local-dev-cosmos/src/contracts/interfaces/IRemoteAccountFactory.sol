@@ -23,7 +23,5 @@ interface IRemoteAccountFactory {
         address routerAddress
     ) external returns (bool);
 
-    function computeAddress(
-        string calldata portfolioLCA,
-    ) external view returns (address);
+    function computeAddress(string calldata portfolioLCA) external view returns (address);
 }

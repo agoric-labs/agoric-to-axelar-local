@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.20;
 
-import {AxelarExecutable} from "@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol";
-import {IRemoteAccountFactory} from "./interfaces/IRemoteAccountFactory.sol";
-import {IRemoteAccount, ContractCall} from "./interfaces/IRemoteAccount.sol";
-import {IPortfolioRouter, IPermit2, DepositPermit, RouterPayload} from "./interfaces/IPortfolioRouter.sol";
+import { AxelarExecutable } from '@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol';
+import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
+import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
+import { IPortfolioRouter, IPermit2, DepositPermit, RouterPayload } from './interfaces/IPortfolioRouter.sol';
 
 /**
  * @title PortfolioRouter
@@ -19,9 +19,8 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
     IRemoteAccountFactory public immutable override factory;
     IPermit2 public immutable override permit2;
 
-    string private constant EXPECTED_SOURCE_CHAIN = "agoric";
-    bytes32 private constant EXPECTED_SOURCE_CHAIN_HASH =
-        keccak256(bytes(EXPECTED_SOURCE_CHAIN));
+    string private constant EXPECTED_SOURCE_CHAIN = 'agoric';
+    bytes32 private constant EXPECTED_SOURCE_CHAIN_HASH = keccak256(bytes(EXPECTED_SOURCE_CHAIN));
 
     event Received(address indexed sender, uint256 amount);
 
@@ -80,7 +79,7 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
         try this.processPayload(p) {
             // success
         } catch (bytes memory reason) {
-            emit OperationError("process", reason);
+            emit OperationError('process', reason);
         }
     }
 
@@ -104,12 +103,7 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
         }
 
         if (p.multiCalls.length > 0) {
-            _executeMulticall(
-                p.id,
-                p.portfolioLCA,
-                accountAddress,
-                p.multiCalls
-            );
+            _executeMulticall(p.id, p.portfolioLCA, accountAddress, p.multiCalls);
         }
     }
 
@@ -124,11 +118,10 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
         address accountAddress,
         DepositPermit memory deposit
     ) internal {
-        IPermit2.SignatureTransferDetails memory details = IPermit2
-            .SignatureTransferDetails({
-                to: accountAddress,
-                requestedAmount: deposit.permit.permitted.amount
-            });
+        IPermit2.SignatureTransferDetails memory details = IPermit2.SignatureTransferDetails({
+            to: accountAddress,
+            requestedAmount: deposit.permit.permitted.amount
+        });
 
         try
             permit2.permitWitnessTransferFrom(
@@ -140,7 +133,7 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
                 deposit.signature
             )
         {
-            emit DepositStatus(id, true, "");
+            emit DepositStatus(id, true, '');
         } catch (bytes memory reason) {
             emit DepositStatus(id, false, reason);
         }
@@ -152,15 +145,9 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
         address accountAddress
     ) internal {
         try factory.provide(portfolioLCA, accountAddress, address(this)) {
-            emit AccountProvided(id, true, accountAddress, portfolioLCA, "");
+            emit AccountProvided(id, true, accountAddress, portfolioLCA, '');
         } catch (bytes memory reason) {
-            emit AccountProvided(
-                id,
-                false,
-                accountAddress,
-                portfolioLCA,
-                reason
-            );
+            emit AccountProvided(id, false, accountAddress, portfolioLCA, reason);
         }
     }
 
@@ -178,7 +165,7 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
         ContractCall[] memory calls
     ) internal {
         try IRemoteAccount(accountAddress).executeCalls(portfolioLCA, calls) {
-            emit MulticallStatus(id, true, "");
+            emit MulticallStatus(id, true, '');
         } catch (bytes memory reason) {
             emit MulticallStatus(id, false, reason);
         }

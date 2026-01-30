@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.20;
 
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {IRemoteAccount, ContractCall} from "./interfaces/IRemoteAccount.sol";
+import { Ownable } from '@openzeppelin/contracts/access/Ownable.sol';
+import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
 
 /**
  * @title RemoteAccount
@@ -55,9 +55,7 @@ contract RemoteAccount is Ownable, IRemoteAccount {
 
         uint256 len = calls.length;
         for (uint256 i = 0; i < len; ) {
-            (bool success, bytes memory reason) = calls[i].target.call(
-                calls[i].data
-            );
+            (bool success, bytes memory reason) = calls[i].target.call(calls[i].data);
 
             if (!success) {
                 revert ContractCallFailed(i, reason);

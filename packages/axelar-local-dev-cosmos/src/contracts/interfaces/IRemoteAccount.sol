@@ -12,8 +12,5 @@ interface IRemoteAccount {
 
     function controller() external view returns (string memory);
 
-    function executeCalls(
-        string calldata portfolioLCA,
-        ContractCall[] calldata calls
-    ) external;
+    function executeCalls(string calldata portfolioLCA, ContractCall[] calldata calls) external;
 }

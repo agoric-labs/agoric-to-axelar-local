@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.20;
 
-import {ContractCall} from "./IRemoteAccount.sol";
-import {IRemoteAccountFactory} from "./IRemoteAccountFactory.sol";
+import { ContractCall } from './IRemoteAccount.sol';
+import { IRemoteAccountFactory } from './IRemoteAccountFactory.sol';
 
 interface IPermit2 {
     struct TokenPermissions {
