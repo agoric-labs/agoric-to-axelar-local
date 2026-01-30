@@ -10,17 +10,11 @@ import { RemoteAccount } from './RemoteAccount.sol';
  * @dev The PortfolioRouter calls provide() to create/verify RemoteAccounts.
  */
 contract RemoteAccountFactory is IRemoteAccountFactory {
-    bytes32 public immutable override remoteAccountCodeHash;
-
     event Received(address indexed sender, uint256 amount);
-
-    constructor() {
-        remoteAccountCodeHash = keccak256(type(RemoteAccount).creationCode);
-    }
 
     /**
      * @notice Check if a valid RemoteAccount exists at the given address
-     * @dev Verifies codehash, controller, and owner for defense in depth
+     * @dev Verifies code exists, controller, and owner for defense in depth
      * @param accountAddress The address to check
      * @param expectedController The expected controller string
      * @param expectedOwner The expected owner address
@@ -31,7 +25,7 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
         string calldata expectedController,
         address expectedOwner
     ) internal view returns (bool) {
-        if (accountAddress.codehash != remoteAccountCodeHash) {
+        if (accountAddress.code.length == 0) {
             return false;
         }
 
