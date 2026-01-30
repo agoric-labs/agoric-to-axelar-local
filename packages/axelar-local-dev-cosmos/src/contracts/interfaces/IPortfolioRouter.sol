@@ -63,7 +63,7 @@ interface IPortfolioRouter {
         address token,
         uint256 amount
     );
-    event CallsExecuted(address indexed account, uint256 totalCalls);
+    event MulticallStatus(string indexed id, bool success, uint256 totalCalls);
 
     function agoricLCA() external view returns (string memory);
     function factory() external view returns (IRemoteAccountFactory);
