@@ -14,7 +14,8 @@ import {IPortfolioRouter, IPermit2, DepositPermit, RouterPayload} from "./interf
  *      by deploying a new router and transferring ownership.
  */
 contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
-    string private _agoricLCA;
+    string private _agoricLCA; // immutable
+    bytes32 private immutable _agoricLCAHash;
     IRemoteAccountFactory public immutable override factory;
     IPermit2 public immutable override permit2;
 
@@ -39,6 +40,7 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
         factory = IRemoteAccountFactory(factory_);
         permit2 = IPermit2(permit2_);
         _agoricLCA = agoricLCA_;
+        _agoricLCAHash = keccak256(bytes(_agoricLCA));
     }
 
     /**
@@ -65,39 +67,47 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
             revert InvalidSourceChain(EXPECTED_SOURCE_CHAIN, sourceChain);
         }
 
-        if (keccak256(bytes(sourceAddress)) != keccak256(bytes(_agoricLCA))) {
+        if (keccak256(bytes(sourceAddress)) != _agoricLCAHash) {
             revert InvalidSourceAddress(_agoricLCA, sourceAddress);
         }
 
+        // Parse and validate structure of message
         RouterPayload memory p = abi.decode(payload, (RouterPayload));
+        if (p.depositPermit.length > 0) {
+            require(p.depositPermit.length == 1);
+        }
 
-        _processPayload(p);
+        try this.processPayload(p) {
+            // success
+        } catch (bytes memory reason) {
+            emit OperationError("process", reason);
+        };
     }
 
     /**
-     * @notice Process the router payload in order: provide -> deposit -> multicall
-     * @dev Uses try/catch with OperationError events for debugging
+     * @notice Process the router payload in order: deposit -> provide -> multicall
+     * @dev This is an external function which can only be called by this contract
+     * Used to create a call stack that can be reverted atomically
      * @param p The decoded RouterPayload
      */
-    function _processPayload(RouterPayload memory p) internal {
+    function processPayload(RouterPayload calldata p) public external {
+        require(msg.sender == address(this));
+
         address accountAddress = p.remoteAccountAddress;
 
-        if (p.provideAccount) {
-            try
-                factory.provide(p.portfolioLCA, accountAddress, address(this))
-            returns (address provided) {
-                accountAddress = provided;
-                emit AccountProvided(accountAddress, p.portfolioLCA);
-            } catch (bytes memory reason) {
-                emit OperationError("provide", reason);
-            }
+        if (p.depositPermit.length > 0) {
+            _executeDeposit(accountAddress, p.depositPermit[0]);
         }
 
-        if (p.depositPermit.tokenOwner != address(0)) {
-            _executeDeposit(accountAddress, p.depositPermit);
+        if (p.provideAccount) {
+            factory.provide(p.portfolioLCA, accountAddress, address(this))
+            require(accountAddress == provided);
+            emit AccountProvided(accountAddress, p.portfolioLCA);
         }
 
         if (p.multiCalls.length > 0) {
+            // XXX: should the multicall emit an error if it fails instead of reverting
+            // create and/or deposit?
             _executeMulticall(accountAddress, p.portfolioLCA, p.multiCalls);
         }
     }
@@ -117,25 +127,28 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
                 requestedAmount: deposit.permit.permitted.amount
             });
 
-        try
-            permit2.permitWitnessTransferFrom(
-                deposit.permit,
-                details,
-                deposit.tokenOwner,
-                deposit.witness,
-                deposit.witnessTypeString,
-                deposit.signature
-            )
-        {
-            emit DepositExecuted(
-                accountAddress,
-                deposit.tokenOwner,
-                deposit.permit.permitted.token,
-                deposit.permit.permitted.amount
-            );
-        } catch (bytes memory reason) {
-            emit OperationError("deposit", reason);
-        }
+        permit2.permitWitnessTransferFrom(
+            deposit.permit,
+            details,
+            deposit.tokenOwner,
+            deposit.witness,
+            deposit.witnessTypeString,
+            deposit.signature
+        );
+        emit DepositExecuted(
+            accountAddress,
+            deposit.tokenOwner,
+            deposit.permit.permitted.token,
+            deposit.permit.permitted.amount
+        );
+    }
+
+    function _provideAccount(
+        address accountAddress,
+        string memory portfolioLCA
+    ) internal {
+        factory.provide(portfolioLCA, accountAddress, address(this));
+        emit AccountProvided(accountAddress, portfolioLCA);
     }
 
     /**
@@ -149,11 +162,8 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
         string memory portfolioLCA,
         ContractCall[] memory calls
     ) internal {
-        try IRemoteAccount(accountAddress).executeCalls(portfolioLCA, calls) {
-            emit CallsExecuted(accountAddress, calls.length);
-        } catch (bytes memory reason) {
-            emit OperationError("executeCalls", reason);
-        }
+        IRemoteAccount(accountAddress).executeCalls(portfolioLCA, calls);
+        emit CallsExecuted(accountAddress, calls.length);
     }
 
     receive() external payable {

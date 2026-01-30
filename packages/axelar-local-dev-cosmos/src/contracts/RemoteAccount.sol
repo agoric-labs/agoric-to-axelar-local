@@ -13,18 +13,18 @@ import {IRemoteAccount, ContractCall} from "./interfaces/IRemoteAccount.sol";
  */
 contract RemoteAccount is Ownable, IRemoteAccount {
     string private _controller;
+    bytes32 immutable private _controllerHash;
 
     event Received(address indexed sender, uint256 amount);
 
     /**
-     * @param initialOwner The address that owns this account (typically PortfolioRouter)
      * @param controller_ The portfolioLCA string that controls this account
      */
     constructor(
-        address initialOwner,
         string memory controller_
-    ) Ownable(initialOwner) {
+    ) Ownable(msg.sender) {
         _controller = controller_;
+        _controllerHash = keccak256(bytes(controller_));
     }
 
     /**
@@ -33,6 +33,12 @@ contract RemoteAccount is Ownable, IRemoteAccount {
      */
     function controller() external view override returns (string memory) {
         return _controller;
+    }
+
+    function updateOwnership(address newOwner) public external {
+        // Allows the multicall to update the contract ownership
+        require(msg.sender == address(this));
+        _transferOwnership(newOwner);
     }
 
     /**
@@ -45,7 +51,7 @@ contract RemoteAccount is Ownable, IRemoteAccount {
         string calldata portfolioLCA,
         ContractCall[] calldata calls
     ) external override onlyOwner {
-        if (keccak256(bytes(portfolioLCA)) != keccak256(bytes(_controller))) {
+        if (keccak256(bytes(portfolioLCA)) != _controllerHash) {
             revert UnauthorizedController(_controller, portfolioLCA);
         }
 
