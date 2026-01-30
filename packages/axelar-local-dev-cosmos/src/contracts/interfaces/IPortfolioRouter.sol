@@ -1,0 +1,67 @@
+// SPDX-License-Identifier: Apache-2.0
+pragma solidity ^0.8.20;
+
+import {ContractCall} from "./IRemoteAccount.sol";
+import {IRemoteAccountFactory} from "./IRemoteAccountFactory.sol";
+
+interface IPermit2 {
+    struct TokenPermissions {
+        address token;
+        uint256 amount;
+    }
+
+    struct PermitTransferFrom {
+        TokenPermissions permitted;
+        uint256 nonce;
+        uint256 deadline;
+    }
+
+    struct SignatureTransferDetails {
+        address to;
+        uint256 requestedAmount;
+    }
+
+    function permitWitnessTransferFrom(
+        PermitTransferFrom calldata permit,
+        SignatureTransferDetails calldata transferDetails,
+        address owner,
+        bytes32 witness,
+        string calldata witnessTypeString,
+        bytes calldata signature
+    ) external;
+}
+
+struct DepositPermit {
+    address tokenOwner;
+    IPermit2.PermitTransferFrom permit;
+    bytes32 witness;
+    string witnessTypeString;
+    bytes signature;
+}
+
+struct RouterPayload {
+    string portfolioLCA;
+    address remoteAccountAddress;
+    bool provideAccount;
+    DepositPermit depositPermit;
+    ContractCall[] multiCalls;
+}
+
+interface IPortfolioRouter {
+    error InvalidSourceChain(string expected, string actual);
+    error InvalidSourceAddress(string expected, string actual);
+
+    event OperationError(string operation, bytes reason);
+    event AccountProvided(address indexed account, string indexed controller);
+    event DepositExecuted(
+        address indexed account,
+        address indexed tokenOwner,
+        address token,
+        uint256 amount
+    );
+    event CallsExecuted(address indexed account, uint256 totalCalls);
+
+    function agoricLCA() external view returns (string memory);
+    function factory() external view returns (IRemoteAccountFactory);
+    function permit2() external view returns (IPermit2);
+}
