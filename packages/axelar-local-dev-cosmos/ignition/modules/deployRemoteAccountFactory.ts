@@ -1,7 +1,7 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 
 export default buildModule("RemoteAccountFactoryModule", (m) => {
-  const Factory = m.contract("Factory", []);
+  const RemoteAccountFactory = m.contract("RemoteAccountFactory", []);
 
-  return { Factory };
+  return { RemoteAccountFactory };
 });
