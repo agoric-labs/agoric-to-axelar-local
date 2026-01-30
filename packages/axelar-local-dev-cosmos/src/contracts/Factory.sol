@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.20;
 
-import {IRemoteAccountFactory} from "./interfaces/IRemoteAccountFactory.sol";
-import {RemoteAccount} from "./RemoteAccount.sol";
+import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
+import { RemoteAccount } from './RemoteAccount.sol';
 
 /**
  * @title Factory (RemoteAccountFactory)
@@ -24,9 +24,7 @@ contract Factory is IRemoteAccountFactory {
      * @param portfolioLCA The controller string (used as salt via keccak256)
      * @return The deterministic address where the RemoteAccount will be deployed
      */
-    function computeAddress(
-        string calldata portfolioLCA
-    ) public view override returns (address) {
+    function computeAddress(string calldata portfolioLCA) public view override returns (address) {
         bytes32 salt = keccak256(bytes(portfolioLCA));
         bytes memory constructorArgs = abi.encode(portfolioLCA);
         bytes32 initCodeHash = keccak256(
@@ -36,14 +34,7 @@ contract Factory is IRemoteAccountFactory {
             address(
                 uint160(
                     uint256(
-                        keccak256(
-                            abi.encodePacked(
-                                bytes1(0xff),
-                                address(this),
-                                salt,
-                                initCodeHash
-                            )
-                        )
+                        keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initCodeHash))
                     )
                 )
             );
@@ -69,19 +60,14 @@ contract Factory is IRemoteAccountFactory {
         try RemoteAccount(payable(accountAddress)).controller() returns (
             string memory existingController
         ) {
-            if (
-                keccak256(bytes(existingController)) !=
-                keccak256(bytes(expectedController))
-            ) {
+            if (keccak256(bytes(existingController)) != keccak256(bytes(expectedController))) {
                 return false;
             }
         } catch {
             return false;
         }
 
-        try RemoteAccount(payable(accountAddress)).owner() returns (
-            address existingOwner
-        ) {
+        try RemoteAccount(payable(accountAddress)).owner() returns (address existingOwner) {
             if (existingOwner != expectedOwner) {
                 return false;
             }
@@ -107,39 +93,21 @@ contract Factory is IRemoteAccountFactory {
     ) external override returns (bool) {
         bytes32 salt = keccak256(bytes(portfolioLCA));
 
-        try new RemoteAccount{salt: salt}(portfolioLCA) returns (
-            RemoteAccount account
-        ) {
+        try new RemoteAccount{ salt: salt }(portfolioLCA) returns (RemoteAccount account) {
             address newAccount = address(account);
             if (newAccount != expectedAddress) {
                 revert AddressMismatch(expectedAddress, newAccount);
             }
-            // Immediately transfer ownership 
+            // Immediately transfer ownership
             // not using constructor args so that address only depends on immutable controller
             // and not on transferable owner
             newAccount.transferOwnership(routerAddress);
 
-            emit RemoteAccountProvided(
-                newAccount,
-                portfolioLCA,
-                routerAddress,
-                true
-            );
+            emit RemoteAccountProvided(newAccount, portfolioLCA, routerAddress, true);
             return true;
         } catch {
-            if (
-                _isValidExistingAccount(
-                    expectedAddress,
-                    portfolioLCA,
-                    routerAddress
-                )
-            ) {
-                emit RemoteAccountProvided(
-                    expectedAddress,
-                    portfolioLCA,
-                    routerAddress,
-                    false
-                );
+            if (_isValidExistingAccount(expectedAddress, portfolioLCA, routerAddress)) {
+                emit RemoteAccountProvided(expectedAddress, portfolioLCA, routerAddress, false);
                 return false;
             }
 
