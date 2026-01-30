@@ -20,4 +20,8 @@ contract Multicall {
     function getValue() public view returns (uint256) {
         return value;
     }
+
+    function alwaysReverts() public pure {
+        revert("Multicall: intentional revert");
+    }
 }

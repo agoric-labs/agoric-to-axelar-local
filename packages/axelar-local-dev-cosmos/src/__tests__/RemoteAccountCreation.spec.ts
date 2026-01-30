@@ -1,0 +1,523 @@
+import AxelarGasService from '@axelar-network/axelar-cgp-solidity/artifacts/contracts/gas-service/AxelarGasService.sol/AxelarGasService.json';
+import { expect } from 'chai';
+import { Contract } from 'ethers';
+import { ethers } from 'hardhat';
+import '@nomicfoundation/hardhat-chai-matchers';
+import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
+import { keccak256, stringToHex, toBytes } from 'viem';
+import { approveMessage, computeRemoteAccountAddress, encodeRouterPayload } from './lib/utils';
+
+describe('PortfolioRouter - RemoteAccountCreation', () => {
+    let owner: HardhatEthersSigner, addr1: HardhatEthersSigner;
+    let axelarGatewayMock: Contract, axelarGasServiceMock: Contract;
+    let factory: Contract, router: Contract, permit2Mock: Contract;
+
+    const abiCoder = new ethers.AbiCoder();
+
+    const sourceChain = 'agoric';
+    const agoricLCA = 'agoric1routerlca123456789abcdefghijklmnopqrs';
+    const portfolioLCA = 'agoric1portfolio123456789abcdefghijklmnopqrs';
+
+    let commandIdCounter = 1;
+    const getCommandId = () => {
+        const commandId = keccak256(stringToHex(String(commandIdCounter)));
+        commandIdCounter++;
+        return commandId;
+    };
+
+    before(async () => {
+        [owner, addr1] = await ethers.getSigners();
+
+        // Deploy Axelar Gas Service
+        const GasServiceFactory = await ethers.getContractFactory(
+            AxelarGasService.abi,
+            AxelarGasService.bytecode,
+        );
+        axelarGasServiceMock = await GasServiceFactory.deploy(owner.address);
+
+        // Deploy Token Deployer
+        const TokenDeployerFactory = await ethers.getContractFactory('TokenDeployer');
+        const tokenDeployer = await TokenDeployerFactory.deploy();
+
+        // Deploy Auth Contract
+        const AuthFactory = await ethers.getContractFactory('AxelarAuthWeighted');
+        const authContract = await AuthFactory.deploy([
+            abiCoder.encode(['address[]', 'uint256[]', 'uint256'], [[owner.address], [1], 1]),
+        ]);
+
+        // Deploy Axelar Gateway
+        const AxelarGatewayFactory = await ethers.getContractFactory('AxelarGateway');
+        axelarGatewayMock = await AxelarGatewayFactory.deploy(
+            authContract.target,
+            tokenDeployer.target,
+        );
+
+        // Deploy MockPermit2
+        const MockPermit2Factory = await ethers.getContractFactory('MockPermit2');
+        permit2Mock = await MockPermit2Factory.deploy();
+
+        // Deploy RemoteAccountFactory
+        const FactoryContract = await ethers.getContractFactory('RemoteAccountFactory');
+        factory = await FactoryContract.deploy();
+        await factory.waitForDeployment();
+
+        // Deploy PortfolioRouter
+        const RouterContract = await ethers.getContractFactory('PortfolioRouter');
+        router = await RouterContract.deploy(
+            axelarGatewayMock.target,
+            factory.target,
+            permit2Mock.target,
+            agoricLCA,
+        );
+        await router.waitForDeployment();
+    });
+
+    it('should reject invalid source chain', async () => {
+        const commandId = getCommandId();
+        const wrongSourceChain = 'ethereum';
+
+        const expectedAccountAddress = await computeRemoteAccountAddress(
+            factory.target.toString(),
+            portfolioLCA,
+            router.target.toString(),
+        );
+
+        const payload = encodeRouterPayload({
+            id: 'tx2',
+            portfolioLCA,
+            remoteAccountAddress: expectedAccountAddress,
+            provideAccount: true,
+            depositPermit: [],
+            multiCalls: [],
+        });
+
+        const payloadHash = keccak256(toBytes(payload));
+
+        await approveMessage({
+            commandId,
+            from: wrongSourceChain,
+            sourceAddress: agoricLCA,
+            targetAddress: router.target,
+            payload: payloadHash,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        await expect(
+            router.execute(commandId, wrongSourceChain, agoricLCA, payload),
+        ).to.be.revertedWithCustomError(router, 'InvalidSourceChain');
+    });
+
+    it('should reject invalid source address', async () => {
+        const commandId = getCommandId();
+        const wrongSourceAddress = 'agoric1wrongaddress123456789abcdefghijk';
+
+        const expectedAccountAddress = await computeRemoteAccountAddress(
+            factory.target.toString(),
+            portfolioLCA,
+            router.target.toString(),
+        );
+
+        const payload = encodeRouterPayload({
+            id: 'tx3',
+            portfolioLCA,
+            remoteAccountAddress: expectedAccountAddress,
+            provideAccount: true,
+            depositPermit: [],
+            multiCalls: [],
+        });
+
+        const payloadHash = keccak256(toBytes(payload));
+
+        await approveMessage({
+            commandId,
+            from: sourceChain,
+            sourceAddress: wrongSourceAddress,
+            targetAddress: router.target,
+            payload: payloadHash,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        await expect(
+            router.execute(commandId, sourceChain, wrongSourceAddress, payload),
+        ).to.be.revertedWithCustomError(router, 'InvalidSourceAddress');
+    });
+
+    it('should provide RemoteAccount via router', async () => {
+        const commandId = getCommandId();
+        const txId = 'tx1';
+
+        const expectedAccountAddress = await computeRemoteAccountAddress(
+            factory.target.toString(),
+            portfolioLCA,
+            router.target.toString(),
+        );
+
+        const payload = encodeRouterPayload({
+            id: txId,
+            portfolioLCA,
+            remoteAccountAddress: expectedAccountAddress,
+            provideAccount: true,
+            depositPermit: [],
+            multiCalls: [],
+        });
+
+        const payloadHash = keccak256(toBytes(payload));
+
+        await approveMessage({
+            commandId,
+            from: sourceChain,
+            sourceAddress: agoricLCA,
+            targetAddress: router.target,
+            payload: payloadHash,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        const tx = await router.execute(commandId, sourceChain, agoricLCA, payload);
+        const receipt = await tx.wait();
+
+        // Parse events
+        const routerInterface = router.interface;
+        const parsedLogs = receipt?.logs
+            .map((log: { topics: string[]; data: string }) => {
+                try {
+                    return routerInterface.parseLog(log);
+                } catch {
+                    return null;
+                }
+            })
+            .filter(Boolean);
+
+        // Check RemoteAccountStatus event (success, created=true)
+        const accountStatusEvent = parsedLogs.find(
+            (e: { name: string }) => e?.name === 'RemoteAccountStatus',
+        );
+
+        expect(accountStatusEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
+        expect(accountStatusEvent?.args.success).to.be.true;
+        expect(accountStatusEvent?.args.created).to.be.true;
+        expect(accountStatusEvent?.args.account).to.equal(expectedAccountAddress);
+
+        // Verify RemoteAccount ownership and controller
+        const RemoteAccountFactory = await ethers.getContractFactory('RemoteAccount');
+        const account = RemoteAccountFactory.attach(expectedAccountAddress);
+        expect(await account.owner()).to.equal(router.target);
+        expect(await account.controller()).to.equal(portfolioLCA);
+    });
+
+    it('should be idempotent - providing same account twice succeeds with created=false', async () => {
+        const commandId = getCommandId();
+        const txId = 'tx4';
+        // Use the same portfolioLCA from the first test - account already exists
+        const expectedAccountAddress = await computeRemoteAccountAddress(
+            factory.target.toString(),
+            portfolioLCA,
+            router.target.toString(),
+        );
+
+        const payload = encodeRouterPayload({
+            id: txId,
+            portfolioLCA,
+            remoteAccountAddress: expectedAccountAddress,
+            provideAccount: true,
+            depositPermit: [],
+            multiCalls: [],
+        });
+
+        const payloadHash = keccak256(toBytes(payload));
+
+        await approveMessage({
+            commandId,
+            from: sourceChain,
+            sourceAddress: agoricLCA,
+            targetAddress: router.target,
+            payload: payloadHash,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        const tx = await router.execute(commandId, sourceChain, agoricLCA, payload);
+        const receipt = await tx.wait();
+
+        // Parse events
+        const routerInterface = router.interface;
+        const parsedLogs = receipt?.logs
+            .map((log: { topics: string[]; data: string }) => {
+                try {
+                    return routerInterface.parseLog(log);
+                } catch {
+                    return null;
+                }
+            })
+            .filter(Boolean);
+
+        // Check RemoteAccountStatus event (success=true, created=false)
+        const accountStatusEvent = parsedLogs.find(
+            (e: { name: string }) => e?.name === 'RemoteAccountStatus',
+        );
+
+        expect(accountStatusEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
+        expect(accountStatusEvent?.args.success).to.be.true;
+        expect(accountStatusEvent?.args.created).to.be.false; // Already exists
+        expect(accountStatusEvent?.args.account).to.equal(expectedAccountAddress);
+    });
+
+    it('should reject when expected address does not match', async () => {
+        const commandId = getCommandId();
+        const txId = 'tx5';
+        const newPortfolioLCA = 'agoric1newportfolio123456789abcdefghijk';
+
+        // Compute wrong address (using different portfolioLCA)
+        const wrongAddress = await computeRemoteAccountAddress(
+            factory.target.toString(),
+            'agoric1differentlca123456789abcdefghijk',
+            router.target.toString(),
+        );
+
+        const payload = encodeRouterPayload({
+            id: txId,
+            portfolioLCA: newPortfolioLCA,
+            remoteAccountAddress: wrongAddress, // Wrong address for this portfolioLCA
+            provideAccount: true,
+            depositPermit: [],
+            multiCalls: [],
+        });
+
+        const payloadHash = keccak256(toBytes(payload));
+
+        await approveMessage({
+            commandId,
+            from: sourceChain,
+            sourceAddress: agoricLCA,
+            targetAddress: router.target,
+            payload: payloadHash,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        const tx = await router.execute(commandId, sourceChain, agoricLCA, payload);
+        const receipt = await tx.wait();
+
+        // Parse events
+        const routerInterface = router.interface;
+        const parsedLogs = receipt?.logs
+            .map((log: { topics: string[]; data: string }) => {
+                try {
+                    return routerInterface.parseLog(log);
+                } catch {
+                    return null;
+                }
+            })
+            .filter(Boolean);
+
+        // Check RemoteAccountStatus event (success=false due to address mismatch)
+        const accountStatusEvent = parsedLogs.find(
+            (e: { name: string }) => e?.name === 'RemoteAccountStatus',
+        );
+
+        expect(accountStatusEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
+        expect(accountStatusEvent?.args.success).to.be.false;
+
+        // Decode the error reason
+        const reason = accountStatusEvent?.args.reason;
+        expect(reason).to.not.equal('0x');
+
+        // Parse the custom error from factory
+        const factoryInterface = factory.interface;
+        const decodedError = factoryInterface.parseError(reason);
+        expect(decodedError?.name).to.equal('AddressMismatch');
+
+        // Verify error contains the expected vs actual addresses
+        const expectedCorrectAddress = await computeRemoteAccountAddress(
+            factory.target.toString(),
+            newPortfolioLCA,
+            router.target.toString(),
+        );
+        expect(decodedError?.args.expected).to.equal(wrongAddress);
+        expect(decodedError?.args.actual).to.equal(expectedCorrectAddress);
+    });
+
+    it('should reject when ownership was transferred away from router', async () => {
+        const commandId1 = getCommandId();
+        const commandId2 = getCommandId();
+        const txId1 = 'tx6';
+        const txId2 = 'tx7';
+        const transferTestLCA = 'agoric1transfertest123456789abcdefghij';
+
+        const expectedAccountAddress = await computeRemoteAccountAddress(
+            factory.target.toString(),
+            transferTestLCA,
+            router.target.toString(),
+        );
+
+        // Step 1: Create account via router
+        const payload1 = encodeRouterPayload({
+            id: txId1,
+            portfolioLCA: transferTestLCA,
+            remoteAccountAddress: expectedAccountAddress,
+            provideAccount: true,
+            depositPermit: [],
+            multiCalls: [],
+        });
+
+        const payloadHash1 = keccak256(toBytes(payload1));
+
+        await approveMessage({
+            commandId: commandId1,
+            from: sourceChain,
+            sourceAddress: agoricLCA,
+            targetAddress: router.target,
+            payload: payloadHash1,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        await router.execute(commandId1, sourceChain, agoricLCA, payload1);
+
+        // Step 2: Transfer ownership away from router (impersonate router)
+        const account = await ethers.getContractAt('RemoteAccount', expectedAccountAddress);
+
+        await ethers.provider.send('hardhat_impersonateAccount', [router.target.toString()]);
+        await owner.sendTransaction({ to: router.target, value: ethers.parseEther('1') });
+        const routerSigner = await ethers.getSigner(router.target.toString());
+
+        await account.connect(routerSigner).getFunction('transferOwnership')(addr1.address);
+        await ethers.provider.send('hardhat_stopImpersonatingAccount', [router.target.toString()]);
+
+        // Verify ownership transferred
+        expect(await account.owner()).to.equal(addr1.address);
+
+        // Step 3: Try to provide again via router - should fail
+        const payload2 = encodeRouterPayload({
+            id: txId2,
+            portfolioLCA: transferTestLCA,
+            remoteAccountAddress: expectedAccountAddress,
+            provideAccount: true,
+            depositPermit: [],
+            multiCalls: [],
+        });
+
+        const payloadHash2 = keccak256(toBytes(payload2));
+
+        await approveMessage({
+            commandId: commandId2,
+            from: sourceChain,
+            sourceAddress: agoricLCA,
+            targetAddress: router.target,
+            payload: payloadHash2,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        const tx = await router.execute(commandId2, sourceChain, agoricLCA, payload2);
+        const receipt = await tx.wait();
+
+        const routerInterface = router.interface;
+        const parsedLogs = receipt?.logs
+            .map((log: { topics: string[]; data: string }) => {
+                try {
+                    return routerInterface.parseLog(log);
+                } catch {
+                    return null;
+                }
+            })
+            .filter(Boolean);
+
+        const accountStatusEvent = parsedLogs.find(
+            (e: { name: string }) => e?.name === 'RemoteAccountStatus',
+        );
+
+        expect(accountStatusEvent?.args.id.hash).to.equal(keccak256(toBytes(txId2)));
+        expect(accountStatusEvent?.args.success).to.be.false;
+
+        // Decode the error - should be InvalidAccountAtAddress
+        const reason = accountStatusEvent?.args.reason;
+        expect(reason).to.not.equal('0x');
+
+        const factoryInterface = factory.interface;
+        const decodedError = factoryInterface.parseError(reason);
+        expect(decodedError?.name).to.equal('InvalidAccountAtAddress');
+        expect(decodedError?.args.account).to.equal(expectedAccountAddress);
+    });
+
+    it('should be protected from front-running - different callers get different addresses', async () => {
+        const commandId = getCommandId();
+        const txId = 'tx8';
+        const frontRunLCA = 'agoric1frontruntest123456789abcdefghij';
+
+        // Attacker's address (using addr1 as attacker)
+        const attackerAddress = await computeRemoteAccountAddress(
+            factory.target.toString(),
+            frontRunLCA,
+            addr1.address,
+        );
+
+        // Router's address for the same portfolioLCA
+        const routerAddress = await computeRemoteAccountAddress(
+            factory.target.toString(),
+            frontRunLCA,
+            router.target.toString(),
+        );
+
+        // Verify addresses are different - this is the key security property
+        expect(routerAddress).to.not.equal(attackerAddress);
+
+        // Attacker front-runs and creates account at their address
+        await factory.provide(frontRunLCA, attackerAddress, addr1.address);
+
+        // Router can still create its own account - unaffected by attacker
+        const payload = encodeRouterPayload({
+            id: txId,
+            portfolioLCA: frontRunLCA,
+            remoteAccountAddress: routerAddress,
+            provideAccount: true,
+            depositPermit: [],
+            multiCalls: [],
+        });
+
+        const payloadHash = keccak256(toBytes(payload));
+
+        await approveMessage({
+            commandId,
+            from: sourceChain,
+            sourceAddress: agoricLCA,
+            targetAddress: router.target,
+            payload: payloadHash,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        const tx = await router.execute(commandId, sourceChain, agoricLCA, payload);
+        const receipt = await tx.wait();
+
+        const routerInterface = router.interface;
+        const parsedLogs = receipt?.logs
+            .map((log: { topics: string[]; data: string }) => {
+                try {
+                    return routerInterface.parseLog(log);
+                } catch {
+                    return null;
+                }
+            })
+            .filter(Boolean);
+
+        const accountStatusEvent = parsedLogs.find(
+            (e: { name: string }) => e?.name === 'RemoteAccountStatus',
+        );
+
+        // Router succeeds despite attacker's front-run attempt
+        expect(accountStatusEvent?.args.success).to.be.true;
+        expect(accountStatusEvent?.args.created).to.be.true;
+        expect(accountStatusEvent?.args.account).to.equal(routerAddress);
+    });
+});
