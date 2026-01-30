@@ -100,9 +100,7 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
         }
 
         if (p.provideAccount) {
-            factory.provide(p.portfolioLCA, accountAddress, address(this));
-            require(accountAddress == provided);
-            emit AccountProvided(accountAddress, p.portfolioLCA);
+            _provideAccount(p.id, p.portfolioLCA, accountAddress);
         }
 
         if (p.multiCalls.length > 0) {
@@ -147,11 +145,21 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
     }
 
     function _provideAccount(
-        address accountAddress,
-        string memory portfolioLCA
+        string memory id,
+        string memory portfolioLCA,
+        address accountAddress
     ) internal {
-        factory.provide(portfolioLCA, accountAddress, address(this));
-        emit AccountProvided(accountAddress, portfolioLCA);
+        try factory.provide(portfolioLCA, accountAddress, address(this)) {
+            emit AccountProvided(id, true, accountAddress, portfolioLCA, "");
+        } catch (bytes memory reason) {
+            emit AccountProvided(
+                id,
+                false,
+                accountAddress,
+                portfolioLCA,
+                reason
+            );
+        }
     }
 
     /**
