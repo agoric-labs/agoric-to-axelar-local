@@ -259,4 +259,182 @@ describe('PortfolioRouter', () => {
             router.execute(commandId, sourceChain, wrongSourceAddress, payload),
         ).to.be.revertedWithCustomError(router, 'InvalidSourceAddress');
     });
+
+    it('should provide RemoteAccount via router', async () => {
+        const commandId = getCommandId();
+        const txId = 'tx1';
+
+        const expectedAccountAddress = await computeRemoteAccountAddress(
+            factory.target.toString(),
+            portfolioLCA,
+        );
+
+        const payload = encodeRouterPayload({
+            id: txId,
+            portfolioLCA,
+            remoteAccountAddress: expectedAccountAddress,
+            provideAccount: true,
+            depositPermit: [],
+            multiCalls: [],
+        });
+
+        const payloadHash = keccak256(toBytes(payload));
+
+        await approveMessage({
+            commandId,
+            from: sourceChain,
+            sourceAddress: agoricLCA,
+            targetAddress: router.target,
+            payload: payloadHash,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        const tx = await router.execute(commandId, sourceChain, agoricLCA, payload);
+        const receipt = await tx.wait();
+
+        // Parse events
+        const routerInterface = router.interface;
+        const parsedLogs = receipt?.logs
+            .map((log: { topics: string[]; data: string }) => {
+                try {
+                    return routerInterface.parseLog(log);
+                } catch {
+                    return null;
+                }
+            })
+            .filter(Boolean);
+
+        // Check RemoteAccountStatus event (success, created=true)
+        const accountStatusEvent = parsedLogs.find(
+            (e: { name: string }) => e?.name === 'RemoteAccountStatus',
+        );
+        expect(accountStatusEvent).to.not.be.undefined;
+        expect(accountStatusEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
+        expect(accountStatusEvent?.args.success).to.be.true;
+        expect(accountStatusEvent?.args.created).to.be.true;
+        expect(accountStatusEvent?.args.account).to.equal(expectedAccountAddress);
+
+        // Verify RemoteAccount ownership and controller
+        const RemoteAccountFactory = await ethers.getContractFactory('RemoteAccount');
+        const account = RemoteAccountFactory.attach(expectedAccountAddress);
+        expect(await account.owner()).to.equal(router.target);
+        expect(await account.controller()).to.equal(portfolioLCA);
+    });
+
+    it('should be idempotent - providing same account twice succeeds with created=false', async () => {
+        const commandId = getCommandId();
+        const txId = 'tx4';
+        // Use the same portfolioLCA from the first test - account already exists
+        const expectedAccountAddress = await computeRemoteAccountAddress(
+            factory.target.toString(),
+            portfolioLCA,
+        );
+
+        const payload = encodeRouterPayload({
+            id: txId,
+            portfolioLCA,
+            remoteAccountAddress: expectedAccountAddress,
+            provideAccount: true,
+            depositPermit: [],
+            multiCalls: [],
+        });
+
+        const payloadHash = keccak256(toBytes(payload));
+
+        await approveMessage({
+            commandId,
+            from: sourceChain,
+            sourceAddress: agoricLCA,
+            targetAddress: router.target,
+            payload: payloadHash,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        const tx = await router.execute(commandId, sourceChain, agoricLCA, payload);
+        const receipt = await tx.wait();
+
+        // Parse events
+        const routerInterface = router.interface;
+        const parsedLogs = receipt?.logs
+            .map((log: { topics: string[]; data: string }) => {
+                try {
+                    return routerInterface.parseLog(log);
+                } catch {
+                    return null;
+                }
+            })
+            .filter(Boolean);
+
+        // Check RemoteAccountStatus event (success=true, created=false)
+        const accountStatusEvent = parsedLogs.find(
+            (e: { name: string }) => e?.name === 'RemoteAccountStatus',
+        );
+        expect(accountStatusEvent).to.not.be.undefined;
+        expect(accountStatusEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
+        expect(accountStatusEvent?.args.success).to.be.true;
+        expect(accountStatusEvent?.args.created).to.be.false; // Already exists
+        expect(accountStatusEvent?.args.account).to.equal(expectedAccountAddress);
+    });
+
+    it('should reject when expected address does not match', async () => {
+        const commandId = getCommandId();
+        const txId = 'tx5';
+        const newPortfolioLCA = 'agoric1newportfolio123456789abcdefghijk';
+
+        // Compute wrong address (using different portfolioLCA)
+        const wrongAddress = await computeRemoteAccountAddress(
+            factory.target.toString(),
+            'agoric1differentlca123456789abcdefghijk',
+        );
+
+        const payload = encodeRouterPayload({
+            id: txId,
+            portfolioLCA: newPortfolioLCA,
+            remoteAccountAddress: wrongAddress, // Wrong address for this portfolioLCA
+            provideAccount: true,
+            depositPermit: [],
+            multiCalls: [],
+        });
+
+        const payloadHash = keccak256(toBytes(payload));
+
+        await approveMessage({
+            commandId,
+            from: sourceChain,
+            sourceAddress: agoricLCA,
+            targetAddress: router.target,
+            payload: payloadHash,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        const tx = await router.execute(commandId, sourceChain, agoricLCA, payload);
+        const receipt = await tx.wait();
+
+        // Parse events
+        const routerInterface = router.interface;
+        const parsedLogs = receipt?.logs
+            .map((log: { topics: string[]; data: string }) => {
+                try {
+                    return routerInterface.parseLog(log);
+                } catch {
+                    return null;
+                }
+            })
+            .filter(Boolean);
+
+        // Check RemoteAccountStatus event (success=false due to address mismatch)
+        const accountStatusEvent = parsedLogs.find(
+            (e: { name: string }) => e?.name === 'RemoteAccountStatus',
+        );
+        expect(accountStatusEvent).to.not.be.undefined;
+        expect(accountStatusEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
+        expect(accountStatusEvent?.args.success).to.be.false;
+        expect(accountStatusEvent?.args.reason).to.not.equal('0x'); // Has error reason
+    });
 });
