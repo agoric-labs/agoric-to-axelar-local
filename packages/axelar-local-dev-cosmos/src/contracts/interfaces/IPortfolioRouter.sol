@@ -40,6 +40,10 @@ struct DepositPermit {
 }
 
 struct RouterPayload {
+    /// @dev Unique identifier matching the id posted by the ymax contract on
+    ///      vstorage (format: tx1, tx2, etc.). Used by the resolver to
+    ///      observe/trace transactions.
+    string id;
     string portfolioLCA;
     address remoteAccountAddress;
     bool provideAccount;
