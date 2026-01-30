@@ -63,12 +63,7 @@ interface IPortfolioRouter {
         string indexed controller,
         bytes reason
     );
-    event DepositExecuted(
-        address indexed account,
-        address indexed tokenOwner,
-        address token,
-        uint256 amount
-    );
+    event DepositStatus(string indexed id, bool success, bytes reason);
     event MulticallStatus(string indexed id, bool success, bytes reason);
 
     function agoricLCA() external view returns (string memory);
