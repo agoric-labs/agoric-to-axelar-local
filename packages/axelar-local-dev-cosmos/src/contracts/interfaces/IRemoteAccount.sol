@@ -8,7 +8,7 @@ struct ContractCall {
 
 interface IRemoteAccount {
     error UnauthorizedController(string expected, string actual);
-    error ContractCallFailed(uint256 index, address target, bytes data);
+    error ContractCallFailed(uint256 index, bytes reason);
 
     function controller() external view returns (string memory);
 
