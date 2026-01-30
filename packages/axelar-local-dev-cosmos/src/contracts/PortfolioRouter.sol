@@ -108,7 +108,12 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
         if (p.multiCalls.length > 0) {
             // XXX: should the multicall emit an error if it fails instead of reverting
             // create and/or deposit?
-            _executeMulticall(accountAddress, p.portfolioLCA, p.multiCalls);
+            _executeMulticall(
+                accountAddress,
+                p.id,
+                p.portfolioLCA,
+                p.multiCalls
+            );
         }
     }
 
@@ -154,15 +159,17 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
     /**
      * @notice Execute multicall on the remote account
      * @param accountAddress The RemoteAccount to execute calls on
+     * @param id The unique identifier for this batch of calls
      * @param portfolioLCA The controller string for authorization
      * @param calls The array of calls to execute
      */
     function _executeMulticall(
         address accountAddress,
+        string memory id,
         string memory portfolioLCA,
         ContractCall[] memory calls
     ) internal {
-        IRemoteAccount(accountAddress).executeCalls(portfolioLCA, calls);
+        IRemoteAccount(accountAddress).executeCalls(id, portfolioLCA, calls);
         emit CallsExecuted(accountAddress, calls.length);
     }
 

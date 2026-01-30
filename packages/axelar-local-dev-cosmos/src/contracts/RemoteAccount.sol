@@ -42,10 +42,14 @@ contract RemoteAccount is Ownable, IRemoteAccount {
     /**
      * @notice Execute a batch of calls on behalf of the controller
      * @dev Requires msg.sender == owner AND portfolioLCA == controller (defense in depth)
+     * @param id The unique identifier for this batch of calls, matching the id
+     *        posted by the ymax contract on vstorage (format: tx1, tx2, etc.).
+     *        Used by the resolver to observe/trace transactions.
      * @param portfolioLCA The controller string that must match the _controller
      * @param calls Array of contract calls to execute
      */
     function executeCalls(
+        string calldata id,
         string calldata portfolioLCA,
         ContractCall[] calldata calls
     ) external override onlyOwner {
@@ -61,19 +65,12 @@ contract RemoteAccount is Ownable, IRemoteAccount {
                 revert ContractCallFailed(i, calls[i].target, calls[i].data);
             }
 
-            emit CallExecuted(
-                i,
-                calls[i].target,
-                bytes4(calls[i].data),
-                success
-            );
-
             unchecked {
                 ++i;
             }
         }
 
-        emit CallsExecuted(portfolioLCA, len);
+        emit MulticallStatus(id, true, len);
     }
 
     receive() external payable {
