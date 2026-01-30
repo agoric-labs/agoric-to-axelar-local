@@ -168,9 +168,9 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
         ContractCall[] memory calls
     ) internal {
         try IRemoteAccount(accountAddress).executeCalls(portfolioLCA, calls) {
-            emit MulticallStatus(id, true);
-        } catch {
-            emit MulticallStatus(id, false);
+            emit MulticallStatus(id, true, "");
+        } catch (bytes memory reason) {
+            emit MulticallStatus(id, false, reason);
         }
     }
 
