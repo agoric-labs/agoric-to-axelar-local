@@ -144,10 +144,10 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
         string memory portfolioLCA,
         address accountAddress
     ) internal {
-        try factory.provide(portfolioLCA, accountAddress, address(this)) {
-            emit AccountProvided(id, true, accountAddress, portfolioLCA, '');
+        try factory.provide(portfolioLCA, accountAddress, address(this)) returns (bool created) {
+            emit RemoteAccountStatus(id, true, created, accountAddress, portfolioLCA, "");
         } catch (bytes memory reason) {
-            emit AccountProvided(id, false, accountAddress, portfolioLCA, reason);
+            emit RemoteAccountStatus(id, false, false, accountAddress, portfolioLCA, reason);
         }
     }
 

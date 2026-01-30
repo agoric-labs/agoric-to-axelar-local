@@ -8,13 +8,6 @@ interface IRemoteAccountFactory {
     error ControllerMismatch(string expected, string actual);
     error OwnerMismatch(address expected, address actual);
 
-    event RemoteAccountProvided(
-        address indexed account,
-        string indexed controller,
-        address indexed owner,
-        bool created
-    );
-
     function remoteAccountCodeHash() external view returns (bytes32);
 
     function provide(
@@ -22,6 +15,4 @@ interface IRemoteAccountFactory {
         address expectedAddress,
         address routerAddress
     ) external returns (bool);
-
-    function computeAddress(string calldata portfolioLCA) external view returns (address);
 }
