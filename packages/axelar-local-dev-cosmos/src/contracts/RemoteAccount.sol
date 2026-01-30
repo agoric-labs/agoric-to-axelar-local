@@ -13,16 +13,14 @@ import {IRemoteAccount, ContractCall} from "./interfaces/IRemoteAccount.sol";
  */
 contract RemoteAccount is Ownable, IRemoteAccount {
     string private _controller;
-    bytes32 immutable private _controllerHash;
+    bytes32 private immutable _controllerHash;
 
     event Received(address indexed sender, uint256 amount);
 
     /**
      * @param controller_ The portfolioLCA string that controls this account
      */
-    constructor(
-        string memory controller_
-    ) Ownable(msg.sender) {
+    constructor(string memory controller_) Ownable(msg.sender) {
         _controller = controller_;
         _controllerHash = keccak256(bytes(controller_));
     }
@@ -35,7 +33,7 @@ contract RemoteAccount is Ownable, IRemoteAccount {
         return _controller;
     }
 
-    function updateOwnership(address newOwner) public external {
+    function updateOwnership(address newOwner) external {
         // Allows the multicall to update the contract ownership
         require(msg.sender == address(this));
         _transferOwnership(newOwner);
