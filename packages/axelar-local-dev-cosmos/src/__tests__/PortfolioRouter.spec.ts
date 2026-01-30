@@ -507,14 +507,13 @@ describe('PortfolioRouter', () => {
         await router.execute(commandId1, sourceChain, agoricLCA, payload1);
 
         // Step 2: Transfer ownership away from router (impersonate router)
-        const RemoteAccountContract = await ethers.getContractFactory('RemoteAccount');
-        const account = RemoteAccountContract.attach(expectedAccountAddress);
+        const account = await ethers.getContractAt('RemoteAccount', expectedAccountAddress);
 
         await ethers.provider.send('hardhat_impersonateAccount', [router.target.toString()]);
         await owner.sendTransaction({ to: router.target, value: ethers.parseEther('1') });
         const routerSigner = await ethers.getSigner(router.target.toString());
 
-        await account.connect(routerSigner).transferOwnership(addr1.address);
+        await account.connect(routerSigner).getFunction('transferOwnership')(addr1.address);
         await ethers.provider.send('hardhat_stopImpersonatingAccount', [router.target.toString()]);
 
         // Verify ownership transferred
@@ -572,5 +571,77 @@ describe('PortfolioRouter', () => {
         const decodedError = factoryInterface.parseError(reason);
         expect(decodedError?.name).to.equal('InvalidAccountAtAddress');
         expect(decodedError?.args.account).to.equal(expectedAccountAddress);
+    });
+
+    it('should be protected from front-running - different callers get different addresses', async () => {
+        const commandId = getCommandId();
+        const txId = 'tx8';
+        const frontRunLCA = 'agoric1frontruntest123456789abcdefghij';
+
+        // Attacker's address (using addr1 as attacker)
+        const attackerAddress = await computeRemoteAccountAddress(
+            factory.target.toString(),
+            frontRunLCA,
+            addr1.address,
+        );
+
+        // Router's address for the same portfolioLCA
+        const routerAddress = await computeRemoteAccountAddress(
+            factory.target.toString(),
+            frontRunLCA,
+            router.target.toString(),
+        );
+
+        // Verify addresses are different - this is the key security property
+        expect(routerAddress).to.not.equal(attackerAddress);
+
+        // Attacker front-runs and creates account at their address
+        await factory.provide(frontRunLCA, attackerAddress, addr1.address);
+
+        // Router can still create its own account - unaffected by attacker
+        const payload = encodeRouterPayload({
+            id: txId,
+            portfolioLCA: frontRunLCA,
+            remoteAccountAddress: routerAddress,
+            provideAccount: true,
+            depositPermit: [],
+            multiCalls: [],
+        });
+
+        const payloadHash = keccak256(toBytes(payload));
+
+        await approveMessage({
+            commandId,
+            from: sourceChain,
+            sourceAddress: agoricLCA,
+            targetAddress: router.target,
+            payload: payloadHash,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        const tx = await router.execute(commandId, sourceChain, agoricLCA, payload);
+        const receipt = await tx.wait();
+
+        const routerInterface = router.interface;
+        const parsedLogs = receipt?.logs
+            .map((log: { topics: string[]; data: string }) => {
+                try {
+                    return routerInterface.parseLog(log);
+                } catch {
+                    return null;
+                }
+            })
+            .filter(Boolean);
+
+        const accountStatusEvent = parsedLogs.find(
+            (e: { name: string }) => e?.name === 'RemoteAccountStatus',
+        );
+
+        // Router succeeds despite attacker's front-run attempt
+        expect(accountStatusEvent?.args.success).to.be.true;
+        expect(accountStatusEvent?.args.created).to.be.true;
+        expect(accountStatusEvent?.args.account).to.equal(routerAddress);
     });
 });
