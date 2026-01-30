@@ -81,7 +81,7 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
             // success
         } catch (bytes memory reason) {
             emit OperationError("process", reason);
-        };
+        }
     }
 
     /**
@@ -90,7 +90,7 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
      * Used to create a call stack that can be reverted atomically
      * @param p The decoded RouterPayload
      */
-    function processPayload(RouterPayload calldata p) public external {
+    function processPayload(RouterPayload calldata p) external {
         require(msg.sender == address(this));
 
         address accountAddress = p.remoteAccountAddress;
@@ -100,7 +100,7 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
         }
 
         if (p.provideAccount) {
-            factory.provide(p.portfolioLCA, accountAddress, address(this))
+            factory.provide(p.portfolioLCA, accountAddress, address(this));
             require(accountAddress == provided);
             emit AccountProvided(accountAddress, p.portfolioLCA);
         }
