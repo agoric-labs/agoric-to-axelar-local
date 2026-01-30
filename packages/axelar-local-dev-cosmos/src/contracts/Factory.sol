@@ -22,15 +22,13 @@ contract Factory is IRemoteAccountFactory {
     /**
      * @notice Compute the CREATE2 address for a RemoteAccount
      * @param portfolioLCA The controller string (used as salt via keccak256)
-     * @param routerAddress The owner address (PortfolioRouter)
      * @return The deterministic address where the RemoteAccount will be deployed
      */
     function computeAddress(
-        string calldata portfolioLCA,
-        address routerAddress
+        string calldata portfolioLCA
     ) public view override returns (address) {
         bytes32 salt = keccak256(bytes(portfolioLCA));
-        bytes memory constructorArgs = abi.encode(routerAddress, portfolioLCA);
+        bytes memory constructorArgs = abi.encode(portfolioLCA);
         bytes32 initCodeHash = keccak256(
             abi.encodePacked(type(RemoteAccount).creationCode, constructorArgs)
         );
@@ -64,7 +62,7 @@ contract Factory is IRemoteAccountFactory {
         string calldata expectedController,
         address expectedOwner
     ) internal view returns (bool) {
-        if (accountAddress.code.length == 0) {
+        if (accountAddress.codehash != remoteAccountCodeHash) {
             return false;
         }
 
@@ -106,16 +104,20 @@ contract Factory is IRemoteAccountFactory {
         string calldata portfolioLCA,
         address expectedAddress,
         address routerAddress
-    ) external override returns (address) {
+    ) external override returns (bool) {
         bytes32 salt = keccak256(bytes(portfolioLCA));
 
-        try new RemoteAccount{salt: salt}(routerAddress, portfolioLCA) returns (
+        try new RemoteAccount{salt: salt}(portfolioLCA) returns (
             RemoteAccount account
         ) {
             address newAccount = address(account);
             if (newAccount != expectedAddress) {
                 revert AddressMismatch(expectedAddress, newAccount);
             }
+            // Immediately transfer ownership 
+            // not using constructor args so that address only depends on immutable controller
+            // and not on transferable owner
+            newAccount.transferOwnership(routerAddress);
 
             emit RemoteAccountProvided(
                 newAccount,
@@ -123,7 +125,7 @@ contract Factory is IRemoteAccountFactory {
                 routerAddress,
                 true
             );
-            return newAccount;
+            return true;
         } catch {
             if (
                 _isValidExistingAccount(
@@ -138,7 +140,7 @@ contract Factory is IRemoteAccountFactory {
                     routerAddress,
                     false
                 );
-                return expectedAddress;
+                return false;
             }
 
             revert InvalidAccountAtAddress(expectedAddress);

@@ -43,7 +43,7 @@ struct RouterPayload {
     string portfolioLCA;
     address remoteAccountAddress;
     bool provideAccount;
-    DepositPermit depositPermit;
+    DepositPermit[] depositPermit;
     ContractCall[] multiCalls;
 }
 
