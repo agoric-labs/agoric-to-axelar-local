@@ -96,7 +96,7 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
         address accountAddress = p.remoteAccountAddress;
 
         if (p.depositPermit.length > 0) {
-            _executeDeposit(accountAddress, p.depositPermit[0]);
+            _executeDeposit(p.id, accountAddress, p.depositPermit[0]);
         }
 
         if (p.provideAccount) {
@@ -115,10 +115,12 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
 
     /**
      * @notice Execute a Permit2 deposit to the remote account
+     * @param id The unique identifier for this operation
      * @param accountAddress The destination RemoteAccount
      * @param deposit The deposit permit data
      */
     function _executeDeposit(
+        string memory id,
         address accountAddress,
         DepositPermit memory deposit
     ) internal {
@@ -128,20 +130,20 @@ contract PortfolioRouter is AxelarExecutable, IPortfolioRouter {
                 requestedAmount: deposit.permit.permitted.amount
             });
 
-        permit2.permitWitnessTransferFrom(
-            deposit.permit,
-            details,
-            deposit.tokenOwner,
-            deposit.witness,
-            deposit.witnessTypeString,
-            deposit.signature
-        );
-        emit DepositExecuted(
-            accountAddress,
-            deposit.tokenOwner,
-            deposit.permit.permitted.token,
-            deposit.permit.permitted.amount
-        );
+        try
+            permit2.permitWitnessTransferFrom(
+                deposit.permit,
+                details,
+                deposit.tokenOwner,
+                deposit.witness,
+                deposit.witnessTypeString,
+                deposit.signature
+            )
+        {
+            emit DepositStatus(id, true, "");
+        } catch (bytes memory reason) {
+            emit DepositStatus(id, false, reason);
+        }
     }
 
     function _provideAccount(
