@@ -55,10 +55,12 @@ contract RemoteAccount is Ownable, IRemoteAccount {
 
         uint256 len = calls.length;
         for (uint256 i = 0; i < len; ) {
-            (bool success, ) = calls[i].target.call(calls[i].data);
+            (bool success, bytes memory reason) = calls[i].target.call(
+                calls[i].data
+            );
 
             if (!success) {
-                revert ContractCallFailed(i, calls[i].target, calls[i].data);
+                revert ContractCallFailed(i, reason);
             }
 
             unchecked {
