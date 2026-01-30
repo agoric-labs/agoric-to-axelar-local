@@ -52,7 +52,8 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
 
     /**
      * @notice Provide a RemoteAccount - creates if new, verifies if exists
-     * @dev Idempotent: calling multiple times with same params is safe
+     * @dev Idempotent: calling multiple times with same params is safe.
+     *      Salt includes routerAddress to prevent front-running attacks.
      * @param portfolioLCA The controller string for the RemoteAccount
      * @param expectedAddress The expected CREATE2 address (for verification)
      * @param routerAddress The owner address (PortfolioRouter)
@@ -63,7 +64,14 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
         address expectedAddress,
         address routerAddress
     ) external override returns (bool) {
-        bytes32 salt = keccak256(bytes(portfolioLCA));
+        // Security: routerAddress is included in salt to prevent front-running attacks.
+        // Since provide() is public, without this an attacker could:
+        // 1. Monitor mempool for router's provide() calls
+        // 2. Front-run with their own address as owner
+        // 3. Steal ownership of the RemoteAccount meant for the router
+        // By including routerAddress in salt, each router gets a unique address
+        // for the same portfolioLCA, making front-running ineffective.
+        bytes32 salt = keccak256(abi.encodePacked(portfolioLCA, routerAddress));
 
         try new RemoteAccount{ salt: salt }(portfolioLCA) returns (RemoteAccount account) {
             address newAccount = address(account);

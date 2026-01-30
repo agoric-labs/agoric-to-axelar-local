@@ -9,9 +9,17 @@ import { approveMessage } from './lib/utils';
 
 /**
  * Compute CREATE2 address for RemoteAccount
+ * Salt includes routerAddress to prevent front-running attacks
  */
-const computeRemoteAccountAddress = async (factoryAddress: string, portfolioLCA: string) => {
-    const salt = ethers.solidityPackedKeccak256(['string'], [portfolioLCA]);
+const computeRemoteAccountAddress = async (
+    factoryAddress: string,
+    portfolioLCA: string,
+    routerAddress: string,
+) => {
+    const salt = ethers.solidityPackedKeccak256(
+        ['string', 'address'],
+        [portfolioLCA, routerAddress],
+    );
 
     const RemoteAccountFactory = await ethers.getContractFactory('RemoteAccount');
     const constructorArgs = ethers.AbiCoder.defaultAbiCoder().encode(['string'], [portfolioLCA]);
@@ -195,6 +203,7 @@ describe('PortfolioRouter', () => {
         const expectedAccountAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
             portfolioLCA,
+            router.target.toString(),
         );
 
         const payload = encodeRouterPayload({
@@ -231,6 +240,7 @@ describe('PortfolioRouter', () => {
         const expectedAccountAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
             portfolioLCA,
+            router.target.toString(),
         );
 
         const payload = encodeRouterPayload({
@@ -267,6 +277,7 @@ describe('PortfolioRouter', () => {
         const expectedAccountAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
             portfolioLCA,
+            router.target.toString(),
         );
 
         const payload = encodeRouterPayload({
@@ -330,6 +341,7 @@ describe('PortfolioRouter', () => {
         const expectedAccountAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
             portfolioLCA,
+            router.target.toString(),
         );
 
         const payload = encodeRouterPayload({
@@ -389,6 +401,7 @@ describe('PortfolioRouter', () => {
         const wrongAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
             'agoric1differentlca123456789abcdefghijk',
+            router.target.toString(),
         );
 
         const payload = encodeRouterPayload({
@@ -449,6 +462,7 @@ describe('PortfolioRouter', () => {
         const expectedCorrectAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
             newPortfolioLCA,
+            router.target.toString(),
         );
         expect(decodedError?.args.expected).to.equal(wrongAddress);
         expect(decodedError?.args.actual).to.equal(expectedCorrectAddress);
