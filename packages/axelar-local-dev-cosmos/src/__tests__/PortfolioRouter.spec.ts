@@ -310,7 +310,7 @@ describe('PortfolioRouter', () => {
         const accountStatusEvent = parsedLogs.find(
             (e: { name: string }) => e?.name === 'RemoteAccountStatus',
         );
-        expect(accountStatusEvent).to.not.be.undefined;
+
         expect(accountStatusEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
         expect(accountStatusEvent?.args.success).to.be.true;
         expect(accountStatusEvent?.args.created).to.be.true;
@@ -373,7 +373,7 @@ describe('PortfolioRouter', () => {
         const accountStatusEvent = parsedLogs.find(
             (e: { name: string }) => e?.name === 'RemoteAccountStatus',
         );
-        expect(accountStatusEvent).to.not.be.undefined;
+
         expect(accountStatusEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
         expect(accountStatusEvent?.args.success).to.be.true;
         expect(accountStatusEvent?.args.created).to.be.false; // Already exists
@@ -432,9 +432,25 @@ describe('PortfolioRouter', () => {
         const accountStatusEvent = parsedLogs.find(
             (e: { name: string }) => e?.name === 'RemoteAccountStatus',
         );
-        expect(accountStatusEvent).to.not.be.undefined;
+
         expect(accountStatusEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
         expect(accountStatusEvent?.args.success).to.be.false;
-        expect(accountStatusEvent?.args.reason).to.not.equal('0x'); // Has error reason
+
+        // Decode the error reason
+        const reason = accountStatusEvent?.args.reason;
+        expect(reason).to.not.equal('0x');
+
+        // Parse the custom error from factory
+        const factoryInterface = factory.interface;
+        const decodedError = factoryInterface.parseError(reason);
+        expect(decodedError?.name).to.equal('AddressMismatch');
+
+        // Verify error contains the expected vs actual addresses
+        const expectedCorrectAddress = await computeRemoteAccountAddress(
+            factory.target.toString(),
+            newPortfolioLCA,
+        );
+        expect(decodedError?.args.expected).to.equal(wrongAddress);
+        expect(decodedError?.args.actual).to.equal(expectedCorrectAddress);
     });
 });
