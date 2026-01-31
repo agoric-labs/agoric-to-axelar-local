@@ -11,7 +11,9 @@ import { IReplaceableOwner } from './interfaces/IReplaceableOwner.sol';
  * @dev Based on OZ Ownable for address-based ownership.
  */
 contract OwnableByReplaceableOwner is Ownable {
-    function replaceableOwner public view virtual returns (IReplaceableOwner) {
+    constructor(address initialOwner) Ownable(initialOwner) {}
+
+    function replaceableOwner() public view virtual returns (IReplaceableOwner) {
         return IReplaceableOwner(owner());
     }
 
@@ -20,7 +22,7 @@ contract OwnableByReplaceableOwner is Ownable {
             revert OwnableInvalidOwner(address(0));
         }
         if (address(replaceableOwner().replacementOwner()) != newOwner) {
-            revert OwnableInvalidOwner(newOwner)
+            revert OwnableInvalidOwner(newOwner);
         }
         _transferOwnership(newOwner);
     }

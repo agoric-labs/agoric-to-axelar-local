@@ -18,15 +18,16 @@ import { RemoteAccount } from './RemoteAccount.sol';
         calls provide() to create/verify RemoteAccounts.
  */
 contract RemoteAccountFactory is RemoteAccount, IRemoteAccountFactory {
-    bytes32 public immutable override remoteAccountCodeHash;
-
-    event Received(address indexed sender, uint256 amount);
+    bytes32 public immutable remoteAccountCodeHash;
 
     /**
      * @param principalCaip2 The caip2 of the principal for this RemoteAccountFactory
      * @param principalAccount The address of the principal for this RemoteAccountFactory
      */
-    constructor(string memory principalCaip2, string memory principalAccount) RemoteAccount(principalCaip2, principalAccount) {
+    constructor(
+        string memory principalCaip2,
+        string memory principalAccount
+    ) RemoteAccount(principalCaip2, principalAccount) {
         remoteAccountCodeHash = keccak256(type(RemoteAccount).creationCode);
     }
 
@@ -50,7 +51,7 @@ contract RemoteAccountFactory is RemoteAccount, IRemoteAccountFactory {
         }
 
         // Redundant check since principal defines the address of the RemoteAccount
-        if (!RemoteAccount(payable(accountAddress)).isPrincipal(principalCaip2, principalAccount) {
+        if (!RemoteAccount(payable(accountAddress)).isPrincipal(principalCaip2, principalAccount)) {
             return false;
         }
 
@@ -123,13 +124,15 @@ contract RemoteAccountFactory is RemoteAccount, IRemoteAccountFactory {
         string calldata principalCaip2,
         string calldata principalAccount,
         address routerAddress,
-        address expectedAddress,
-    ) {
+        address expectedAddress
+    ) internal returns (bool) {
         // Do not include the router address to keep the remote account address independent
         // from the current router setup.
         bytes32 salt = keccak256(abi.encodePacked(principalCaip2, ':', principalAccount));
 
-        try new RemoteAccount{ salt: salt }(principalCaip2, principalAccount) returns (RemoteAccount account) {
+        try new RemoteAccount{ salt: salt }(principalCaip2, principalAccount) returns (
+            RemoteAccount account
+        ) {
             address newAccount = address(account);
             if (newAccount != expectedAddress) {
                 revert AddressMismatch(expectedAddress, newAccount);
@@ -141,19 +144,26 @@ contract RemoteAccountFactory is RemoteAccount, IRemoteAccountFactory {
 
             return true;
         } catch {
-            if (_isValidExistingAccount(expectedAddress, principalCaip2, principalAccount, routerAddress)) {
+            if (
+                _isValidExistingAccount(
+                    expectedAddress,
+                    principalCaip2,
+                    principalAccount,
+                    routerAddress
+                )
+            ) {
                 return false;
             }
-          
+
             revert InvalidAccountAtAddress(expectedAddress);
-        }  
+        }
     }
 
-    receive() external payable {
+    receive() external payable override {
         emit Received(msg.sender, msg.value);
     }
 
-    fallback() external payable {
+    fallback() external payable override {
         emit Received(msg.sender, msg.value);
     }
 }

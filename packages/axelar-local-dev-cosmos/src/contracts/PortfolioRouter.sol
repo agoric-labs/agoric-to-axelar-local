@@ -6,7 +6,8 @@ import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
 import { IRemoteRepresentative } from './interfaces/IRemoteRepresentative.sol';
 import { IReplaceableOwner } from './interfaces/IReplaceableOwner.sol';
 import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
-import { IPortfolioRouter, IPermit2, DepositPermit, RouterPayload } from './interfaces/IPortfolioRouter.sol';
+import { IPortfolioRouter, IPermit2, DepositPermit, RouterInstruction } from './interfaces/IPortfolioRouter.sol';
+import { RemoteRepresentative } from './RemoteRepresentative.sol';
 
 /**
  * @title PortfolioRouter
@@ -41,10 +42,13 @@ contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRo
     event Received(address indexed sender, uint256 amount);
 
     /**
-     * @param gateway_ The Axelar gateway address
+     * @param axelarGateway The Axelar gateway address
+     * @param axelarSourceChain_ The source chain name
+     * @param portfolioContractCaip2 The CAIP-2 of the portfolio contract
+     * @param portfolioContractAccount The account of the portfolio contract
      * @param factory_ The RemoteAccountFactory address
      * @param permit2_ The Permit2 contract address
-     * @param agoricLCA_ The authorized Agoric LCA (source address)
+     * @param ownerAuthority_ The address authorized to replace the owner
      */
     constructor(
         address axelarGateway,
@@ -54,7 +58,10 @@ contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRo
         address factory_,
         address permit2_,
         address ownerAuthority_
-    ) AxelarExecutable(axelarGateway) RemoteRepresentative(portfolioContractCaip2, portfolioContractAccount) {
+    )
+        AxelarExecutable(axelarGateway)
+        RemoteRepresentative(portfolioContractCaip2, portfolioContractAccount)
+    {
         factory = IRemoteAccountFactory(factory_);
         permit2 = IPermit2(permit2_);
 
@@ -65,7 +72,12 @@ contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRo
 
         portfolioContractAddressHash = keccak256(bytes(portfolioContractAccount));
 
-        require(IRemoteRepresentative(factory_).isPrincipal(portfolioContractCaip2, portfolioContractAccount);
+        require(
+            IRemoteRepresentative(factory_).isPrincipal(
+                portfolioContractCaip2,
+                portfolioContractAccount
+            )
+        );
     }
 
     /**
@@ -94,9 +106,9 @@ contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRo
         RouterInstruction[] memory instructions = abi.decode(payload, (RouterInstruction[]));
 
         uint256 len = instructions.length;
-        for (uint256 i = 0; i < len; ; i++) {
+        for (uint256 i = 0; i < len; i++) {
             try this.processInstruction(instructions[i]) {
-                emit OperationError(instructions[i].id);
+                emit OperationSuccess(instructions[i].id);
             } catch (bytes memory reason) {
                 emit OperationError(instructions[i].id, reason);
             }
@@ -133,7 +145,7 @@ contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRo
             );
         }
 
-        (string memory portfolioCaip2,) = principal();
+        (string memory portfolioCaip2, ) = principal();
         string calldata portfolioAccount = instruction.portfolioLCA;
 
         if (instruction.provideAccount) {
@@ -141,19 +153,23 @@ contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRo
         }
 
         if (instruction.multiCalls.length > 0) {
-            IRemoteAccount(accountAddress).executeCalls(portfolioCaip2, portfolioAccount, instruction.multiCalls);
+            IRemoteAccount(accountAddress).executeCalls(
+                portfolioCaip2,
+                portfolioAccount,
+                instruction.multiCalls
+            );
         }
     }
 
-    function replacementOwner() external override view returns (IReplaceableOwner) {
+    function replacementOwner() external view override returns (IReplaceableOwner) {
         return replacementOwner_;
     }
 
-    function replaceOwner(newOwner address) external {
+    function replaceOwner(address newOwner) external {
         if (msg.sender != ownerAuthority) {
             revert UnauthorizedAuthority(ownerAuthority, msg.sender);
         }
-        replacementOwner_ = IReplaceableOwner(address);
+        replacementOwner_ = IReplaceableOwner(newOwner);
     }
 
     receive() external payable {
