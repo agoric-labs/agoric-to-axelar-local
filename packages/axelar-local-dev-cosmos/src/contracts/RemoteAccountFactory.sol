@@ -18,8 +18,6 @@ import { RemoteAccount } from './RemoteAccount.sol';
         calls provide() to create/verify RemoteAccounts.
  */
 contract RemoteAccountFactory is RemoteAccount, IRemoteAccountFactory {
-    bytes32 public immutable remoteAccountCodeHash;
-
     /**
      * @param principalCaip2 The caip2 of the principal for this RemoteAccountFactory
      * @param principalAccount The address of the principal for this RemoteAccountFactory
@@ -27,13 +25,11 @@ contract RemoteAccountFactory is RemoteAccount, IRemoteAccountFactory {
     constructor(
         string memory principalCaip2,
         string memory principalAccount
-    ) RemoteAccount(principalCaip2, principalAccount) {
-        remoteAccountCodeHash = keccak256(type(RemoteAccount).creationCode);
-    }
+    ) RemoteAccount(principalCaip2, principalAccount) {}
 
     /**
      * @notice Check if a valid RemoteAccount exists at the given address
-     * @dev Verifies codehash, principal, and owner for defense in depth
+     * @dev Verifies code exists, principal, and owner for defense in depth
      * @param accountAddress The address to check
      * @param principalCaip2 The expected CAIP2 of the principal
      * @param principalAccount The expected account of the principal
@@ -46,16 +42,26 @@ contract RemoteAccountFactory is RemoteAccount, IRemoteAccountFactory {
         string calldata principalAccount,
         address routerOwner
     ) internal view returns (bool) {
-        if (accountAddress.codehash != remoteAccountCodeHash) {
+        if (accountAddress.code.length == 0) {
             return false;
         }
 
         // Redundant check since principal defines the address of the RemoteAccount
-        if (!RemoteAccount(payable(accountAddress)).isPrincipal(principalCaip2, principalAccount)) {
+        try
+            RemoteAccount(payable(accountAddress)).isPrincipal(principalCaip2, principalAccount)
+        returns (bool isPrincipal) {
+            if (!isPrincipal) {
+                return false;
+            }
+        } catch {
             return false;
         }
 
-        if (RemoteAccount(payable(accountAddress)).owner() != routerOwner) {
+        try RemoteAccount(payable(accountAddress)).owner() returns (address existingOwner) {
+            if (existingOwner != routerOwner) {
+                return false;
+            }
+        } catch {
             return false;
         }
 
