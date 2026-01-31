@@ -7,10 +7,7 @@ struct ContractCall {
 }
 
 interface IRemoteAccount {
-    error UnauthorizedController(string expected, string actual);
     error ContractCallFailed(uint256 index, bytes reason);
 
-    function controller() external view returns (string memory);
-
-    function executeCalls(string calldata portfolioLCA, ContractCall[] calldata calls) external;
+    function executeCalls(string calldata sourceCaip2, string calldata sourceAccount, ContractCall[] calldata calls) external;
 }
