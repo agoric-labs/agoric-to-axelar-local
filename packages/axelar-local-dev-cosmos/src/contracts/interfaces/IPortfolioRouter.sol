@@ -3,7 +3,8 @@ pragma solidity ^0.8.20;
 
 import { ContractCall } from './IRemoteAccount.sol';
 import { IRemoteAccountFactory } from './IRemoteAccountFactory.sol';
-import { IRemoteRepresentative } from './interfaces/IRemoteRepresentative.sol';
+import { IRemoteRepresentative } from './IRemoteRepresentative.sol';
+import { IReplaceableOwner } from './IReplaceableOwner.sol';
 import { IPermit2 } from './IPermit2.sol';
 
 struct DepositPermit {

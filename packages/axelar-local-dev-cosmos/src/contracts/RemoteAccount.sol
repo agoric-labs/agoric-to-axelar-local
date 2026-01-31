@@ -22,7 +22,10 @@ contract RemoteAccount is RemoteRepresentative, OwnableByReplaceableOwner, IRemo
      * @param principalCaip2 The caip2 of the principal for this RemoteAccount
      * @param principalAccount The address of the principal for this RemoteAccount
      */
-    constructor(string memory principalCaip2, string memory principalAccount)
+    constructor(
+        string memory principalCaip2,
+        string memory principalAccount
+    )
         RemoteRepresentative(principalCaip2, principalAccount)
         OwnableByReplaceableOwner(_msgSender())
     {}
@@ -67,11 +70,11 @@ contract RemoteAccount is RemoteRepresentative, OwnableByReplaceableOwner, IRemo
         }
     }
 
-    receive() external payable {
+    receive() external payable virtual {
         emit Received(msg.sender, msg.value);
     }
 
-    fallback() external payable {
+    fallback() external payable virtual {
         emit Received(msg.sender, msg.value);
     }
 }
