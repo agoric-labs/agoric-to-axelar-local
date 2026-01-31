@@ -48,7 +48,7 @@ contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRo
      * @param portfolioContractAccount The account of the portfolio contract
      * @param factory_ The RemoteAccountFactory address
      * @param permit2_ The Permit2 contract address
-     * @param ownerAuthority_ The address authorized to replace the owner
+     * @param ownerAuthority_ The address authorized to designate a new owner
      */
     constructor(
         address axelarGateway,
