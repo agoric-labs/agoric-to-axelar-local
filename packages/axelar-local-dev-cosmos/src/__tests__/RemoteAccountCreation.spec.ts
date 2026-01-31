@@ -200,21 +200,20 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
             })
             .filter(Boolean);
 
-        // Check RemoteAccountStatus event (success, created=true)
-        const accountStatusEvent = parsedLogs.find(
-            (e: { name: string }) => e?.name === 'RemoteAccountStatus',
+        // Check OperationSuccess event
+        const successEvent = parsedLogs.find(
+            (e: { name: string }) => e?.name === 'OperationSuccess',
         );
 
-        expect(accountStatusEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
-        expect(accountStatusEvent?.args.success).to.be.true;
-        expect(accountStatusEvent?.args.created).to.be.true;
-        expect(accountStatusEvent?.args.account).to.equal(expectedAccountAddress);
+        expect(successEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
 
-        // Verify RemoteAccount ownership and controller
-        const RemoteAccountFactory = await ethers.getContractFactory('RemoteAccount');
-        const account = RemoteAccountFactory.attach(expectedAccountAddress);
+        // Verify RemoteAccount exists with correct ownership and principal
+        const RemoteAccountContract = await ethers.getContractFactory('RemoteAccount');
+        const account = RemoteAccountContract.attach(expectedAccountAddress);
         expect(await account.owner()).to.equal(router.target);
-        expect(await account.controller()).to.equal(portfolioLCA);
+        const [caip2, principalAccount] = await account.principal();
+        expect(caip2).to.equal(portfolioContractCaip2);
+        expect(principalAccount).to.equal(portfolioLCA);
     });
 
     it('should be idempotent - providing same account twice succeeds with created=false', async () => {
@@ -264,15 +263,17 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
             })
             .filter(Boolean);
 
-        // Check RemoteAccountStatus event (success=true, created=false)
-        const accountStatusEvent = parsedLogs.find(
-            (e: { name: string }) => e?.name === 'RemoteAccountStatus',
+        // Check OperationSuccess event (idempotent - succeeds even if account exists)
+        const successEvent = parsedLogs.find(
+            (e: { name: string }) => e?.name === 'OperationSuccess',
         );
 
-        expect(accountStatusEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
-        expect(accountStatusEvent?.args.success).to.be.true;
-        expect(accountStatusEvent?.args.created).to.be.false; // Already exists
-        expect(accountStatusEvent?.args.account).to.equal(expectedAccountAddress);
+        expect(successEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
+
+        // Verify account still exists with correct owner
+        const RemoteAccountContract = await ethers.getContractFactory('RemoteAccount');
+        const account = RemoteAccountContract.attach(expectedAccountAddress);
+        expect(await account.owner()).to.equal(router.target);
     });
 
     it('should reject when expected address does not match', async () => {
@@ -324,16 +325,12 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
             })
             .filter(Boolean);
 
-        // Check RemoteAccountStatus event (success=false due to address mismatch)
-        const accountStatusEvent = parsedLogs.find(
-            (e: { name: string }) => e?.name === 'RemoteAccountStatus',
-        );
-
-        expect(accountStatusEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
-        expect(accountStatusEvent?.args.success).to.be.false;
+        // Check OperationError event (failure due to address mismatch)
+        const errorEvent = parsedLogs.find((e: { name: string }) => e?.name === 'OperationError');
+        expect(errorEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
 
         // Decode the error reason
-        const reason = accountStatusEvent?.args.reason;
+        const reason = errorEvent?.args.reason;
         expect(reason).to.not.equal('0x');
 
         // Parse the custom error from factory
@@ -444,15 +441,12 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
             })
             .filter(Boolean);
 
-        const accountStatusEvent = parsedLogs.find(
-            (e: { name: string }) => e?.name === 'RemoteAccountStatus',
-        );
-
-        expect(accountStatusEvent?.args.id.hash).to.equal(keccak256(toBytes(txId2)));
-        expect(accountStatusEvent?.args.success).to.be.false;
+        // Check OperationError event (failure due to ownership transferred)
+        const errorEvent = parsedLogs.find((e: { name: string }) => e?.name === 'OperationError');
+        expect(errorEvent?.args.id.hash).to.equal(keccak256(toBytes(txId2)));
 
         // Decode the error - should be InvalidAccountAtAddress
-        const reason = accountStatusEvent?.args.reason;
+        const reason = errorEvent?.args.reason;
         expect(reason).to.not.equal('0x');
 
         const factoryInterface = factory.interface;
