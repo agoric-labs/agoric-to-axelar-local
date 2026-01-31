@@ -36,20 +36,23 @@ export interface RouterPayloadParams {
 
 /**
  * Compute CREATE2 address for RemoteAccount
- * Salt includes routerAddress to prevent front-running attacks
+ * Salt is keccak256(principalCaip2 + ':' + principalAccount)
  */
 export const computeRemoteAccountAddress = async (
     factoryAddress: string,
-    portfolioLCA: string,
-    routerAddress: string,
+    principalCaip2: string,
+    principalAccount: string,
 ) => {
     const salt = ethers.solidityPackedKeccak256(
-        ['string', 'address'],
-        [portfolioLCA, routerAddress],
+        ['string', 'string', 'string'],
+        [principalCaip2, ':', principalAccount],
     );
 
     const RemoteAccountFactory = await ethers.getContractFactory('RemoteAccount');
-    const constructorArgs = ethers.AbiCoder.defaultAbiCoder().encode(['string'], [portfolioLCA]);
+    const constructorArgs = ethers.AbiCoder.defaultAbiCoder().encode(
+        ['string', 'string'],
+        [principalCaip2, principalAccount],
+    );
     const initCode = ethers.solidityPacked(
         ['bytes', 'bytes'],
         [RemoteAccountFactory.bytecode, constructorArgs],
@@ -61,6 +64,7 @@ export const computeRemoteAccountAddress = async (
 
 /**
  * Encode RouterPayload for PortfolioRouter
+ * Encodes as RouterInstruction[] (array of instructions)
  */
 export const encodeRouterPayload = ({
     id,
@@ -73,7 +77,7 @@ export const encodeRouterPayload = ({
     return encodeAbiParameters(
         [
             {
-                type: 'tuple',
+                type: 'tuple[]',
                 components: [
                     { name: 'id', type: 'string' },
                     { name: 'portfolioLCA', type: 'string' },
@@ -117,14 +121,16 @@ export const encodeRouterPayload = ({
             },
         ],
         [
-            {
-                id,
-                portfolioLCA,
-                remoteAccountAddress,
-                provideAccount,
-                depositPermit,
-                multiCalls,
-            },
+            [
+                {
+                    id,
+                    portfolioLCA,
+                    remoteAccountAddress,
+                    provideAccount,
+                    depositPermit,
+                    multiCalls,
+                },
+            ],
         ],
     );
 };
