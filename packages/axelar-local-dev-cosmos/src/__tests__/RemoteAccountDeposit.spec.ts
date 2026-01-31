@@ -27,7 +27,8 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
     const abiCoder = new ethers.AbiCoder();
 
     const sourceChain = 'agoric';
-    const agoricLCA = 'agoric1routerlca123456789abcdefghijklmnopqrs';
+    const portfolioContractCaip2 = 'cosmos:agoric-3';
+    const portfolioContractAccount = 'agoric1routerlca123456789abcdefghijklmnopqrs';
     const portfolioLCA = 'agoric1deposit123456789abcdefghijklmnopq';
 
     let commandIdCounter = 1;
@@ -70,18 +71,24 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
 
         // Deploy RemoteAccountFactory
         const FactoryContract = await ethers.getContractFactory('RemoteAccountFactory');
-        factory = await FactoryContract.deploy();
+        factory = await FactoryContract.deploy(portfolioContractCaip2, portfolioContractAccount);
         await factory.waitForDeployment();
 
         // Deploy PortfolioRouter
         const RouterContract = await ethers.getContractFactory('PortfolioRouter');
         router = await RouterContract.deploy(
             axelarGatewayMock.target,
+            sourceChain,
+            portfolioContractCaip2,
+            portfolioContractAccount,
             factory.target,
             permit2Mock.target,
-            agoricLCA,
+            owner.address, // ownerAuthority
         );
         await router.waitForDeployment();
+
+        // Transfer factory ownership to router
+        await factory.transferOwnership(router.target);
 
         // Deploy test token
         const MockERC20Factory = await ethers.getContractFactory('MockERC20');
@@ -95,8 +102,8 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
         // Compute account address
         accountAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
+            portfolioContractCaip2,
             portfolioLCA,
-            router.target.toString(),
         );
     });
 
@@ -136,7 +143,7 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: agoricLCA,
+            sourceAddress: portfolioContractAccount,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -146,7 +153,7 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
 
         const balanceBefore = await testToken.balanceOf(accountAddress);
 
-        const tx = await router.execute(commandId, sourceChain, agoricLCA, payload);
+        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
         const receipt = await tx.wait();
 
         // Parse events
@@ -217,7 +224,7 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: agoricLCA,
+            sourceAddress: portfolioContractAccount,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -225,7 +232,7 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
             abiCoder,
         });
 
-        const tx = await router.execute(commandId, sourceChain, agoricLCA, payload);
+        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
         const receipt = await tx.wait();
 
         // Parse events

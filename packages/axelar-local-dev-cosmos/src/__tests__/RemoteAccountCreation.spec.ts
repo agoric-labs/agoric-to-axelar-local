@@ -15,7 +15,8 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
     const abiCoder = new ethers.AbiCoder();
 
     const sourceChain = 'agoric';
-    const agoricLCA = 'agoric1routerlca123456789abcdefghijklmnopqrs';
+    const portfolioContractCaip2 = 'cosmos:agoric-3';
+    const portfolioContractAccount = 'agoric1routerlca123456789abcdefghijklmnopqrs';
     const portfolioLCA = 'agoric1portfolio123456789abcdefghijklmnopqrs';
 
     let commandIdCounter = 1;
@@ -58,18 +59,24 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
 
         // Deploy RemoteAccountFactory
         const FactoryContract = await ethers.getContractFactory('RemoteAccountFactory');
-        factory = await FactoryContract.deploy();
+        factory = await FactoryContract.deploy(portfolioContractCaip2, portfolioContractAccount);
         await factory.waitForDeployment();
 
         // Deploy PortfolioRouter
         const RouterContract = await ethers.getContractFactory('PortfolioRouter');
         router = await RouterContract.deploy(
             axelarGatewayMock.target,
+            sourceChain,
+            portfolioContractCaip2,
+            portfolioContractAccount,
             factory.target,
             permit2Mock.target,
-            agoricLCA,
+            owner.address, // ownerAuthority
         );
         await router.waitForDeployment();
+
+        // Transfer factory ownership to router
+        await factory.transferOwnership(router.target);
     });
 
     it('should reject invalid source chain', async () => {
@@ -78,8 +85,8 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
 
         const expectedAccountAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
+            portfolioContractCaip2,
             portfolioLCA,
-            router.target.toString(),
         );
 
         const payload = encodeRouterPayload({
@@ -96,7 +103,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         await approveMessage({
             commandId,
             from: wrongSourceChain,
-            sourceAddress: agoricLCA,
+            sourceAddress: portfolioContractAccount,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -105,7 +112,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         });
 
         await expect(
-            router.execute(commandId, wrongSourceChain, agoricLCA, payload),
+            router.execute(commandId, wrongSourceChain, portfolioContractAccount, payload),
         ).to.be.revertedWithCustomError(router, 'InvalidSourceChain');
     });
 
@@ -115,8 +122,8 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
 
         const expectedAccountAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
+            portfolioContractCaip2,
             portfolioLCA,
-            router.target.toString(),
         );
 
         const payload = encodeRouterPayload({
@@ -152,8 +159,8 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
 
         const expectedAccountAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
+            portfolioContractCaip2,
             portfolioLCA,
-            router.target.toString(),
         );
 
         const payload = encodeRouterPayload({
@@ -170,7 +177,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: agoricLCA,
+            sourceAddress: portfolioContractAccount,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -178,7 +185,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
             abiCoder,
         });
 
-        const tx = await router.execute(commandId, sourceChain, agoricLCA, payload);
+        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
         const receipt = await tx.wait();
 
         // Parse events
@@ -216,8 +223,8 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         // Use the same portfolioLCA from the first test - account already exists
         const expectedAccountAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
+            portfolioContractCaip2,
             portfolioLCA,
-            router.target.toString(),
         );
 
         const payload = encodeRouterPayload({
@@ -234,7 +241,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: agoricLCA,
+            sourceAddress: portfolioContractAccount,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -242,7 +249,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
             abiCoder,
         });
 
-        const tx = await router.execute(commandId, sourceChain, agoricLCA, payload);
+        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
         const receipt = await tx.wait();
 
         // Parse events
@@ -276,8 +283,8 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         // Compute wrong address (using different portfolioLCA)
         const wrongAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
+            portfolioContractCaip2,
             'agoric1differentlca123456789abcdefghijk',
-            router.target.toString(),
         );
 
         const payload = encodeRouterPayload({
@@ -294,7 +301,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: agoricLCA,
+            sourceAddress: portfolioContractAccount,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -302,7 +309,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
             abiCoder,
         });
 
-        const tx = await router.execute(commandId, sourceChain, agoricLCA, payload);
+        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
         const receipt = await tx.wait();
 
         // Parse events
@@ -337,8 +344,8 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         // Verify error contains the expected vs actual addresses
         const expectedCorrectAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
+            portfolioContractCaip2,
             newPortfolioLCA,
-            router.target.toString(),
         );
         expect(decodedError?.args.expected).to.equal(wrongAddress);
         expect(decodedError?.args.actual).to.equal(expectedCorrectAddress);
@@ -353,8 +360,8 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
 
         const expectedAccountAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
+            portfolioContractCaip2,
             transferTestLCA,
-            router.target.toString(),
         );
 
         // Step 1: Create account via router
@@ -372,7 +379,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         await approveMessage({
             commandId: commandId1,
             from: sourceChain,
-            sourceAddress: agoricLCA,
+            sourceAddress: portfolioContractAccount,
             targetAddress: router.target,
             payload: payloadHash1,
             owner,
@@ -380,7 +387,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
             abiCoder,
         });
 
-        await router.execute(commandId1, sourceChain, agoricLCA, payload1);
+        await router.execute(commandId1, sourceChain, portfolioContractAccount, payload1);
 
         // Step 2: Transfer ownership away from router (impersonate router)
         const account = await ethers.getContractAt('RemoteAccount', expectedAccountAddress);
@@ -410,7 +417,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         await approveMessage({
             commandId: commandId2,
             from: sourceChain,
-            sourceAddress: agoricLCA,
+            sourceAddress: portfolioContractAccount,
             targetAddress: router.target,
             payload: payloadHash2,
             owner,
@@ -418,7 +425,12 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
             abiCoder,
         });
 
-        const tx = await router.execute(commandId2, sourceChain, agoricLCA, payload2);
+        const tx = await router.execute(
+            commandId2,
+            sourceChain,
+            portfolioContractAccount,
+            payload2,
+        );
         const receipt = await tx.wait();
 
         const routerInterface = router.interface;
@@ -449,75 +461,25 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         expect(decodedError?.args.account).to.equal(expectedAccountAddress);
     });
 
-    it('should be protected from front-running - different callers get different addresses', async () => {
-        const commandId = getCommandId();
-        const txId = 'tx8';
+    it('should be protected from front-running - factory rejects unauthorized routers', async () => {
         const frontRunLCA = 'agoric1frontruntest123456789abcdefghij';
 
-        // Attacker's address (using addr1 as attacker)
-        const attackerAddress = await computeRemoteAccountAddress(
+        // Compute the expected address
+        const expectedAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
+            portfolioContractCaip2,
             frontRunLCA,
-            addr1.address,
         );
 
-        // Router's address for the same portfolioLCA
-        const routerAddress = await computeRemoteAccountAddress(
-            factory.target.toString(),
-            frontRunLCA,
-            router.target.toString(),
-        );
-
-        // Verify addresses are different - this is the key security property
-        expect(routerAddress).to.not.equal(attackerAddress);
-
-        // Attacker front-runs and creates account at their address
-        await factory.provide(frontRunLCA, attackerAddress, addr1.address);
-
-        // Router can still create its own account - unaffected by attacker
-        const payload = encodeRouterPayload({
-            id: txId,
-            portfolioLCA: frontRunLCA,
-            remoteAccountAddress: routerAddress,
-            provideAccount: true,
-            depositPermit: [],
-            multiCalls: [],
-        });
-
-        const payloadHash = keccak256(toBytes(payload));
-
-        await approveMessage({
-            commandId,
-            from: sourceChain,
-            sourceAddress: agoricLCA,
-            targetAddress: router.target,
-            payload: payloadHash,
-            owner,
-            AxelarGateway: axelarGatewayMock,
-            abiCoder,
-        });
-
-        const tx = await router.execute(commandId, sourceChain, agoricLCA, payload);
-        const receipt = await tx.wait();
-
-        const routerInterface = router.interface;
-        const parsedLogs = receipt?.logs
-            .map((log: { topics: string[]; data: string }) => {
-                try {
-                    return routerInterface.parseLog(log);
-                } catch {
-                    return null;
-                }
-            })
-            .filter(Boolean);
-
-        const accountStatusEvent = parsedLogs.find(
-            (e: { name: string }) => e?.name === 'RemoteAccountStatus',
-        );
-
-        // Router succeeds despite attacker's front-run attempt
-        expect(accountStatusEvent?.args.success).to.be.true;
-        expect(accountStatusEvent?.args.created).to.be.true;
-        expect(accountStatusEvent?.args.account).to.equal(routerAddress);
+        // Attacker tries to front-run by calling factory.provide directly
+        // This should revert because factory only accepts calls from its owner (router)
+        await expect(
+            factory.provide(
+                portfolioContractCaip2,
+                frontRunLCA,
+                addr1.address, // attacker tries to use themselves as router
+                expectedAddress,
+            ),
+        ).to.be.revertedWithCustomError(factory, 'UnauthorizedRouter');
     });
 });
