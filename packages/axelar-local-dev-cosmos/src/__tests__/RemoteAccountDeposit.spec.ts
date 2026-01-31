@@ -168,17 +168,11 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
             })
             .filter(Boolean);
 
-        // Check DepositStatus event
-        const depositEvent = parsedLogs.find((e: { name: string }) => e?.name === 'DepositStatus');
-        expect(depositEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
-        expect(depositEvent?.args.success).to.be.true;
-
-        // Check RemoteAccountStatus event
-        const accountEvent = parsedLogs.find(
-            (e: { name: string }) => e?.name === 'RemoteAccountStatus',
+        // Check OperationSuccess event
+        const successEvent = parsedLogs.find(
+            (e: { name: string }) => e.name === 'OperationSuccess',
         );
-        expect(accountEvent?.args.success).to.be.true;
-        expect(accountEvent?.args.created).to.be.true;
+        expect(successEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
 
         // Verify token balance
         const balanceAfter = await testToken.balanceOf(accountAddress);
@@ -247,10 +241,9 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
             })
             .filter(Boolean);
 
-        // Check DepositStatus event - should fail
-        const depositEvent = parsedLogs.find((e: { name: string }) => e?.name === 'DepositStatus');
-        expect(depositEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
-        expect(depositEvent?.args.success).to.be.false;
-        expect(depositEvent?.args.reason).to.not.equal('0x');
+        // Check OperationError event - should fail due to expired deadline
+        const errorEvent = parsedLogs.find((e: { name: string }) => e?.name === 'OperationError');
+        expect(errorEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
+        expect(errorEvent?.args.reason).to.not.equal('0x');
     });
 });
