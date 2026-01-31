@@ -167,19 +167,11 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
             })
             .filter(Boolean);
 
-        // Check RemoteAccountStatus event (account created)
-        const accountEvent = parsedLogs.find(
-            (e: { name: string }) => e?.name === 'RemoteAccountStatus',
+        // Check OperationSuccess event (account created and multicall executed)
+        const successEvent = parsedLogs.find(
+            (e: { name: string }) => e.name === 'OperationSuccess',
         );
-        expect(accountEvent?.args.success).to.be.true;
-        expect(accountEvent?.args.created).to.be.true;
-
-        // Check MulticallStatus event (multicall executed)
-        const multicallEvent = parsedLogs.find(
-            (e: { name: string }) => e?.name === 'MulticallStatus',
-        );
-        expect(multicallEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
-        expect(multicallEvent?.args.success).to.be.true;
+        expect(successEvent.args.id.hash).to.equal(keccak256(toBytes(txId)));
         expect(await multicallTarget.getValue()).to.equal(42n);
     });
 
@@ -254,11 +246,10 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
             })
             .filter(Boolean);
 
-        const multicallEvent = parsedLogs.find(
-            (e: { name: string }) => e?.name === 'MulticallStatus',
+        const successEvent = parsedLogs.find(
+            (e: { name: string }) => e.name === 'OperationSuccess',
         );
-
-        expect(multicallEvent?.args.success).to.be.true;
+        expect(successEvent.args.id.hash).to.equal(keccak256(toBytes(txId)));
         expect(await multicallTarget.getValue()).to.equal(105n);
     });
 
@@ -313,13 +304,9 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
             })
             .filter(Boolean);
 
-        const multicallEvent = parsedLogs.find(
-            (e: { name: string }) => e?.name === 'MulticallStatus',
-        );
-
-        expect(multicallEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
-        expect(multicallEvent?.args.success).to.be.false;
-        expect(multicallEvent?.args.reason).to.not.equal('0x');
+        const errorEvent = parsedLogs.find((e: { name: string }) => e?.name === 'OperationError');
+        expect(errorEvent.args.id.hash).to.equal(keccak256(toBytes(txId)));
+        expect(errorEvent.args.reason).to.not.equal('0x');
     });
 
     it('should reject multicall with wrong controller', async () => {
@@ -382,16 +369,12 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
             })
             .filter(Boolean);
 
-        const multicallEvent = parsedLogs.find(
-            (e: { name: string }) => e?.name === 'MulticallStatus',
-        );
+        const errorEvent = parsedLogs.find((e: { name: string }) => e.name === 'OperationError');
+        expect(errorEvent.args.id.hash).to.equal(keccak256(toBytes(txId)));
 
-        expect(multicallEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
-        expect(multicallEvent?.args.success).to.be.false;
-
-        // Decode error - should be UnauthorizedController
+        // Decode error - should be RemoteRepresentativeUnauthorizedPrincipal
         const remoteAccountInterface = (await ethers.getContractFactory('RemoteAccount')).interface;
-        const decodedError = remoteAccountInterface.parseError(multicallEvent?.args.reason);
-        expect(decodedError?.name).to.equal('UnauthorizedController');
+        const decodedError = remoteAccountInterface.parseError(errorEvent.args.reason);
+        expect(decodedError?.name).to.equal('RemoteRepresentativeUnauthorizedPrincipal');
     });
 });
