@@ -11,7 +11,7 @@ if [[ $# -lt 2 ]]; then
     echo "  network        - Target network to deploy to"
     echo "  contract       - 'factory', 'depositFactory', 'remoteAccountFactory', or 'portfolioRouter'"
     echo "  owner_type     - Optional: 'ymax0' or 'ymax1' (default: ymax0)"
-    echo "                   Used for depositFactory and portfolioRouter (for AGORIC_LCA default)"
+    echo "                   Used for remoteAccountFactory and portfolioRouter"
     echo ""
     echo "Supported networks:"
     echo "  Mainnets: avax, arb, base, eth, opt"
@@ -20,11 +20,20 @@ if [[ $# -lt 2 ]]; then
     echo "Examples:"
     echo "  $0 eth-sepolia factory              # Deploy Factory"
     echo "  $0 eth-sepolia depositFactory       # Deploy DepositFactory with ymax0 owner"
-    echo "  $0 eth-sepolia depositFactory ymax0 # Deploy DepositFactory with ymax0 owner"
     echo "  $0 eth-sepolia depositFactory ymax1 # Deploy DepositFactory with ymax1 owner"
-    echo "  $0 eth-sepolia remoteAccountFactory       # Deploy RemoteAccountFactory"
-    echo "  $0 eth-sepolia portfolioRouter            # Deploy PortfolioRouter with ymax0 (requires REMOTE_ACCOUNT_FACTORY env var)"
-    echo "  $0 eth-sepolia portfolioRouter ymax1      # Deploy PortfolioRouter with ymax1 AGORIC_LCA"
+    echo "  $0 eth-sepolia remoteAccountFactory       # Deploy RemoteAccountFactory with ymax0 principal"
+    echo "  $0 eth-sepolia remoteAccountFactory ymax1 # Deploy RemoteAccountFactory with ymax1 principal"
+    echo ""
+    echo "  # Deploy PortfolioRouter (requires env vars):"
+    echo "  REMOTE_ACCOUNT_FACTORY=0x... OWNER_AUTHORITY=0x... $0 eth-sepolia portfolioRouter"
+    echo ""
+    echo "Environment Variables:"
+    echo "  REMOTE_ACCOUNT_FACTORY - Required for portfolioRouter: deployed factory address"
+    echo "  OWNER_AUTHORITY        - Required for portfolioRouter: address that can designate router replacement"
+    echo ""
+    echo "IMPORTANT: After deploying both RemoteAccountFactory and PortfolioRouter,"
+    echo "           you must transfer factory ownership to the router:"
+    echo "           factory.transferOwnership(portfolioRouterAddress)"
     exit 0
 fi
 
@@ -115,11 +124,45 @@ case "$contract" in
         ;;
 
     remoteAccountFactory)
+        # Validate owner type for RemoteAccountFactory
+        if [[ "$owner_type" != "ymax0" && "$owner_type" != "ymax1" ]]; then
+            echo "Error: Invalid owner type '$owner_type'"
+            echo "Valid options: 'ymax0' or 'ymax1'"
+            exit 1
+        fi
+
+        # Set PRINCIPAL_CAIP2 based on network type
+        case $network in
+            avax|arb|base|eth|opt)
+                # Mainnet
+                PRINCIPAL_CAIP2="cosmos:agoric-3"
+                if [[ "$owner_type" == "ymax0" ]]; then
+                    PRINCIPAL_ACCOUNT="agoric1wl2529tfdlfvure7mw6zteam02prgaz88p0jru4tlzuxdawrdyys6jlmnq"
+                else
+                    PRINCIPAL_ACCOUNT="agoric13ecz27mm2ug5kv96jyal2k6z8874mxzs4m4yuet36s4nqdl0ey6qr09p74"
+                fi
+                ;;
+            *)
+                # Testnet
+                PRINCIPAL_CAIP2="cosmos:agoricdev-25"
+                if [[ "$owner_type" == "ymax0" ]]; then
+                    PRINCIPAL_ACCOUNT="agoric18ek5td2h397cmejnlndes50k84ywx82kau7aff80t74fcxmjnzqstjclj0"
+                else
+                    PRINCIPAL_ACCOUNT="agoric1ps63986jnululzkmg7h3nhs5at6vkatcgsjy9ttgztykuaepwpxsrw2sus"
+                fi
+                ;;
+        esac
+
         echo ""
         echo "========================================="
         echo "Deploying RemoteAccountFactory..."
         echo "========================================="
-        npx hardhat ignition deploy "./ignition/modules/deployRemoteAccountFactory.ts" --network "$network" --verify
+        echo "Using owner type: $owner_type"
+        echo "Using Principal CAIP2: $PRINCIPAL_CAIP2"
+        echo "Using Principal Account: $PRINCIPAL_ACCOUNT"
+        PRINCIPAL_CAIP2="$PRINCIPAL_CAIP2" \
+            PRINCIPAL_ACCOUNT="$PRINCIPAL_ACCOUNT" \
+            npx hardhat ignition deploy "./ignition/modules/deployRemoteAccountFactory.ts" --network "$network" --verify
         ;;
 
     portfolioRouter)
@@ -130,6 +173,13 @@ case "$contract" in
             exit 1
         fi
 
+        if [ -z "$OWNER_AUTHORITY" ]; then
+            echo "Error: OWNER_AUTHORITY environment variable is not set"
+            echo "Please set OWNER_AUTHORITY=0x... (address authorized to designate router replacement)"
+            echo "Example: OWNER_AUTHORITY=0x1234...abcd REMOTE_ACCOUNT_FACTORY=0x... $0 $network portfolioRouter"
+            exit 1
+        fi
+
         # Validate owner type for PortfolioRouter
         if [[ "$owner_type" != "ymax0" && "$owner_type" != "ymax1" ]]; then
             echo "Error: Invalid owner type '$owner_type'"
@@ -137,27 +187,29 @@ case "$contract" in
             exit 1
         fi
 
-        # Set AGORIC_LCA based on network type and owner type if not provided
-        if [ -z "$AGORIC_LCA" ]; then
-            case $network in
-                avax|arb|base|eth|opt)
-                    # Mainnet
-                    if [[ "$owner_type" == "ymax0" ]]; then
-                        AGORIC_LCA="agoric1wl2529tfdlfvure7mw6zteam02prgaz88p0jru4tlzuxdawrdyys6jlmnq" # https://vstorage.agoric.net/?path=published.ymax0&endpoint=https%3A%2F%2Fmain-a.rpc.agoric.net%3A443&height=undefined
-                    else
-                        AGORIC_LCA="agoric13ecz27mm2ug5kv96jyal2k6z8874mxzs4m4yuet36s4nqdl0ey6qr09p74" # https://vstorage.agoric.net/?path=published.ymax1&endpoint=https%3A%2F%2Fmain-a.rpc.agoric.net%3A443&height=undefined
-                    fi
-                    ;;
-                *)
-                    # Testnet
-                    if [[ "$owner_type" == "ymax0" ]]; then
-                        AGORIC_LCA="agoric18ek5td2h397cmejnlndes50k84ywx82kau7aff80t74fcxmjnzqstjclj0" # https://vstorage.agoric.net/?path=published.ymax0&endpoint=https%3A%2F%2Fdevnet.rpc.agoric.net%3A443&height=undefined
-                    else
-                        AGORIC_LCA="agoric1ps63986jnululzkmg7h3nhs5at6vkatcgsjy9ttgztykuaepwpxsrw2sus" # https://vstorage.agoric.net/?path=published.ymax1&endpoint=https%3A%2F%2Fdevnet.rpc.agoric.net%3A443&height=undefined
-                    fi
-                    ;;
-            esac
-        fi
+        # Set principal info based on network type and owner type
+        case $network in
+            avax|arb|base|eth|opt)
+                # Mainnet
+                PRINCIPAL_CAIP2="cosmos:agoric-3"
+                AXELAR_SOURCE_CHAIN="agoric"
+                if [[ "$owner_type" == "ymax0" ]]; then
+                    PRINCIPAL_ACCOUNT="agoric1wl2529tfdlfvure7mw6zteam02prgaz88p0jru4tlzuxdawrdyys6jlmnq"
+                else
+                    PRINCIPAL_ACCOUNT="agoric13ecz27mm2ug5kv96jyal2k6z8874mxzs4m4yuet36s4nqdl0ey6qr09p74"
+                fi
+                ;;
+            *)
+                # Testnet
+                PRINCIPAL_CAIP2="cosmos:agoricdev-25"
+                AXELAR_SOURCE_CHAIN="agoric"
+                if [[ "$owner_type" == "ymax0" ]]; then
+                    PRINCIPAL_ACCOUNT="agoric18ek5td2h397cmejnlndes50k84ywx82kau7aff80t74fcxmjnzqstjclj0"
+                else
+                    PRINCIPAL_ACCOUNT="agoric1ps63986jnululzkmg7h3nhs5at6vkatcgsjy9ttgztykuaepwpxsrw2sus"
+                fi
+                ;;
+        esac
 
         echo ""
         echo "========================================="
@@ -165,11 +217,17 @@ case "$contract" in
         echo "========================================="
         echo "Using owner type: $owner_type"
         echo "Using RemoteAccountFactory: $REMOTE_ACCOUNT_FACTORY"
-        echo "Using Agoric LCA: $AGORIC_LCA"
+        echo "Using Principal CAIP2: $PRINCIPAL_CAIP2"
+        echo "Using Principal Account: $PRINCIPAL_ACCOUNT"
+        echo "Using Axelar Source Chain: $AXELAR_SOURCE_CHAIN"
+        echo "Using Owner Authority: $OWNER_AUTHORITY"
         GATEWAY_CONTRACT="$GATEWAY" \
+            AXELAR_SOURCE_CHAIN="$AXELAR_SOURCE_CHAIN" \
+            PRINCIPAL_CAIP2="$PRINCIPAL_CAIP2" \
+            PRINCIPAL_ACCOUNT="$PRINCIPAL_ACCOUNT" \
             FACTORY_CONTRACT="$REMOTE_ACCOUNT_FACTORY" \
             PERMIT2_CONTRACT="$PERMIT2" \
-            AGORIC_LCA="$AGORIC_LCA" \
+            OWNER_AUTHORITY="$OWNER_AUTHORITY" \
             npx hardhat ignition deploy "./ignition/modules/deployPortfolioRouter.ts" --network "$network" --verify
         ;;
 esac
