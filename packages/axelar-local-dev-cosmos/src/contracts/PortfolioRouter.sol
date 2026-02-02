@@ -36,6 +36,7 @@ contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRo
 
     error InvalidSourceChain(string expected, string actual);
     error InvalidSourceAddress(string expected, string actual);
+    error InvalidRemoteAccount(address account);
 
     error UnauthorizedAuthority(address expected, address actual);
 
@@ -125,11 +126,23 @@ contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRo
         require(msg.sender == address(this));
 
         address accountAddress = instruction.remoteAccountAddress;
+        (string memory portfolioCaip2, ) = principal();
+        string calldata portfolioAccount = instruction.portfolioLCA;
 
         if (instruction.depositPermit.length > 0) {
             // Verify that the instruction is well formed
             require(instruction.depositPermit.length == 1);
             DepositPermit calldata deposit = instruction.depositPermit[0];
+
+            // If not providing account and no multicalls, verify the account principal
+            // (provide and multicall have their own principal checks)
+            bool depositOnly = !instruction.provideAccount && instruction.multiCalls.length == 0;
+            if (
+                depositOnly &&
+                !IRemoteRepresentative(accountAddress).isPrincipal(portfolioCaip2, portfolioAccount)
+            ) {
+                revert InvalidRemoteAccount(accountAddress);
+            }
 
             IPermit2.SignatureTransferDetails memory details = IPermit2.SignatureTransferDetails({
                 to: accountAddress,
@@ -144,9 +157,6 @@ contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRo
                 deposit.signature
             );
         }
-
-        (string memory portfolioCaip2, ) = principal();
-        string calldata portfolioAccount = instruction.portfolioLCA;
 
         if (instruction.provideAccount) {
             factory.provide(portfolioCaip2, portfolioAccount, address(this), accountAddress);
