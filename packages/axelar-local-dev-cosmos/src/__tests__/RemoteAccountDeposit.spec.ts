@@ -168,11 +168,10 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
             })
             .filter(Boolean);
 
-        // Check OperationSuccess event
-        const successEvent = parsedLogs.find(
-            (e: { name: string }) => e.name === 'OperationSuccess',
-        );
-        expect(successEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
+        // Check OperationResult event
+        const successEvent = parsedLogs.find((e: { name: string }) => e.name === 'OperationResult');
+        expect(successEvent.args.id.hash).to.equal(keccak256(toBytes(txId)));
+        expect(successEvent.args.success).to.equal(true);
 
         // Verify token balance
         const balanceAfter = await testToken.balanceOf(accountAddress);
@@ -241,9 +240,10 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
             })
             .filter(Boolean);
 
-        // Check OperationError event - should fail due to expired deadline
-        const errorEvent = parsedLogs.find((e: { name: string }) => e?.name === 'OperationError');
-        expect(errorEvent?.args.id.hash).to.equal(keccak256(toBytes(txId)));
-        expect(errorEvent?.args.reason).to.not.equal('0x');
+        // Check OperationResult event - should fail due to expired deadline
+        const errorEvent = parsedLogs.find((e: { name: string }) => e?.name === 'OperationResult');
+        expect(errorEvent.args.success).to.equal(false);
+        expect(errorEvent.args.id.hash).to.equal(keccak256(toBytes(txId)));
+        expect(errorEvent.args.reason).to.not.equal('0x');
     });
 });

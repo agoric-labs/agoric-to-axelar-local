@@ -108,9 +108,9 @@ contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRo
         uint256 len = instructions.length;
         for (uint256 i = 0; i < len; i++) {
             try this.processInstruction(instructions[i]) {
-                emit OperationSuccess(instructions[i].id);
+                emit OperationResult(instructions[i].id, true, '0x');
             } catch (bytes memory reason) {
-                emit OperationError(instructions[i].id, reason);
+                emit OperationResult(instructions[i].id, false, reason);
             }
         }
     }

@@ -27,8 +27,7 @@ struct RouterInstruction {
 }
 
 interface IPortfolioRouter is IRemoteRepresentative, IReplaceableOwner {
-    event OperationSuccess(string indexed id);
-    event OperationError(string indexed id, bytes reason);
+    event OperationResult(string indexed id, bool success, bytes reason);
 
     function factory() external view returns (IRemoteAccountFactory);
     function permit2() external view returns (IPermit2);
