@@ -193,7 +193,7 @@ graph TB
     end
     
     subgraph "CREATE2 Logic"
-        SALT[Salt Generation<br/>hash(caip2:account)]
+        SALT["Salt Generation<br/>hash(caip2:account)"]
         CREATE[new RemoteAccount<br/>CREATE2 Deploy]
         TRANS[transferOwnership<br/>To Router]
     end
