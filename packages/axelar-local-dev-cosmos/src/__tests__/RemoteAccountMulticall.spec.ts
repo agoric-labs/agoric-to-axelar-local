@@ -761,4 +761,208 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         const decodedError = factoryInterface.parseError(errorEvent.args.reason);
         expect(decodedError?.name).to.equal('UnauthorizedRouter');
     });
+
+    it('should create account for different router via factory.provideForRouter multicall', async () => {
+        // Get current factory owner (may have changed from previous tests)
+        const factoryOwnerAddress = await factory.owner();
+        const factoryOwnerRouter = await ethers.getContractAt(
+            'PortfolioRouter',
+            factoryOwnerAddress,
+        );
+
+        // Deploy a target router that will own the new account
+        const RouterContract = await ethers.getContractFactory('PortfolioRouter');
+        const targetRouter = await RouterContract.deploy(
+            axelarGatewayMock.target,
+            sourceChain,
+            portfolioContractCaip2,
+            portfolioContractAccount,
+            factory.target,
+            permit2Mock.target,
+            owner.address,
+        );
+        await targetRouter.waitForDeployment();
+
+        // Compute address for the new account
+        const newPortfolioLCA = 'agoric1provideforrouter123456789abcdef';
+        const newAccountAddress = await computeRemoteAccountAddress(
+            factory.target.toString(),
+            portfolioContractCaip2,
+            newPortfolioLCA,
+        );
+
+        // Encode call to factory.provideForRouter() - creates account owned by targetRouter
+        const provideForRouterData = encodeFunctionData({
+            abi: [
+                {
+                    name: 'provideForRouter',
+                    type: 'function',
+                    inputs: [
+                        { name: 'principalCaip2', type: 'string' },
+                        { name: 'principalAccount', type: 'string' },
+                        { name: 'routerAddress', type: 'address' },
+                        { name: 'expectedAddress', type: 'address' },
+                    ],
+                },
+            ],
+            functionName: 'provideForRouter',
+            args: [
+                portfolioContractCaip2,
+                newPortfolioLCA,
+                targetRouter.target as `0x${string}`,
+                newAccountAddress,
+            ],
+        });
+
+        // Multicall targets the factory to call provideForRouter
+        // Must be executed by the router that currently owns the factory
+        const commandId = getCommandId();
+        const txId = 'tx301';
+
+        const multiCalls: ContractCall[] = [
+            {
+                target: factory.target as `0x${string}`,
+                data: provideForRouterData,
+            },
+        ];
+
+        const payload = encodeRouterPayload({
+            id: txId,
+            portfolioLCA: portfolioContractAccount, // Factory's principal
+            remoteAccountAddress: factory.target as `0x${string}`,
+            provideAccount: false,
+            depositPermit: [],
+            multiCalls,
+        });
+
+        const payloadHash = keccak256(toBytes(payload));
+
+        await approveMessage({
+            commandId,
+            from: sourceChain,
+            sourceAddress: portfolioContractAccount,
+            targetAddress: factoryOwnerRouter.target,
+            payload: payloadHash,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        const tx = await factoryOwnerRouter.execute(
+            commandId,
+            sourceChain,
+            portfolioContractAccount,
+            payload,
+        );
+        const receipt = await tx.wait();
+
+        const parsedLogs = parseLogs(receipt, factoryOwnerRouter.interface);
+        const successEvent = parsedLogs.find((e) => e.name === 'OperationResult')!;
+        expect(successEvent.args.success).to.equal(true);
+
+        // Verify account was created and is owned by targetRouter
+        const newAccount = await ethers.getContractAt('RemoteAccount', newAccountAddress);
+        expect(await newAccount.owner()).to.equal(targetRouter.target);
+
+        // Verify factory ownership unchanged
+        expect(await factory.owner()).to.equal(factoryOwnerAddress);
+
+        // Verify targetRouter can execute multicalls on the new account
+        const commandId2 = getCommandId();
+        const txId2 = 'tx302';
+
+        const setValueData = encodeFunctionData({
+            abi: [
+                {
+                    name: 'setValue',
+                    type: 'function',
+                    inputs: [{ name: '_value', type: 'uint256' }],
+                },
+            ],
+            functionName: 'setValue',
+            args: [777n],
+        });
+
+        const multiCalls2: ContractCall[] = [
+            { target: multicallTarget.target as `0x${string}`, data: setValueData },
+        ];
+
+        const payload2 = encodeRouterPayload({
+            id: txId2,
+            portfolioLCA: newPortfolioLCA,
+            remoteAccountAddress: newAccountAddress,
+            provideAccount: false,
+            depositPermit: [],
+            multiCalls: multiCalls2,
+        });
+
+        const payloadHash2 = keccak256(toBytes(payload2));
+
+        await approveMessage({
+            commandId: commandId2,
+            from: sourceChain,
+            sourceAddress: portfolioContractAccount,
+            targetAddress: targetRouter.target,
+            payload: payloadHash2,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        const tx2 = await targetRouter.execute(
+            commandId2,
+            sourceChain,
+            portfolioContractAccount,
+            payload2,
+        );
+        const receipt2 = await tx2.wait();
+
+        const parsedLogs2 = parseLogs(receipt2, targetRouter.interface);
+        const successEvent2 = parsedLogs2.find((e) => e.name === 'OperationResult')!;
+        expect(successEvent2.args.success).to.equal(true);
+        expect(await multicallTarget.getValue()).to.equal(777n);
+
+        // Verify factory owner router cannot execute multicalls on the new account (owned by targetRouter)
+        const commandId3 = getCommandId();
+        const txId3 = 'tx303';
+
+        const payload3 = encodeRouterPayload({
+            id: txId3,
+            portfolioLCA: newPortfolioLCA,
+            remoteAccountAddress: newAccountAddress,
+            provideAccount: false,
+            depositPermit: [],
+            multiCalls: multiCalls2,
+        });
+
+        const payloadHash3 = keccak256(toBytes(payload3));
+
+        await approveMessage({
+            commandId: commandId3,
+            from: sourceChain,
+            sourceAddress: portfolioContractAccount,
+            targetAddress: factoryOwnerRouter.target,
+            payload: payloadHash3,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        const tx3 = await factoryOwnerRouter.execute(
+            commandId3,
+            sourceChain,
+            portfolioContractAccount,
+            payload3,
+        );
+        const receipt3 = await tx3.wait();
+
+        const parsedLogs3 = parseLogs(receipt3, factoryOwnerRouter.interface);
+        const errorEvent = parsedLogs3.find((e) => e.name === 'OperationResult')!;
+        expect(errorEvent.args.success).to.equal(false);
+
+        // Decode error - should be OwnableUnauthorizedAccount
+        const remoteAccountInterface = (await ethers.getContractFactory('RemoteAccount')).interface;
+        const decodedError = remoteAccountInterface.parseError(errorEvent.args.reason);
+        expect(decodedError?.name).to.equal('OwnableUnauthorizedAccount');
+    });
 });
