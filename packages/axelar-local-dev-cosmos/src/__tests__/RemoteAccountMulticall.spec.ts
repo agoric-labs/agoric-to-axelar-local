@@ -167,11 +167,10 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
             })
             .filter(Boolean);
 
-        // Check OperationSuccess event (account created and multicall executed)
-        const successEvent = parsedLogs.find(
-            (e: { name: string }) => e.name === 'OperationSuccess',
-        );
+        // Check OperationResult event (account created and multicall executed)
+        const successEvent = parsedLogs.find((e: { name: string }) => e.name === 'OperationResult');
         expect(successEvent.args.id.hash).to.equal(keccak256(toBytes(txId)));
+        expect(successEvent.args.success).to.equal(true);
         expect(await multicallTarget.getValue()).to.equal(42n);
     });
 
@@ -246,10 +245,9 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
             })
             .filter(Boolean);
 
-        const successEvent = parsedLogs.find(
-            (e: { name: string }) => e.name === 'OperationSuccess',
-        );
+        const successEvent = parsedLogs.find((e: { name: string }) => e.name === 'OperationResult');
         expect(successEvent.args.id.hash).to.equal(keccak256(toBytes(txId)));
+        expect(successEvent.args.success).to.equal(true);
         expect(await multicallTarget.getValue()).to.equal(105n);
     });
 
@@ -304,8 +302,9 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
             })
             .filter(Boolean);
 
-        const errorEvent = parsedLogs.find((e: { name: string }) => e?.name === 'OperationError');
+        const errorEvent = parsedLogs.find((e: { name: string }) => e?.name === 'OperationResult');
         expect(errorEvent.args.id.hash).to.equal(keccak256(toBytes(txId)));
+        expect(errorEvent.args.success).to.equal(false);
         expect(errorEvent.args.reason).to.not.equal('0x');
     });
 
@@ -369,9 +368,9 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
             })
             .filter(Boolean);
 
-        const errorEvent = parsedLogs.find((e: { name: string }) => e.name === 'OperationError');
+        const errorEvent = parsedLogs.find((e: { name: string }) => e.name === 'OperationResult');
         expect(errorEvent.args.id.hash).to.equal(keccak256(toBytes(txId)));
-
+        expect(errorEvent.args.success).to.equal(false);
         // Decode error - should be RemoteRepresentativeUnauthorizedPrincipal
         const remoteAccountInterface = (await ethers.getContractFactory('RemoteAccount')).interface;
         const decodedError = remoteAccountInterface.parseError(errorEvent.args.reason);
