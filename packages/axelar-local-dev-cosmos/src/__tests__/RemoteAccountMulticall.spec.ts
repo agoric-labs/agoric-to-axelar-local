@@ -41,6 +41,26 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         return commandId;
     };
 
+    // Helper to parse logs using a contract interface
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    type ParsedLog = { name: string; args: Record<string, any> };
+    const parseLogs = (
+        receipt: { logs: Array<{ topics: string[]; data: string }> } | null,
+        contractInterface: { parseLog: (log: { topics: string[]; data: string }) => unknown },
+    ): ParsedLog[] => {
+        return (
+            (receipt?.logs
+                .map((log) => {
+                    try {
+                        return contractInterface.parseLog(log);
+                    } catch {
+                        return null;
+                    }
+                })
+                .filter(Boolean) as ParsedLog[]) ?? []
+        );
+    };
+
     before(async () => {
         [owner, addr1] = await ethers.getSigners();
 
@@ -204,8 +224,8 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         });
 
         const multiCalls: ContractCall[] = [
-            { target: multicallTarget.target.toString() as `0x${string}`, data: setValueData },
-            { target: multicallTarget.target.toString() as `0x${string}`, data: addToValueData },
+            { target: multicallTarget.target as `0x${string}`, data: setValueData },
+            { target: multicallTarget.target as `0x${string}`, data: addToValueData },
         ];
 
         const payload = encodeRouterPayload({
@@ -375,5 +395,194 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         const remoteAccountInterface = (await ethers.getContractFactory('RemoteAccount')).interface;
         const decodedError = remoteAccountInterface.parseError(errorEvent.args.reason);
         expect(decodedError?.name).to.equal('RemoteRepresentativeUnauthorizedPrincipal');
+    });
+
+    it('should update owner of remote account through router authority + multicall', async () => {
+        // Deploy a new router
+        const RouterContract = await ethers.getContractFactory('PortfolioRouter');
+        const newRouter = await RouterContract.deploy(
+            axelarGatewayMock.target,
+            sourceChain,
+            portfolioContractCaip2,
+            portfolioContractAccount,
+            factory.target,
+            permit2Mock.target,
+            owner.address, // ownerAuthority
+        );
+        await newRouter.waitForDeployment();
+
+        // Old router authority pre-designates the new owner
+        await router.replaceOwner(newRouter.target);
+
+        // Verify replacement owner was set
+        expect(await router.replacementOwner()).to.equal(newRouter.target);
+
+        // Verify RemoteAccount is still owned by old router before transfer
+        const remoteAccount = await ethers.getContractAt('RemoteAccount', accountAddress);
+        expect(await remoteAccount.owner()).to.equal(router.target);
+
+        // Execute multicall to transfer ownership
+        const commandId = getCommandId();
+        const txId = 'ownerUpdate1';
+
+        // Encode call to RemoteAccount.replaceOwner(newRouter)
+        const replaceOwnerData = encodeFunctionData({
+            abi: [
+                {
+                    name: 'replaceOwner',
+                    type: 'function',
+                    inputs: [{ name: 'newOwner', type: 'address' }],
+                },
+            ],
+            functionName: 'replaceOwner',
+            args: [newRouter.target as `0x${string}`],
+        });
+
+        // The multicall targets the RemoteAccount itself to call replaceOwner
+        const multiCalls: ContractCall[] = [
+            {
+                target: accountAddress,
+                data: replaceOwnerData,
+            },
+        ];
+
+        const payload = encodeRouterPayload({
+            id: txId,
+            portfolioLCA,
+            remoteAccountAddress: accountAddress,
+            provideAccount: false,
+            depositPermit: [],
+            multiCalls,
+        });
+
+        const payloadHash = keccak256(toBytes(payload));
+
+        await approveMessage({
+            commandId,
+            from: sourceChain,
+            sourceAddress: portfolioContractAccount,
+            targetAddress: router.target,
+            payload: payloadHash,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
+        const receipt = await tx.wait();
+
+        const parsedLogs = parseLogs(receipt, router.interface);
+
+        // Check OperationResult event - should succeed
+        const successEvent = parsedLogs.find((e) => e.name === 'OperationResult')!;
+        expect(successEvent.args.id.hash).to.equal(keccak256(toBytes(txId)));
+        expect(successEvent.args.success).to.equal(true);
+
+        // Verify ownership was transferred
+        expect(await remoteAccount.owner()).to.equal(newRouter.target);
+
+        // Old router should fail to execute multicall
+        const commandId2 = getCommandId();
+        const txId2 = 'ownerUpdate2';
+
+        const setValueData = encodeFunctionData({
+            abi: [
+                {
+                    name: 'setValue',
+                    type: 'function',
+                    inputs: [{ name: '_value', type: 'uint256' }],
+                },
+            ],
+            functionName: 'setValue',
+            args: [999n],
+        });
+
+        const multiCalls2: ContractCall[] = [
+            { target: multicallTarget.target as `0x${string}`, data: setValueData },
+        ];
+
+        const payload2 = encodeRouterPayload({
+            id: txId2,
+            portfolioLCA,
+            remoteAccountAddress: accountAddress,
+            provideAccount: false,
+            depositPermit: [],
+            multiCalls: multiCalls2,
+        });
+
+        const payloadHash2 = keccak256(toBytes(payload2));
+
+        await approveMessage({
+            commandId: commandId2,
+            from: sourceChain,
+            sourceAddress: portfolioContractAccount,
+            targetAddress: router.target,
+            payload: payloadHash2,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        const tx2 = await router.execute(
+            commandId2,
+            sourceChain,
+            portfolioContractAccount,
+            payload2,
+        );
+        const receipt2 = await tx2.wait();
+
+        const parsedLogs2 = parseLogs(receipt2, router.interface);
+
+        // Old router should fail
+        const errorEvent = parsedLogs2.find((e) => e.name === 'OperationResult')!;
+        expect(errorEvent.args.id.hash).to.equal(keccak256(toBytes(txId2)));
+        expect(errorEvent.args.success).to.equal(false);
+
+        // Decode error - should be OwnableUnauthorizedAccount
+        const ownableInterface = (await ethers.getContractFactory('RemoteAccount')).interface;
+        const decodedError = ownableInterface.parseError(errorEvent.args.reason);
+        expect(decodedError?.name).to.equal('OwnableUnauthorizedAccount');
+
+        // New router should succeed
+        const commandId3 = getCommandId();
+        const txId3 = 'ownerUpdate3';
+
+        const payload3 = encodeRouterPayload({
+            id: txId3,
+            portfolioLCA,
+            remoteAccountAddress: accountAddress,
+            provideAccount: false,
+            depositPermit: [],
+            multiCalls: multiCalls2, // same setValue(999) call
+        });
+
+        const payloadHash3 = keccak256(toBytes(payload3));
+
+        await approveMessage({
+            commandId: commandId3,
+            from: sourceChain,
+            sourceAddress: portfolioContractAccount,
+            targetAddress: newRouter.target,
+            payload: payloadHash3,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        const tx3 = await newRouter.execute(
+            commandId3,
+            sourceChain,
+            portfolioContractAccount,
+            payload3,
+        );
+        const receipt3 = await tx3.wait();
+
+        const parsedLogs3 = parseLogs(receipt3, newRouter.interface);
+
+        // New router should succeed
+        const successEvent2 = parsedLogs3.find((e) => e.name === 'OperationResult')!;
+        expect(successEvent2.args.id.hash).to.equal(keccak256(toBytes(txId3)));
+        expect(successEvent2.args.success).to.equal(true);
+        expect(await multicallTarget.getValue()).to.equal(999n);
     });
 });
