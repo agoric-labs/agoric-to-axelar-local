@@ -485,8 +485,12 @@ Supported Chains:
 Note: Nonces are automatically checked and synchronized if they differ across chains.
 
 Environment Variables (for portfolioRouter):
-  REMOTE_ACCOUNT_FACTORY       Address of the deployed RemoteAccountFactory contract
-  AGORIC_LCA                   (Optional) Authorized Agoric LCA address - defaults to ymax0/ymax1 based on owner-type
+  REMOTE_ACCOUNT_FACTORY       Required: Address of the deployed RemoteAccountFactory contract
+  OWNER_AUTHORITY              Required: Address authorized to designate router replacement
+
+IMPORTANT: After deploying both RemoteAccountFactory and PortfolioRouter,
+           you must transfer factory ownership to the router:
+           factory.transferOwnership(portfolioRouterAddress)
 
 Examples:
   # Deploy factory to all chains sequentially
@@ -507,14 +511,11 @@ Examples:
   # Deploy remoteAccountFactory to testnets
   yarn deploy:all -c remoteAccountFactory --testnet
 
-  # Deploy portfolioRouter with default ymax0 AGORIC_LCA
-  REMOTE_ACCOUNT_FACTORY=0x... yarn deploy:all -c portfolioRouter --testnet
+  # Deploy portfolioRouter with ymax0 principal
+  REMOTE_ACCOUNT_FACTORY=0x... OWNER_AUTHORITY=0x... yarn deploy:all -c portfolioRouter --testnet
 
-  # Deploy portfolioRouter with ymax1 AGORIC_LCA
-  REMOTE_ACCOUNT_FACTORY=0x... yarn deploy:all -c portfolioRouter -o ymax1 --testnet
-
-  # Deploy portfolioRouter with custom AGORIC_LCA
-  REMOTE_ACCOUNT_FACTORY=0x... AGORIC_LCA=agoric1custom... yarn deploy:all -c portfolioRouter --testnet
+  # Deploy portfolioRouter with ymax1 principal
+  REMOTE_ACCOUNT_FACTORY=0x... OWNER_AUTHORITY=0x... yarn deploy:all -c portfolioRouter -o ymax1 --testnet
 `);
 };
 
