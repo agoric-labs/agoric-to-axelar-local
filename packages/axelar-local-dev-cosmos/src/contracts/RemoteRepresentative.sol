@@ -7,7 +7,7 @@ import { IRemoteRepresentative } from './interfaces/IRemoteRepresentative.sol';
  * @title RemoteRepresentative
  * @notice A contract representing the interests of a principal remote account designated by its CAIP-10
  */
-contract RemoteRepresentative is IRemoteRepresentative {
+abstract contract RemoteRepresentative is IRemoteRepresentative {
     string private _principalCaip2;
     string private _principalAccount;
     bytes32 private immutable _principalCaip10Hash;
