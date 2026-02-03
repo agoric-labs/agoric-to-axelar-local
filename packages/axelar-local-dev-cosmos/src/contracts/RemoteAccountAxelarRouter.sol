@@ -3,14 +3,12 @@ pragma solidity ^0.8.20;
 
 import { AxelarExecutable } from '@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol';
 import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
-import { IRemoteRepresentative } from './interfaces/IRemoteRepresentative.sol';
 import { IReplaceableOwner } from './interfaces/IReplaceableOwner.sol';
 import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
-import { IPortfolioRouter, IPermit2, DepositPermit, RouterInstruction } from './interfaces/IPortfolioRouter.sol';
-import { RemoteRepresentative } from './RemoteRepresentative.sol';
+import { IRemoteAccountRouter, IPermit2, DepositPermit, RouterInstruction } from './interfaces/IRemoteAccountRouter.sol';
 
 /**
- * @title PortfolioRouter
+ * @title RemoteAccountAxelarRouter
  * @notice The single AxelarExecutable entry point for all remote account operations
  * @dev Handles account creation, deposits, and multicalls atomically.
  *      Each RemoteAccount is owned by this router, enabling future migration
@@ -22,14 +20,12 @@ import { RemoteRepresentative } from './RemoteRepresentative.sol';
  *        data: abi.encodeCall(Ownable.transferOwnership, (newRouterAddress))
  *      This makes RemoteAccount call itself to transfer ownership to the new router.
  */
-contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRouter {
+contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
     IRemoteAccountFactory public immutable override factory;
     IPermit2 public immutable override permit2;
 
     string private axelarSourceChain;
     bytes32 private immutable axelarSourceChainHash;
-
-    bytes32 private immutable portfolioContractAddressHash;
 
     address private immutable ownerAuthority;
     IReplaceableOwner private replacementOwner_;
@@ -45,8 +41,6 @@ contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRo
     /**
      * @param axelarGateway The Axelar gateway address
      * @param axelarSourceChain_ The source chain name
-     * @param portfolioContractCaip2 The CAIP-2 of the portfolio contract
-     * @param portfolioContractAccount The account of the portfolio contract
      * @param factory_ The RemoteAccountFactory address
      * @param permit2_ The Permit2 contract address
      * @param ownerAuthority_ The address authorized to designate a new owner
@@ -54,15 +48,10 @@ contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRo
     constructor(
         address axelarGateway,
         string memory axelarSourceChain_,
-        string memory portfolioContractCaip2,
-        string memory portfolioContractAccount,
         address factory_,
         address permit2_,
         address ownerAuthority_
-    )
-        AxelarExecutable(axelarGateway)
-        RemoteRepresentative(portfolioContractCaip2, portfolioContractAccount)
-    {
+    ) AxelarExecutable(axelarGateway) {
         factory = IRemoteAccountFactory(factory_);
         permit2 = IPermit2(permit2_);
 
@@ -70,15 +59,6 @@ contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRo
 
         axelarSourceChain = axelarSourceChain_;
         axelarSourceChainHash = keccak256(bytes(axelarSourceChain_));
-
-        portfolioContractAddressHash = keccak256(bytes(portfolioContractAccount));
-
-        require(
-            IRemoteRepresentative(factory_).isPrincipal(
-                portfolioContractCaip2,
-                portfolioContractAccount
-            )
-        );
     }
 
     /**
@@ -98,21 +78,13 @@ contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRo
             revert InvalidSourceChain(axelarSourceChain, sourceChain);
         }
 
-        if (keccak256(bytes(sourceAddress)) != portfolioContractAddressHash) {
-            (, string memory portfolioContractAddress) = principal();
-            revert InvalidSourceAddress(portfolioContractAddress, sourceAddress);
-        }
-
         // Parse and validate structure of message
-        RouterInstruction[] memory instructions = abi.decode(payload, (RouterInstruction[]));
+        RouterInstruction memory instruction = abi.decode(payload, (RouterInstruction));
 
-        uint256 len = instructions.length;
-        for (uint256 i = 0; i < len; i++) {
-            try this.processInstruction(instructions[i]) {
-                emit OperationResult(instructions[i].id, true, "");
-            } catch (bytes memory reason) {
-                emit OperationResult(instructions[i].id, false, reason);
-            }
+        try this.processInstruction(sourceAddress, instruction) {
+            emit OperationResult(instruction.id, true, '');
+        } catch (bytes memory reason) {
+            emit OperationResult(instruction.id, false, reason);
         }
     }
 
@@ -122,34 +94,28 @@ contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRo
      * Used to create a call stack that can be reverted atomically
      * @param instruction The decoded RouterInstruction
      */
-    function processInstruction(RouterInstruction calldata instruction) external {
+    function processInstruction(
+        string calldata sourceAddress,
+        RouterInstruction calldata instruction
+    ) external {
         require(msg.sender == address(this));
 
-        address accountAddress = instruction.remoteAccountAddress;
-        // All portfolio LCAs share the same caip2 as the portfolio contract (both on Agoric),
-        // so we extract just the chain identifier from our principal.
-        (string memory portfolioCaip2, ) = principal();
-        string calldata portfolioAccount = instruction.portfolioLCA;
+        address expectedAccountAddress = instruction.expectedAccountAddress;
 
-        if (instruction.depositPermit.length > 0) {
+        bool hasDeposit = instruction.depositPermit.length > 0;
+        bool hasMultiCalls = instruction.multiCalls.length > 0;
+
+        // Transfer first to avoid expensive creation if deposit fails
+        if (hasDeposit) {
             // Verify that the instruction is well formed
             require(instruction.depositPermit.length == 1);
             DepositPermit calldata deposit = instruction.depositPermit[0];
 
-            // If not providing account and no multicalls, verify the account principal
-            // (provide and multicall have their own principal checks)
-            bool depositOnly = !instruction.provideAccount && instruction.multiCalls.length == 0;
-            if (
-                depositOnly &&
-                !IRemoteRepresentative(accountAddress).isPrincipal(portfolioCaip2, portfolioAccount)
-            ) {
-                revert InvalidRemoteAccount(accountAddress);
-            }
-
             // Use structured call (not generic encoded payload) to ensure transfer
             // destination matches the verified accountAddress from the instruction.
             IPermit2.SignatureTransferDetails memory details = IPermit2.SignatureTransferDetails({
-                to: accountAddress,
+                // We will check address matches expectations after transfer
+                to: expectedAccountAddress,
                 requestedAmount: deposit.permit.permitted.amount
             });
             permit2.permitWitnessTransferFrom(
@@ -162,16 +128,26 @@ contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRo
             );
         }
 
+        // Provide or verify the remote account matches the source principal and owner
         if (instruction.provideAccount) {
-            factory.provide(portfolioCaip2, portfolioAccount, address(this), accountAddress);
+            factory.provide(sourceAddress, address(this), expectedAccountAddress);
+        } else if (hasMultiCalls) {
+            // executeCalls will check this router is the owner of the account
+            if (factory.getRemoteAccountAddress(sourceAddress) != expectedAccountAddress) {
+                revert InvalidRemoteAccount(expectedAccountAddress);
+            }
+        } else {
+            // ask the factory to check ownership of the remote account since we
+            // won't be interacting with it directly
+            if (
+                !factory.verifyRemoteAccount(sourceAddress, address(this), expectedAccountAddress)
+            ) {
+                revert InvalidRemoteAccount(expectedAccountAddress);
+            }
         }
 
-        if (instruction.multiCalls.length > 0) {
-            IRemoteAccount(accountAddress).executeCalls(
-                portfolioCaip2,
-                portfolioAccount,
-                instruction.multiCalls
-            );
+        if (hasMultiCalls) {
+            IRemoteAccount(expectedAccountAddress).executeCalls(instruction.multiCalls);
         }
     }
 

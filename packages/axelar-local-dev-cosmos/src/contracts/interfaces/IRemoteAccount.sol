@@ -9,5 +9,5 @@ struct ContractCall {
 interface IRemoteAccount {
     error ContractCallFailed(uint256 index, bytes reason);
 
-    function executeCalls(string calldata sourceCaip2, string calldata sourceAccount, ContractCall[] calldata calls) external;
+    function executeCalls(ContractCall[] calldata calls) external;
 }
