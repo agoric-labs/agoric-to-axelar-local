@@ -1,10 +1,10 @@
 # Portfolio Router and Remote Account System - Design Documentation
 
-This document provides C4-style architectural diagrams documenting the Solidity smart contracts that enable cross-chain portfolio management through Axelar GMP (General Message Passing).
+This document provides C4-style architectural diagrams documenting the Solidity smart contracts that enable cross-chain portfolio management through [Axelar General Message Passing (GMP)](https://docs.axelar.dev/dev/general-message-passing/overview/).
 
 ## System Overview
 
-The system enables remote portfolio management where a portfolio manager on Agoric chain can control accounts and execute operations on EVM chains through Axelar's cross-chain messaging protocol.
+The system enables remote portfolio management where a portfolio manager on an Agoric chain can control accounts and execute operations on EVM chains through GMP.
 
 ## C4 Level 1: System Context Diagram
 
@@ -15,31 +15,30 @@ graph TB
     end
     
     subgraph "Axelar Network"
-        AG[Axelar Gateway]
+        EX[Axelar Relayer]
     end
     
     subgraph "EVM Chain"
         PRS[Portfolio Router System]
+  
+        subgraph "External Systems"
+            P2[Permit2 Contract]
+            DEFI[DeFi Protocols]
+        end
     end
-    
-    subgraph "External Systems"
-        P2[Permit2 Contract]
-        DEFI[DeFi Protocols]
-    end
-    
-    PM -->|Send Instructions| AG
-    AG -->|Execute Message| PRS
+
+    PM -->|Send Instructions| EX
+    EX -->|Execute Message| PRS
     PRS -->|Transfer Tokens| P2
     PRS -->|Interact| DEFI
     
     style PM fill:#e1f5ff
     style PRS fill:#ffe1e1
-    style AG fill:#fff4e1
 ```
 
-**Context**: The Portfolio Router System acts as a trusted intermediary that receives cross-chain messages from a portfolio manager on Agoric and executes operations on behalf of remote accounts on the EVM chain.
+**Context**: The Portfolio Router System acts as a trusted intermediary that receives cross-chain messages from a portfolio manager on Agoric and directs operation of accounts on the EVM chain.
 
-## C4 Level 2: Container Diagram
+## C4 Level 2: Container Diagram - Data Plane Operations
 
 ```mermaid
 graph TB
@@ -57,15 +56,15 @@ graph TB
         PROTO[DeFi Protocols]
     end
     
-    AXL -->|_execute| PR
-    PR -->|provide| RAF
-    RAF -.->|creates| RA1
-    RAF -.->|creates| RA2
-    RAF -.->|creates| RAn
+    PR --> |validateContractCall| AXL
+    PR -.->|provide| RAF
+    RAF ==>|creates| RA1
+    RAF ==>|creates| RA2
+    RAF ==>|creates| RAn
     PR -->|executeCalls| RA1
     PR -->|executeCalls| RA2
     PR -->|executeCalls| RAn
-    PR -->|permitWitnessTransferFrom| P2
+    PR -.->|permitWitnessTransferFrom| P2
     RA1 -->|call| PROTO
     RA2 -->|call| PROTO
     RAn -->|call| PROTO
@@ -78,9 +77,9 @@ graph TB
 ```
 
 **Containers**:
-- **PortfolioRouter**: Entry point receiving Axelar messages and orchestrating operations
+- **PortfolioRouter**: Entry point receiving messages from Axelar
 - **RemoteAccountFactory**: CREATE2 factory deploying RemoteAccount contracts at deterministic addresses
-- **RemoteAccount**: Individual wallet contracts representing remote principals, executing DeFi operations
+- **RemoteAccount**: Individual wallet contracts acting on behalf of external principals, executing DeFi operations
 
 ## C4 Level 3: Component Diagram - PortfolioRouter
 
@@ -102,20 +101,27 @@ graph TB
     end
     
     subgraph "State"
-        FAC[factory: IRemoteAccountFactory]
+        SRCCHAIN[axelarSourceChainHash]
+        SRCADDR[portfolioContractAddressHash]
         PER[permit2: IPermit2]
+        FAC[factory: IRemoteAccountFactory]
         AUTH[ownerAuthority: address]
         REPL[replacementOwner_: IReplaceableOwner]
     end
     
+    RAn[RemoteAccount N]
+
     AXLEXEC --> EXE
     REMREP --> EXE
     EXE -->|decode & iterate| PROC
-    PROC --> DEP
-    PROC --> PROV
+    PROC -->|uses| SRCCHAIN
+    PROC -->|uses| SRCADDR
+    PROC -.-> DEP
+    PROC -.-> PROV
     PROC --> MULTI
     DEP -->|uses| PER
     PROV -->|uses| FAC
+    MULTI --> |calls| RAn
     REP -->|updates| REPL
     REP -->|checks| AUTH
     
@@ -124,17 +130,21 @@ graph TB
     style DEP fill:#e6f7ff
     style PROV fill:#f0ffe6
     style MULTI fill:#ffe6f7
+    style RAn fill:#ccccff
 ```
 
 **Key Components**:
 - **_execute**: Validates source chain/address, decodes RouterInstruction array
-- **processInstruction**: Atomically processes deposit → provide → multicall sequence
-- **Deposit Handler**: Transfers tokens via Permit2 signature-based transfers
+- **processInstruction**: Atomically handles (deposit?, provide?, calls)
+- **Deposit Handler**: Transfers tokens to RemoteAccount via Permit2 signature-based transfers
 - **Provide Handler**: Creates or verifies RemoteAccount via factory
-- **Multicall Handler**: Executes arbitrary contract calls through RemoteAccount
+- **Multicall Handler**: Instructs RemoteAccount to executes arbitrary calls
 - **Migration Support**: Enables ownership transfer to new router versions
 
-## C4 Level 4: Component Diagram - RemoteAccount
+----
+# FIXME: The remainder has not yet been edited
+
+## C4 Level 3: Component Diagram - RemoteAccount
 
 ```mermaid
 graph TB
@@ -177,7 +187,7 @@ graph TB
 - **Principal Identity**: Immutable CAIP-10 identity (chain + account)
 - **Replaceable Ownership**: Current owner can designate successor for migration
 
-## C4 Level 4: Component Diagram - RemoteAccountFactory
+## C4 Level 3: Component Diagram - RemoteAccountFactory
 
 ```mermaid
 graph TB
