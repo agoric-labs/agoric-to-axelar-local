@@ -13,14 +13,14 @@ import {
 } from './lib/utils';
 
 /**
- * Tests for RemoteAccount multicall functionality via PortfolioRouter.
+ * Tests for RemoteAccount multicall functionality via RemoteAccountAxelarRouter.
  *
  * The Multicall contract is a mock target for testing. In production,
  * RemoteAccount.executeCalls() deploys funds to EVM protocols.
  *
  * These tests verify multicalls execute correctly without breaking.
  */
-describe('PortfolioRouter - RemoteAccountMulticall', () => {
+describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
     let owner: HardhatEthersSigner, addr1: HardhatEthersSigner;
     let axelarGatewayMock: Contract, axelarGasServiceMock: Contract;
     let factory: Contract, router: Contract, permit2Mock: Contract;
@@ -97,13 +97,11 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         factory = await FactoryContract.deploy(portfolioContractCaip2, portfolioContractAccount);
         await factory.waitForDeployment();
 
-        // Deploy PortfolioRouter
-        const RouterContract = await ethers.getContractFactory('PortfolioRouter');
+        // Deploy RemoteAccountAxelarRouter
+        const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         router = await RouterContract.deploy(
             axelarGatewayMock.target,
             sourceChain,
-            portfolioContractCaip2,
-            portfolioContractAccount,
             factory.target,
             permit2Mock.target,
             owner.address, // ownerAuthority
@@ -118,11 +116,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         multicallTarget = await MulticallFactory.deploy();
 
         // Compute account address (account will be created in first test)
-        accountAddress = await computeRemoteAccountAddress(
-            factory.target.toString(),
-            portfolioContractCaip2,
-            portfolioLCA,
-        );
+        accountAddress = await computeRemoteAccountAddress(factory.target.toString(), portfolioLCA);
     });
 
     it('should create account and execute multicall in single call', async () => {
@@ -152,8 +146,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         // Both create account AND execute multicall in one call
         const payload = encodeRouterPayload({
             id: txId,
-            portfolioLCA,
-            remoteAccountAddress: accountAddress,
+            expectedAccountAddress: accountAddress,
             provideAccount: true,
             depositPermit: [],
             multiCalls,
@@ -164,7 +157,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: portfolioLCA,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -172,7 +165,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
             abiCoder,
         });
 
-        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
+        const tx = await router.execute(commandId, sourceChain, portfolioLCA, payload);
         const receipt = await tx.wait();
 
         // Parse events
@@ -230,8 +223,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
 
         const payload = encodeRouterPayload({
             id: txId,
-            portfolioLCA,
-            remoteAccountAddress: accountAddress,
+            expectedAccountAddress: accountAddress,
             provideAccount: false,
             depositPermit: [],
             multiCalls,
@@ -242,7 +234,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: portfolioLCA,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -250,7 +242,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
             abiCoder,
         });
 
-        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
+        const tx = await router.execute(commandId, sourceChain, portfolioLCA, payload);
         const receipt = await tx.wait();
 
         // Parse events
@@ -287,8 +279,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
 
         const payload = encodeRouterPayload({
             id: txId,
-            portfolioLCA,
-            remoteAccountAddress: accountAddress,
+            expectedAccountAddress: accountAddress,
             provideAccount: false,
             depositPermit: [],
             multiCalls,
@@ -299,7 +290,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: portfolioLCA,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -307,7 +298,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
             abiCoder,
         });
 
-        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
+        const tx = await router.execute(commandId, sourceChain, portfolioLCA, payload);
         const receipt = await tx.wait();
 
         // Parse events
@@ -333,7 +324,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         const txId = 'multicall4';
         const wrongPortfolioLCA = 'agoric1wrongcontroller123456789abcdefgh';
 
-        // Try to execute on existing account but with wrong portfolioLCA
+        // Try to execute on existing account but with wrong portfolioLCA as source address
         const callData = encodeFunctionData({
             abi: [
                 {
@@ -350,11 +341,10 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
             { target: multicallTarget.target.toString() as `0x${string}`, data: callData },
         ];
 
-        // Use wrong portfolioLCA but correct account address
+        // Use correct account address but wrong source address (wrongPortfolioLCA)
         const payload = encodeRouterPayload({
             id: txId,
-            portfolioLCA: wrongPortfolioLCA,
-            remoteAccountAddress: accountAddress,
+            expectedAccountAddress: accountAddress,
             provideAccount: false,
             depositPermit: [],
             multiCalls,
@@ -362,10 +352,11 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
 
         const payloadHash = keccak256(toBytes(payload));
 
+        // Send with wrongPortfolioLCA as source address - this doesn't match accountAddress's principal
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: wrongPortfolioLCA,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -373,7 +364,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
             abiCoder,
         });
 
-        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
+        const tx = await router.execute(commandId, sourceChain, wrongPortfolioLCA, payload);
         const receipt = await tx.wait();
 
         // Parse events
@@ -391,20 +382,17 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         const errorEvent = parsedLogs.find((e: { name: string }) => e.name === 'OperationResult');
         expect(errorEvent.args.id.hash).to.equal(keccak256(toBytes(txId)));
         expect(errorEvent.args.success).to.equal(false);
-        // Decode error - should be RemoteRepresentativeUnauthorizedPrincipal
-        const remoteAccountInterface = (await ethers.getContractFactory('RemoteAccount')).interface;
-        const decodedError = remoteAccountInterface.parseError(errorEvent.args.reason);
-        expect(decodedError?.name).to.equal('RemoteRepresentativeUnauthorizedPrincipal');
+        // Decode error - should be InvalidRemoteAccount from router
+        const decodedError = router.interface.parseError(errorEvent.args.reason);
+        expect(decodedError?.name).to.equal('InvalidRemoteAccount');
     });
 
     it('should update owner of remote account through router authority + multicall', async () => {
         // Deploy a new router
-        const RouterContract = await ethers.getContractFactory('PortfolioRouter');
+        const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         const newRouter = await RouterContract.deploy(
             axelarGatewayMock.target,
             sourceChain,
-            portfolioContractCaip2,
-            portfolioContractAccount,
             factory.target,
             permit2Mock.target,
             owner.address, // ownerAuthority
@@ -448,8 +436,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
 
         const payload = encodeRouterPayload({
             id: txId,
-            portfolioLCA,
-            remoteAccountAddress: accountAddress,
+            expectedAccountAddress: accountAddress,
             provideAccount: false,
             depositPermit: [],
             multiCalls,
@@ -460,7 +447,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: portfolioLCA,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -468,7 +455,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
             abiCoder,
         });
 
-        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
+        const tx = await router.execute(commandId, sourceChain, portfolioLCA, payload);
         const receipt = await tx.wait();
 
         const parsedLogs = parseLogs(receipt, router.interface);
@@ -503,8 +490,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
 
         const payload2 = encodeRouterPayload({
             id: txId2,
-            portfolioLCA,
-            remoteAccountAddress: accountAddress,
+            expectedAccountAddress: accountAddress,
             provideAccount: false,
             depositPermit: [],
             multiCalls: multiCalls2,
@@ -515,7 +501,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         await approveMessage({
             commandId: commandId2,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: portfolioLCA,
             targetAddress: router.target,
             payload: payloadHash2,
             owner,
@@ -523,12 +509,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
             abiCoder,
         });
 
-        const tx2 = await router.execute(
-            commandId2,
-            sourceChain,
-            portfolioContractAccount,
-            payload2,
-        );
+        const tx2 = await router.execute(commandId2, sourceChain, portfolioLCA, payload2);
         const receipt2 = await tx2.wait();
 
         const parsedLogs2 = parseLogs(receipt2, router.interface);
@@ -549,8 +530,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
 
         const payload3 = encodeRouterPayload({
             id: txId3,
-            portfolioLCA,
-            remoteAccountAddress: accountAddress,
+            expectedAccountAddress: accountAddress,
             provideAccount: false,
             depositPermit: [],
             multiCalls: multiCalls2, // same setValue(999) call
@@ -561,7 +541,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         await approveMessage({
             commandId: commandId3,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: portfolioLCA,
             targetAddress: newRouter.target,
             payload: payloadHash3,
             owner,
@@ -569,12 +549,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
             abiCoder,
         });
 
-        const tx3 = await newRouter.execute(
-            commandId3,
-            sourceChain,
-            portfolioContractAccount,
-            payload3,
-        );
+        const tx3 = await newRouter.execute(commandId3, sourceChain, portfolioLCA, payload3);
         const receipt3 = await tx3.wait();
 
         const parsedLogs3 = parseLogs(receipt3, newRouter.interface);
@@ -588,12 +563,10 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
 
     it('should transfer factory ownership and create new account with new router', async () => {
         // Deploy a new router
-        const RouterContract = await ethers.getContractFactory('PortfolioRouter');
+        const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         const newRouter = await RouterContract.deploy(
             axelarGatewayMock.target,
             sourceChain,
-            portfolioContractCaip2,
-            portfolioContractAccount,
             factory.target,
             permit2Mock.target,
             owner.address, // ownerAuthority
@@ -632,8 +605,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
 
         const payload = encodeRouterPayload({
             id: txId,
-            portfolioLCA: portfolioContractAccount,
-            remoteAccountAddress: factory.target as `0x${string}`,
+            expectedAccountAddress: factory.target as `0x${string}`,
             provideAccount: false,
             depositPermit: [],
             multiCalls,
@@ -641,6 +613,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
 
         const payloadHash = keccak256(toBytes(payload));
 
+        // Use portfolioContractAccount as source since factory's principal is portfolioContractAccount
         await approveMessage({
             commandId,
             from: sourceChain,
@@ -666,7 +639,6 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         const newPortfolioLCA = 'agoric1newportfolio123456789abcdefghijk';
         const newAccountAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
-            portfolioContractCaip2,
             newPortfolioLCA,
         );
 
@@ -675,8 +647,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
 
         const payload2 = encodeRouterPayload({
             id: txId2,
-            portfolioLCA: newPortfolioLCA,
-            remoteAccountAddress: newAccountAddress,
+            expectedAccountAddress: newAccountAddress,
             provideAccount: true, // Create the new account
             depositPermit: [],
             multiCalls: [],
@@ -687,7 +658,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         await approveMessage({
             commandId: commandId2,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: newPortfolioLCA,
             targetAddress: newRouter.target,
             payload: payloadHash2,
             owner,
@@ -695,12 +666,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
             abiCoder,
         });
 
-        const tx2 = await newRouter.execute(
-            commandId2,
-            sourceChain,
-            portfolioContractAccount,
-            payload2,
-        );
+        const tx2 = await newRouter.execute(commandId2, sourceChain, newPortfolioLCA, payload2);
         const receipt2 = await tx2.wait();
 
         const parsedLogs2 = parseLogs(receipt2, newRouter.interface);
@@ -717,14 +683,12 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         const anotherPortfolioLCA = 'agoric1anotherportfolio123456789abcdefg';
         const anotherAccountAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
-            portfolioContractCaip2,
             anotherPortfolioLCA,
         );
 
         const payload3 = encodeRouterPayload({
             id: txId3,
-            portfolioLCA: anotherPortfolioLCA,
-            remoteAccountAddress: anotherAccountAddress,
+            expectedAccountAddress: anotherAccountAddress,
             provideAccount: true,
             depositPermit: [],
             multiCalls: [],
@@ -735,7 +699,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         await approveMessage({
             commandId: commandId3,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: anotherPortfolioLCA,
             targetAddress: router.target,
             payload: payloadHash3,
             owner,
@@ -743,12 +707,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
             abiCoder,
         });
 
-        const tx3 = await router.execute(
-            commandId3,
-            sourceChain,
-            portfolioContractAccount,
-            payload3,
-        );
+        const tx3 = await router.execute(commandId3, sourceChain, anotherPortfolioLCA, payload3);
         const receipt3 = await tx3.wait();
 
         const parsedLogs3 = parseLogs(receipt3, router.interface);
@@ -766,17 +725,15 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         // Get current factory owner (may have changed from previous tests)
         const factoryOwnerAddress = await factory.owner();
         const factoryOwnerRouter = await ethers.getContractAt(
-            'PortfolioRouter',
+            'RemoteAccountAxelarRouter',
             factoryOwnerAddress,
         );
 
         // Deploy a target router that will own the new account
-        const RouterContract = await ethers.getContractFactory('PortfolioRouter');
+        const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         const targetRouter = await RouterContract.deploy(
             axelarGatewayMock.target,
             sourceChain,
-            portfolioContractCaip2,
-            portfolioContractAccount,
             factory.target,
             permit2Mock.target,
             owner.address,
@@ -787,7 +744,6 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         const newPortfolioLCA = 'agoric1provideforrouter123456789abcdef';
         const newAccountAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
-            portfolioContractCaip2,
             newPortfolioLCA,
         );
 
@@ -798,7 +754,6 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
                     name: 'provideForRouter',
                     type: 'function',
                     inputs: [
-                        { name: 'principalCaip2', type: 'string' },
                         { name: 'principalAccount', type: 'string' },
                         { name: 'routerAddress', type: 'address' },
                         { name: 'expectedAddress', type: 'address' },
@@ -806,12 +761,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
                 },
             ],
             functionName: 'provideForRouter',
-            args: [
-                portfolioContractCaip2,
-                newPortfolioLCA,
-                targetRouter.target as `0x${string}`,
-                newAccountAddress,
-            ],
+            args: [newPortfolioLCA, targetRouter.target as `0x${string}`, newAccountAddress],
         });
 
         // Multicall targets the factory to call provideForRouter
@@ -828,8 +778,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
 
         const payload = encodeRouterPayload({
             id: txId,
-            portfolioLCA: portfolioContractAccount, // Factory's principal
-            remoteAccountAddress: factory.target as `0x${string}`,
+            expectedAccountAddress: factory.target as `0x${string}`,
             provideAccount: false,
             depositPermit: [],
             multiCalls,
@@ -889,8 +838,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
 
         const payload2 = encodeRouterPayload({
             id: txId2,
-            portfolioLCA: newPortfolioLCA,
-            remoteAccountAddress: newAccountAddress,
+            expectedAccountAddress: newAccountAddress,
             provideAccount: false,
             depositPermit: [],
             multiCalls: multiCalls2,
@@ -901,7 +849,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         await approveMessage({
             commandId: commandId2,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: newPortfolioLCA,
             targetAddress: targetRouter.target,
             payload: payloadHash2,
             owner,
@@ -909,12 +857,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
             abiCoder,
         });
 
-        const tx2 = await targetRouter.execute(
-            commandId2,
-            sourceChain,
-            portfolioContractAccount,
-            payload2,
-        );
+        const tx2 = await targetRouter.execute(commandId2, sourceChain, newPortfolioLCA, payload2);
         const receipt2 = await tx2.wait();
 
         const parsedLogs2 = parseLogs(receipt2, targetRouter.interface);
@@ -928,8 +871,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
 
         const payload3 = encodeRouterPayload({
             id: txId3,
-            portfolioLCA: newPortfolioLCA,
-            remoteAccountAddress: newAccountAddress,
+            expectedAccountAddress: newAccountAddress,
             provideAccount: false,
             depositPermit: [],
             multiCalls: multiCalls2,
@@ -940,7 +882,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         await approveMessage({
             commandId: commandId3,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: newPortfolioLCA,
             targetAddress: factoryOwnerRouter.target,
             payload: payloadHash3,
             owner,
@@ -951,7 +893,7 @@ describe('PortfolioRouter - RemoteAccountMulticall', () => {
         const tx3 = await factoryOwnerRouter.execute(
             commandId3,
             sourceChain,
-            portfolioContractAccount,
+            newPortfolioLCA,
             payload3,
         );
         const receipt3 = await tx3.wait();

@@ -25,8 +25,7 @@ export interface DepositPermit {
 
 export interface RouterPayloadParams {
     id: string;
-    portfolioLCA: string;
-    remoteAccountAddress: `0x${string}`;
+    expectedAccountAddress: `0x${string}`;
     provideAccount: boolean;
     depositPermit?: DepositPermit[];
     multiCalls?: ContractCall[];
@@ -36,40 +35,28 @@ export interface RouterPayloadParams {
 
 /**
  * Compute CREATE2 address for RemoteAccount
- * Salt is keccak256(principalCaip2 + ':' + principalAccount)
+ * Salt is keccak256(principalAccount)
  */
 export const computeRemoteAccountAddress = async (
     factoryAddress: string,
-    principalCaip2: string,
     principalAccount: string,
 ) => {
-    const salt = ethers.solidityPackedKeccak256(
-        ['string', 'string', 'string'],
-        [principalCaip2, ':', principalAccount],
-    );
+    const salt = ethers.keccak256(ethers.toUtf8Bytes(principalAccount));
 
     const RemoteAccountFactory = await ethers.getContractFactory('RemoteAccount');
-    const constructorArgs = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['string', 'string'],
-        [principalCaip2, principalAccount],
-    );
-    const initCode = ethers.solidityPacked(
-        ['bytes', 'bytes'],
-        [RemoteAccountFactory.bytecode, constructorArgs],
-    );
-    const initCodeHash = ethers.keccak256(initCode);
+    // RemoteAccount constructor takes no arguments
+    const initCodeHash = ethers.keccak256(RemoteAccountFactory.bytecode);
 
     return ethers.getCreate2Address(factoryAddress, salt, initCodeHash) as `0x${string}`;
 };
 
 /**
- * Encode RouterPayload for PortfolioRouter
- * Encodes as RouterInstruction[] (array of instructions)
+ * Encode RouterPayload for RemoteAccountAxelarRouter
+ * Encodes as RouterInstruction (single instruction)
  */
 export const encodeRouterPayload = ({
     id,
-    portfolioLCA,
-    remoteAccountAddress,
+    expectedAccountAddress,
     provideAccount,
     depositPermit = [],
     multiCalls = [],
@@ -77,11 +64,10 @@ export const encodeRouterPayload = ({
     return encodeAbiParameters(
         [
             {
-                type: 'tuple[]',
+                type: 'tuple',
                 components: [
                     { name: 'id', type: 'string' },
-                    { name: 'portfolioLCA', type: 'string' },
-                    { name: 'remoteAccountAddress', type: 'address' },
+                    { name: 'expectedAccountAddress', type: 'address' },
                     { name: 'provideAccount', type: 'bool' },
                     {
                         name: 'depositPermit',
@@ -121,16 +107,13 @@ export const encodeRouterPayload = ({
             },
         ],
         [
-            [
-                {
-                    id,
-                    portfolioLCA,
-                    remoteAccountAddress,
-                    provideAccount,
-                    depositPermit,
-                    multiCalls,
-                },
-            ],
+            {
+                id,
+                expectedAccountAddress,
+                provideAccount,
+                depositPermit,
+                multiCalls,
+            },
         ],
     );
 };
