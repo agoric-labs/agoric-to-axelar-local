@@ -6,11 +6,24 @@ interface IRemoteAccountFactory {
     error UnauthorizedRouter(address router);
     error InvalidAccountAtAddress(address account);
 
-    event RemoteAccountCreated(address indexed account, string controller, address indexed router);
+    event RemoteAccountCreated(
+        address indexed accountAddress,
+        string principalAccount,
+        address indexed routerAddress
+    );
+
+    function getRemoteAccountAddress(
+        string calldata principalAccount
+    ) external view returns (address);
+
+    function verifyRemoteAccount(
+        string calldata principalAccount,
+        address expectedRouter,
+        address accountAddress
+    ) external view returns (bool);
 
     function provide(
-        string calldata principalCaip2,
-        string calldata principalAddress,
+        string calldata principalAccount,
         address expectedRouter,
         address expectedAddress
     ) external returns (bool);

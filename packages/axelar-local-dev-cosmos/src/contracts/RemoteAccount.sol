@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import { OwnableByReplaceableOwner } from './OwnableByReplaceableOwner.sol';
-import { RemoteRepresentative } from './RemoteRepresentative.sol';
 import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
 
 /**
@@ -15,20 +14,10 @@ import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
         behalf of. This design enables migration paths - if the Axelar-based router
         is replaced, ownership can be transferred to a new router.
  */
-contract RemoteAccount is RemoteRepresentative, OwnableByReplaceableOwner, IRemoteAccount {
+contract RemoteAccount is OwnableByReplaceableOwner, IRemoteAccount {
     event Received(address indexed sender, uint256 amount);
 
-    /**
-     * @param principalCaip2 The caip2 of the principal for this RemoteAccount
-     * @param principalAccount The address of the principal for this RemoteAccount
-     */
-    constructor(
-        string memory principalCaip2,
-        string memory principalAccount
-    )
-        RemoteRepresentative(principalCaip2, principalAccount)
-        OwnableByReplaceableOwner(_msgSender())
-    {}
+    constructor() OwnableByReplaceableOwner(_msgSender()) {}
 
     /**
      * @notice Replace the owner with the specified address
@@ -46,16 +35,10 @@ contract RemoteAccount is RemoteRepresentative, OwnableByReplaceableOwner, IRemo
 
     /**
      * @notice Execute a batch of calls on behalf of the controller
-     * @dev Requires router ownership check AND principal is the source of calls (defense in depth)
-     * @param sourceCaip2 The caip2 of the source issuing the calls command
-     * @param sourceAccount The account of the source issuing calls command
+     * @dev Requires router ownership check
      * @param calls Array of contract calls to execute
      */
-    function executeCalls(
-        string calldata sourceCaip2,
-        string calldata sourceAccount,
-        ContractCall[] calldata calls
-    ) external override onlyOwner checkPrincipal(sourceCaip2, sourceAccount) {
+    function executeCalls(ContractCall[] calldata calls) external override onlyOwner {
         uint256 len = calls.length;
         for (uint256 i = 0; i < len; ) {
             (bool success, bytes memory reason) = calls[i].target.call(calls[i].data);
