@@ -148,6 +148,12 @@ contract RemoteAccountFactory is RemoteAccount, IRemoteAccountFactory {
             // and not on transferable owner
             account.transferOwnership(routerAddress);
 
+            emit RemoteAccountCreated(
+                newAccount,
+                string.concat(principalCaip2, ':', principalAccount),
+                routerAddress
+            );
+
             return true;
         } catch {
             if (
