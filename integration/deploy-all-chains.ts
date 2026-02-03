@@ -469,7 +469,7 @@ Usage: ts-node deploy-all-chains.ts [options]
 
 Options:
   -c, --contract <type>        Contract type: "factory", "depositFactory", "remoteAccountFactory", or "portfolioRouter" (default: factory)
-  -o, --owner-type <type>      Owner type: "ymax0" or "ymax1" (for depositFactory and portfolioRouter)
+  -o, --owner-type <type>      Owner type: "ymax0" or "ymax1" (for depositFactory and remoteAccountFactory)
   --chains <chain1,chain2>     Comma-separated list of specific chains to deploy to
   --mainnet                    Deploy to all mainnet chains only
   --testnet                    Deploy to all testnet chains only
@@ -511,11 +511,8 @@ Examples:
   # Deploy remoteAccountFactory to testnets
   yarn deploy:all -c remoteAccountFactory --testnet
 
-  # Deploy portfolioRouter with ymax0 principal
+  # Deploy RemoteAccountAxelarRouter
   REMOTE_ACCOUNT_FACTORY=0x... OWNER_AUTHORITY=0x... yarn deploy:all -c portfolioRouter --testnet
-
-  # Deploy portfolioRouter with ymax1 principal
-  REMOTE_ACCOUNT_FACTORY=0x... OWNER_AUTHORITY=0x... yarn deploy:all -c portfolioRouter -o ymax1 --testnet
 `);
 };
 
