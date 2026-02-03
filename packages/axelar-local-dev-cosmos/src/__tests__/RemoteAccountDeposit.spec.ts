@@ -13,11 +13,11 @@ import {
 } from './lib/utils';
 
 /**
- * Tests for RemoteAccount deposit functionality via PortfolioRouter.
+ * Tests for RemoteAccount deposit functionality via RemoteAccountAxelarRouter.
  *
  * Uses MockPermit2 which simplifies signature verification for testing.
  */
-describe('PortfolioRouter - RemoteAccountDeposit', () => {
+describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
     let owner: HardhatEthersSigner, addr1: HardhatEthersSigner;
     let axelarGatewayMock: Contract, axelarGasServiceMock: Contract;
     let factory: Contract, router: Contract, permit2Mock: Contract;
@@ -74,13 +74,11 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
         factory = await FactoryContract.deploy(portfolioContractCaip2, portfolioContractAccount);
         await factory.waitForDeployment();
 
-        // Deploy PortfolioRouter
-        const RouterContract = await ethers.getContractFactory('PortfolioRouter');
+        // Deploy RemoteAccountAxelarRouter
+        const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         router = await RouterContract.deploy(
             axelarGatewayMock.target,
             sourceChain,
-            portfolioContractCaip2,
-            portfolioContractAccount,
             factory.target,
             permit2Mock.target,
             owner.address, // ownerAuthority
@@ -100,11 +98,7 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
         await testToken.approve(permit2Mock.target, ethers.MaxUint256);
 
         // Compute account address
-        accountAddress = await computeRemoteAccountAddress(
-            factory.target.toString(),
-            portfolioContractCaip2,
-            portfolioLCA,
-        );
+        accountAddress = await computeRemoteAccountAddress(factory.target.toString(), portfolioLCA);
     });
 
     it('should create account and deposit tokens in single call', async () => {
@@ -131,8 +125,7 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
 
         const payload = encodeRouterPayload({
             id: txId,
-            portfolioLCA,
-            remoteAccountAddress: accountAddress,
+            expectedAccountAddress: accountAddress,
             provideAccount: true,
             depositPermit,
             multiCalls: [],
@@ -143,7 +136,7 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: portfolioLCA,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -153,7 +146,7 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
 
         const balanceBefore = await testToken.balanceOf(accountAddress);
 
-        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
+        const tx = await router.execute(commandId, sourceChain, portfolioLCA, payload);
         const receipt = await tx.wait();
 
         // Parse events
@@ -205,8 +198,7 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
 
         const payload = encodeRouterPayload({
             id: txId,
-            portfolioLCA,
-            remoteAccountAddress: accountAddress,
+            expectedAccountAddress: accountAddress,
             provideAccount: false,
             depositPermit,
             multiCalls: [],
@@ -217,7 +209,7 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: portfolioLCA,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -225,7 +217,7 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
             abiCoder,
         });
 
-        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
+        const tx = await router.execute(commandId, sourceChain, portfolioLCA, payload);
         const receipt = await tx.wait();
 
         // Parse events
@@ -272,8 +264,7 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
 
         const payload = encodeRouterPayload({
             id: txId,
-            portfolioLCA,
-            remoteAccountAddress: accountAddress,
+            expectedAccountAddress: accountAddress,
             provideAccount: false, // No provision
             depositPermit,
             multiCalls: [], // No multicall
@@ -284,7 +275,7 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: portfolioLCA,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -294,7 +285,7 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
 
         const balanceBefore = await testToken.balanceOf(accountAddress);
 
-        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
+        const tx = await router.execute(commandId, sourceChain, portfolioLCA, payload);
         const receipt = await tx.wait();
 
         const routerInterface = router.interface;
@@ -321,7 +312,6 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
         const wrongPortfolioLCA = 'agoric1wrongprincipal123456789abcdefgh';
         const wrongAccountAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
-            portfolioContractCaip2,
             wrongPortfolioLCA,
         );
 
@@ -329,8 +319,7 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
         const setupCommandId = getCommandId();
         const setupPayload = encodeRouterPayload({
             id: 'tx4',
-            portfolioLCA: wrongPortfolioLCA,
-            remoteAccountAddress: wrongAccountAddress,
+            expectedAccountAddress: wrongAccountAddress,
             provideAccount: true,
             depositPermit: [],
             multiCalls: [],
@@ -339,14 +328,14 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
         await approveMessage({
             commandId: setupCommandId,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: wrongPortfolioLCA,
             targetAddress: router.target,
             payload: setupPayloadHash,
             owner,
             AxelarGateway: axelarGatewayMock,
             abiCoder,
         });
-        await router.execute(setupCommandId, sourceChain, portfolioContractAccount, setupPayload);
+        await router.execute(setupCommandId, sourceChain, wrongPortfolioLCA, setupPayload);
 
         // Now try to deposit to wrongAccountAddress but with original portfolioLCA
         const commandId = getCommandId();
@@ -372,8 +361,7 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
 
         const payload = encodeRouterPayload({
             id: txId,
-            portfolioLCA, // Original portfolioLCA
-            remoteAccountAddress: wrongAccountAddress, // But wrong account address
+            expectedAccountAddress: wrongAccountAddress, // But wrong account address
             provideAccount: false,
             depositPermit,
             multiCalls: [],
@@ -384,7 +372,7 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: portfolioLCA,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -392,7 +380,7 @@ describe('PortfolioRouter - RemoteAccountDeposit', () => {
             abiCoder,
         });
 
-        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
+        const tx = await router.execute(commandId, sourceChain, portfolioLCA, payload);
         const receipt = await tx.wait();
 
         const routerInterface = router.interface;

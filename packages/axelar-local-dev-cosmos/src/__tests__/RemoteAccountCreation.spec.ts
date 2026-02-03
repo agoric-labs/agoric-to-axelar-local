@@ -7,7 +7,7 @@ import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { keccak256, stringToHex, toBytes } from 'viem';
 import { approveMessage, computeRemoteAccountAddress, encodeRouterPayload } from './lib/utils';
 
-describe('PortfolioRouter - RemoteAccountCreation', () => {
+describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
     let owner: HardhatEthersSigner, addr1: HardhatEthersSigner;
     let axelarGatewayMock: Contract, axelarGasServiceMock: Contract;
     let factory: Contract, router: Contract, permit2Mock: Contract;
@@ -62,13 +62,11 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         factory = await FactoryContract.deploy(portfolioContractCaip2, portfolioContractAccount);
         await factory.waitForDeployment();
 
-        // Deploy PortfolioRouter
-        const RouterContract = await ethers.getContractFactory('PortfolioRouter');
+        // Deploy RemoteAccountAxelarRouter
+        const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         router = await RouterContract.deploy(
             axelarGatewayMock.target,
             sourceChain,
-            portfolioContractCaip2,
-            portfolioContractAccount,
             factory.target,
             permit2Mock.target,
             owner.address, // ownerAuthority
@@ -85,14 +83,12 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
 
         const expectedAccountAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
-            portfolioContractCaip2,
             portfolioLCA,
         );
 
         const payload = encodeRouterPayload({
             id: 'tx2',
-            portfolioLCA,
-            remoteAccountAddress: expectedAccountAddress,
+            expectedAccountAddress,
             provideAccount: true,
             depositPermit: [],
             multiCalls: [],
@@ -103,7 +99,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         await approveMessage({
             commandId,
             from: wrongSourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: portfolioLCA,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -112,24 +108,22 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         });
 
         await expect(
-            router.execute(commandId, wrongSourceChain, portfolioContractAccount, payload),
+            router.execute(commandId, wrongSourceChain, portfolioLCA, payload),
         ).to.be.revertedWithCustomError(router, 'InvalidSourceChain');
     });
 
-    it('should reject invalid source address', async () => {
+    it('should reject when source address does not match expected account', async () => {
         const commandId = getCommandId();
         const wrongSourceAddress = 'agoric1wrongaddress123456789abcdefghijk';
 
         const expectedAccountAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
-            portfolioContractCaip2,
             portfolioLCA,
         );
 
         const payload = encodeRouterPayload({
             id: 'tx3',
-            portfolioLCA,
-            remoteAccountAddress: expectedAccountAddress,
+            expectedAccountAddress,
             provideAccount: true,
             depositPermit: [],
             multiCalls: [],
@@ -148,9 +142,28 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
             abiCoder,
         });
 
-        await expect(
-            router.execute(commandId, sourceChain, wrongSourceAddress, payload),
-        ).to.be.revertedWithCustomError(router, 'InvalidSourceAddress');
+        const tx = await router.execute(commandId, sourceChain, wrongSourceAddress, payload);
+        const receipt = await tx.wait();
+
+        const routerInterface = router.interface;
+        const parsedLogs = receipt?.logs
+            .map((log: { topics: string[]; data: string }) => {
+                try {
+                    return routerInterface.parseLog(log);
+                } catch {
+                    return null;
+                }
+            })
+            .filter(Boolean);
+
+        // Check OperationResult event - should fail due to address mismatch
+        const errorEvent = parsedLogs.find((e: { name: string }) => e?.name === 'OperationResult');
+        expect(errorEvent.args.success).to.equal(false);
+
+        // Decode the error reason - should be AddressMismatch from factory
+        const factoryInterface = factory.interface;
+        const decodedError = factoryInterface.parseError(errorEvent.args.reason);
+        expect(decodedError?.name).to.equal('AddressMismatch');
     });
 
     it('should provide RemoteAccount via router', async () => {
@@ -159,14 +172,12 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
 
         const expectedAccountAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
-            portfolioContractCaip2,
             portfolioLCA,
         );
 
         const payload = encodeRouterPayload({
             id: txId,
-            portfolioLCA,
-            remoteAccountAddress: expectedAccountAddress,
+            expectedAccountAddress,
             provideAccount: true,
             depositPermit: [],
             multiCalls: [],
@@ -177,7 +188,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: portfolioLCA,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -185,7 +196,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
             abiCoder,
         });
 
-        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
+        const tx = await router.execute(commandId, sourceChain, portfolioLCA, payload);
         const receipt = await tx.wait();
 
         // Parse events
@@ -207,13 +218,10 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         expect(successEvent.args.id.hash).to.equal(keccak256(toBytes(txId)));
         expect(successEvent.args.success).to.equal(true);
 
-        // Verify RemoteAccount exists with correct ownership and principal
+        // Verify RemoteAccount exists with correct ownership
         const RemoteAccountContract = await ethers.getContractFactory('RemoteAccount');
         const account = RemoteAccountContract.attach(expectedAccountAddress);
         expect(await account.owner()).to.equal(router.target);
-        const [caip2, principalAccount] = await account.principal();
-        expect(caip2).to.equal(portfolioContractCaip2);
-        expect(principalAccount).to.equal(portfolioLCA);
     });
 
     it('should be idempotent - providing same account twice succeeds with created=false', async () => {
@@ -222,14 +230,12 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         // Use the same portfolioLCA from the first test - account already exists
         const expectedAccountAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
-            portfolioContractCaip2,
             portfolioLCA,
         );
 
         const payload = encodeRouterPayload({
             id: txId,
-            portfolioLCA,
-            remoteAccountAddress: expectedAccountAddress,
+            expectedAccountAddress,
             provideAccount: true,
             depositPermit: [],
             multiCalls: [],
@@ -240,7 +246,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: portfolioLCA,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -248,7 +254,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
             abiCoder,
         });
 
-        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
+        const tx = await router.execute(commandId, sourceChain, portfolioLCA, payload);
         const receipt = await tx.wait();
 
         // Parse events
@@ -284,14 +290,12 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         // Compute wrong address (using different portfolioLCA)
         const wrongAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
-            portfolioContractCaip2,
             'agoric1differentlca123456789abcdefghijk',
         );
 
         const payload = encodeRouterPayload({
             id: txId,
-            portfolioLCA: newPortfolioLCA,
-            remoteAccountAddress: wrongAddress, // Wrong address for this portfolioLCA
+            expectedAccountAddress: wrongAddress, // Wrong address for this portfolioLCA
             provideAccount: true,
             depositPermit: [],
             multiCalls: [],
@@ -299,10 +303,11 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
 
         const payloadHash = keccak256(toBytes(payload));
 
+        // Use newPortfolioLCA as source address (fresh account)
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: newPortfolioLCA,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -310,7 +315,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
             abiCoder,
         });
 
-        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
+        const tx = await router.execute(commandId, sourceChain, newPortfolioLCA, payload);
         const receipt = await tx.wait();
 
         // Parse events
@@ -342,7 +347,6 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         // Verify error contains the expected vs actual addresses
         const expectedCorrectAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
-            portfolioContractCaip2,
             newPortfolioLCA,
         );
         expect(decodedError?.args.expected).to.equal(wrongAddress);
@@ -358,15 +362,13 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
 
         const expectedAccountAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
-            portfolioContractCaip2,
             transferTestLCA,
         );
 
         // Step 1: Create account via router
         const payload1 = encodeRouterPayload({
             id: txId1,
-            portfolioLCA: transferTestLCA,
-            remoteAccountAddress: expectedAccountAddress,
+            expectedAccountAddress,
             provideAccount: true,
             depositPermit: [],
             multiCalls: [],
@@ -377,7 +379,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         await approveMessage({
             commandId: commandId1,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: transferTestLCA,
             targetAddress: router.target,
             payload: payloadHash1,
             owner,
@@ -385,7 +387,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
             abiCoder,
         });
 
-        await router.execute(commandId1, sourceChain, portfolioContractAccount, payload1);
+        await router.execute(commandId1, sourceChain, transferTestLCA, payload1);
 
         // Step 2: Transfer ownership away from router (impersonate router)
         const account = await ethers.getContractAt('RemoteAccount', expectedAccountAddress);
@@ -403,8 +405,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         // Step 3: Try to provide again via router - should fail
         const payload2 = encodeRouterPayload({
             id: txId2,
-            portfolioLCA: transferTestLCA,
-            remoteAccountAddress: expectedAccountAddress,
+            expectedAccountAddress,
             provideAccount: true,
             depositPermit: [],
             multiCalls: [],
@@ -415,7 +416,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         await approveMessage({
             commandId: commandId2,
             from: sourceChain,
-            sourceAddress: portfolioContractAccount,
+            sourceAddress: transferTestLCA,
             targetAddress: router.target,
             payload: payloadHash2,
             owner,
@@ -423,12 +424,7 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
             abiCoder,
         });
 
-        const tx = await router.execute(
-            commandId2,
-            sourceChain,
-            portfolioContractAccount,
-            payload2,
-        );
+        const tx = await router.execute(commandId2, sourceChain, transferTestLCA, payload2);
         const receipt = await tx.wait();
 
         const routerInterface = router.interface;
@@ -463,7 +459,6 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         // Compute the expected address
         const expectedAddress = await computeRemoteAccountAddress(
             factory.target.toString(),
-            portfolioContractCaip2,
             frontRunLCA,
         );
 
@@ -471,7 +466,6 @@ describe('PortfolioRouter - RemoteAccountCreation', () => {
         // This should revert because factory only accepts calls from its owner (router)
         await expect(
             factory.provide(
-                portfolioContractCaip2,
                 frontRunLCA,
                 addr1.address, // attacker tries to use themselves as router
                 expectedAddress,
