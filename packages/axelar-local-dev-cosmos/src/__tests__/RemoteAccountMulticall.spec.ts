@@ -549,7 +549,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         // New router should succeed
         const successEvent2 = parsedLogs3.find((e) => e.name === 'OperationResult')!;
         expect(successEvent2.args.id.hash).to.equal(keccak256(toBytes(txId3)));
-        console.log('REASON', successEvent2.args.reason);
         expect(successEvent2.args.success).to.equal(true);
         expect(await multicallTarget.getValue()).to.equal(999n);
     });
