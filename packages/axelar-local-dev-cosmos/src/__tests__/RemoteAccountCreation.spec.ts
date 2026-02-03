@@ -89,7 +89,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const payload = encodeRouterPayload({
             id: 'tx2',
             expectedAccountAddress,
-            provideAccount: true,
             depositPermit: [],
             multiCalls: [],
         });
@@ -124,7 +123,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const payload = encodeRouterPayload({
             id: 'tx3',
             expectedAccountAddress,
-            provideAccount: true,
             depositPermit: [],
             multiCalls: [],
         });
@@ -178,7 +176,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress,
-            provideAccount: true,
             depositPermit: [],
             multiCalls: [],
         });
@@ -236,7 +233,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress,
-            provideAccount: true,
             depositPermit: [],
             multiCalls: [],
         });
@@ -296,7 +292,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: wrongAddress, // Wrong address for this portfolioLCA
-            provideAccount: true,
             depositPermit: [],
             multiCalls: [],
         });
@@ -369,7 +364,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const payload1 = encodeRouterPayload({
             id: txId1,
             expectedAccountAddress,
-            provideAccount: true,
             depositPermit: [],
             multiCalls: [],
         });
@@ -406,7 +400,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const payload2 = encodeRouterPayload({
             id: txId2,
             expectedAccountAddress,
-            provideAccount: true,
             depositPermit: [],
             multiCalls: [],
         });
