@@ -2,6 +2,9 @@
 pragma solidity ^0.8.20;
 
 import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
+import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
+import { RemoteRepresentative } from './RemoteRepresentative.sol';
+import { OwnableByReplaceableOwner } from './OwnableByReplaceableOwner.sol';
 import { RemoteAccount } from './RemoteAccount.sol';
 
 /**
@@ -9,15 +12,24 @@ import { RemoteAccount } from './RemoteAccount.sol';
  * @notice A CREATE2 factory for deploying RemoteAccount contracts
  * @dev The RemoteAccountFactory is a non-replaceable contract deploying
         RemoteAccount contracts at predictable addresses on behalf of a portfolio
-        manager contract designated as principal. It is itself a RemoteAccount
-        whose owner is the current PortfolioRouter for that principal contract.
+        manager contract designated as principal. It implements IRemoteAccount
+        but restricts executeCalls to only target itself, providing a controlled
+        interface for the principal to invoke factory methods like provideForRouter.
         Besides creating RemoteAccount for the owner router, it can be invoked
         publicly to manually create RemoteAccount configured with the current
         router owner, as well as RemoteAccount for an arbitrary router through
-        relayed 
-        calls provide() to create/verify RemoteAccounts.
+        relayed calls to provideForRouter() via executeCalls.
  */
-contract RemoteAccountFactory is RemoteAccount, IRemoteAccountFactory {
+contract RemoteAccountFactory is
+    RemoteRepresentative,
+    OwnableByReplaceableOwner,
+    IRemoteAccount,
+    IRemoteAccountFactory
+{
+    event Received(address indexed sender, uint256 amount);
+
+    error InvalidCallTarget(address target);
+
     /**
      * @param principalCaip2 The caip2 of the principal for this RemoteAccountFactory
      * @param principalAccount The address of the principal for this RemoteAccountFactory
@@ -25,7 +37,55 @@ contract RemoteAccountFactory is RemoteAccount, IRemoteAccountFactory {
     constructor(
         string memory principalCaip2,
         string memory principalAccount
-    ) RemoteAccount(principalCaip2, principalAccount) {}
+    )
+        RemoteRepresentative(principalCaip2, principalAccount)
+        OwnableByReplaceableOwner(_msgSender())
+    {}
+
+    /**
+     * @notice Replace the owner with the specified address
+     * @dev External function checking that the caller is this contract itself
+     *      before invoking the replace owner behavior of OwnableByReplaceableOwner
+     *      which checks that the current owner has designated the new owner as
+     *      its replacement. Allows executeCalls to replace ownership, enforcing
+     *      that both the principal and the owner agree.
+     */
+    function replaceOwner(address newOwner) external {
+        // Allows the multicall to update the contract ownership
+        require(_msgSender() == address(this));
+        _replaceOwner(newOwner);
+    }
+
+    /**
+     * @notice Execute a batch of calls on behalf of the controller
+     * @dev Requires router ownership check AND principal is the source of calls (defense in depth).
+     *      All call targets MUST be address(this) - the factory only allows calls to itself.
+     * @param sourceCaip2 The caip2 of the source issuing the calls command
+     * @param sourceAccount The account of the source issuing calls command
+     * @param calls Array of contract calls to execute (all targets must be address(this))
+     */
+    function executeCalls(
+        string calldata sourceCaip2,
+        string calldata sourceAccount,
+        ContractCall[] calldata calls
+    ) external override onlyOwner checkPrincipal(sourceCaip2, sourceAccount) {
+        uint256 len = calls.length;
+        for (uint256 i = 0; i < len; ) {
+            if (calls[i].target != address(this)) {
+                revert InvalidCallTarget(calls[i].target);
+            }
+
+            (bool success, bytes memory reason) = calls[i].target.call(calls[i].data);
+
+            if (!success) {
+                revert ContractCallFailed(i, reason);
+            }
+
+            unchecked {
+                ++i;
+            }
+        }
+    }
 
     /**
      * @notice Check if a valid RemoteAccount exists at the given address
@@ -95,8 +155,8 @@ contract RemoteAccountFactory is RemoteAccount, IRemoteAccountFactory {
      * @dev Idempotent: calling multiple times with same params succeeds as
      *      long as the RemoteAccount's current owner matches the provided routerAddress.
      *      This allows an executeCall to create a RemoteAccount with an arbitrary
-     *      router address may, allowing the portfolio manager which is the principal of
-            this factory to create remote accounts for alternative routers it may use.
+     *      router address, allowing the portfolio manager which is the principal of
+     *      this factory to create remote accounts for alternative routers it may use.
      * @param principalCaip2 The caip2 of the principal for the RemoteAccount
      * @param principalAccount The address of the principal for the RemoteAccount
      * @param routerAddress The address of the router to use as owner of the RemoteAccount
@@ -171,11 +231,11 @@ contract RemoteAccountFactory is RemoteAccount, IRemoteAccountFactory {
         }
     }
 
-    receive() external payable override {
+    receive() external payable {
         emit Received(msg.sender, msg.value);
     }
 
-    fallback() external payable override {
+    fallback() external payable {
         emit Received(msg.sender, msg.value);
     }
 }
