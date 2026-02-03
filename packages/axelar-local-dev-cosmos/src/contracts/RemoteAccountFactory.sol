@@ -132,6 +132,19 @@ contract RemoteAccountFactory is
      * @notice Provide a RemoteAccount - creates if new, verifies if exists
      * @dev Idempotent: calling multiple times with same params is safe as
      *      long as the current owner matches between the factory and remote account.
+     *
+     *      The expectedRouter parameter is critical for safety:
+     *      - TOCTOU: Prevents time-of-check time-of-use races where the caller checks
+     *        owner() then calls provide(), but ownership changes in between. By validating
+     *        expectedRouter matches current owner at execution, caller intent is preserved.
+     *
+     *      - Router upgrades: When upgrading from router A to B, in-flight provide() calls
+     *        meant for router A will fail rather than creating accounts owned by router B.
+     *
+     *      - Reorgs: During blockchain reorganizations, if a router ownership transfer and
+     *        provide() call get reordered, the check ensures provide() fails rather than
+     *        creating accounts with unexpected ownership.
+     *
      * @param principalCaip2 The caip2 of the principal for the RemoteAccount
      * @param principalAccount The address of the principal for the RemoteAccount
      * @param expectedRouter The expected address of the router, must be current router of the factory

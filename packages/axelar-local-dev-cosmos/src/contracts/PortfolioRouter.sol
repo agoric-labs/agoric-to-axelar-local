@@ -126,6 +126,8 @@ contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRo
         require(msg.sender == address(this));
 
         address accountAddress = instruction.remoteAccountAddress;
+        // All portfolio LCAs share the same caip2 as the portfolio contract (both on Agoric),
+        // so we extract just the chain identifier from our principal.
         (string memory portfolioCaip2, ) = principal();
         string calldata portfolioAccount = instruction.portfolioLCA;
 
