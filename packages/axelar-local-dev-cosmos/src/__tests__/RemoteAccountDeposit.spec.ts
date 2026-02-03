@@ -126,7 +126,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: accountAddress,
-            provideAccount: true,
             depositPermit,
             multiCalls: [],
         });
@@ -199,7 +198,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: accountAddress,
-            provideAccount: false,
             depositPermit,
             multiCalls: [],
         });
@@ -265,7 +263,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: accountAddress,
-            provideAccount: false, // No provision
             depositPermit,
             multiCalls: [], // No multicall
         });
@@ -320,7 +317,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         const setupPayload = encodeRouterPayload({
             id: 'tx4',
             expectedAccountAddress: wrongAccountAddress,
-            provideAccount: true,
             depositPermit: [],
             multiCalls: [],
         });
@@ -362,7 +358,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: wrongAccountAddress, // But wrong account address
-            provideAccount: false,
             depositPermit,
             multiCalls: [],
         });
@@ -400,9 +395,10 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         expect(errorEvent.args.success).to.equal(false);
         expect(errorEvent.args.reason).to.not.equal('0x');
 
-        // Decode the error - should be InvalidRemoteAccount
-        const decodedError = router.interface.parseError(errorEvent.args.reason);
-        expect(decodedError?.name).to.equal('InvalidRemoteAccount');
-        expect(decodedError?.args.account).to.equal(wrongAccountAddress);
+        // Decode the error - should be AddressMismatch from factory
+        const decodedError = factory.interface.parseError(errorEvent.args.reason);
+        expect(decodedError?.name).to.equal('AddressMismatch');
+        expect(decodedError?.args.expected).to.equal(wrongAccountAddress);
+        expect(decodedError?.args.actual).to.equal(accountAddress);
     });
 });

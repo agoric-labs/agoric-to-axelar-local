@@ -19,7 +19,6 @@ struct RouterInstruction {
     ///      Used by a resolver to observe/trace transactions.
     string id;
     address expectedAccountAddress;
-    bool provideAccount;
     DepositPermit[] depositPermit;
     ContractCall[] multiCalls;
 }

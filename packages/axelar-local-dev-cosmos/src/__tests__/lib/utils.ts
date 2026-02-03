@@ -26,7 +26,6 @@ export interface DepositPermit {
 export interface RouterPayloadParams {
     id: string;
     expectedAccountAddress: `0x${string}`;
-    provideAccount: boolean;
     depositPermit?: DepositPermit[];
     multiCalls?: ContractCall[];
 }
@@ -57,7 +56,6 @@ export const computeRemoteAccountAddress = async (
 export const encodeRouterPayload = ({
     id,
     expectedAccountAddress,
-    provideAccount,
     depositPermit = [],
     multiCalls = [],
 }: RouterPayloadParams) => {
@@ -68,7 +66,6 @@ export const encodeRouterPayload = ({
                 components: [
                     { name: 'id', type: 'string' },
                     { name: 'expectedAccountAddress', type: 'address' },
-                    { name: 'provideAccount', type: 'bool' },
                     {
                         name: 'depositPermit',
                         type: 'tuple[]',
@@ -110,7 +107,6 @@ export const encodeRouterPayload = ({
             {
                 id,
                 expectedAccountAddress,
-                provideAccount,
                 depositPermit,
                 multiCalls,
             },

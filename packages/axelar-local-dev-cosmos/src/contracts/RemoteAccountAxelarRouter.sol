@@ -129,22 +129,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
         }
 
         // Provide or verify the remote account matches the source principal and owner
-        if (instruction.provideAccount) {
-            factory.provide(sourceAddress, address(this), expectedAccountAddress);
-        } else if (hasMultiCalls) {
-            // executeCalls will check this router is the owner of the account
-            if (factory.getRemoteAccountAddress(sourceAddress) != expectedAccountAddress) {
-                revert InvalidRemoteAccount(expectedAccountAddress);
-            }
-        } else {
-            // ask the factory to check ownership of the remote account since we
-            // won't be interacting with it directly
-            if (
-                !factory.verifyRemoteAccount(sourceAddress, address(this), expectedAccountAddress)
-            ) {
-                revert InvalidRemoteAccount(expectedAccountAddress);
-            }
-        }
+        factory.provide(sourceAddress, address(this), expectedAccountAddress);
 
         if (hasMultiCalls) {
             IRemoteAccount(expectedAccountAddress).executeCalls(instruction.multiCalls);

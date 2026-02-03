@@ -147,7 +147,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: accountAddress,
-            provideAccount: true,
             depositPermit: [],
             multiCalls,
         });
@@ -224,7 +223,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: accountAddress,
-            provideAccount: false,
             depositPermit: [],
             multiCalls,
         });
@@ -280,7 +278,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: accountAddress,
-            provideAccount: false,
             depositPermit: [],
             multiCalls,
         });
@@ -345,7 +342,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: accountAddress,
-            provideAccount: false,
             depositPermit: [],
             multiCalls,
         });
@@ -382,9 +378,9 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const errorEvent = parsedLogs.find((e: { name: string }) => e.name === 'OperationResult');
         expect(errorEvent.args.id.hash).to.equal(keccak256(toBytes(txId)));
         expect(errorEvent.args.success).to.equal(false);
-        // Decode error - should be InvalidRemoteAccount from router
-        const decodedError = router.interface.parseError(errorEvent.args.reason);
-        expect(decodedError?.name).to.equal('InvalidRemoteAccount');
+        // Decode error - should be AddressMismatch from factory
+        const decodedError = factory.interface.parseError(errorEvent.args.reason);
+        expect(decodedError?.name).to.equal('AddressMismatch');
     });
 
     it('should update owner of remote account through router authority + multicall', async () => {
@@ -437,7 +433,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: accountAddress,
-            provideAccount: false,
             depositPermit: [],
             multiCalls,
         });
@@ -491,7 +486,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload2 = encodeRouterPayload({
             id: txId2,
             expectedAccountAddress: accountAddress,
-            provideAccount: false,
             depositPermit: [],
             multiCalls: multiCalls2,
         });
@@ -519,10 +513,9 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         expect(errorEvent.args.id.hash).to.equal(keccak256(toBytes(txId2)));
         expect(errorEvent.args.success).to.equal(false);
 
-        // Decode error - should be OwnableUnauthorizedAccount
-        const ownableInterface = (await ethers.getContractFactory('RemoteAccount')).interface;
-        const decodedError = ownableInterface.parseError(errorEvent.args.reason);
-        expect(decodedError?.name).to.equal('OwnableUnauthorizedAccount');
+        // Decode error - should be InvalidAccountAtAddress from factory
+        const decodedError = factory.interface.parseError(errorEvent.args.reason);
+        expect(decodedError?.name).to.equal('InvalidAccountAtAddress');
 
         // New router should succeed
         const commandId3 = getCommandId();
@@ -531,7 +524,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload3 = encodeRouterPayload({
             id: txId3,
             expectedAccountAddress: accountAddress,
-            provideAccount: false,
             depositPermit: [],
             multiCalls: multiCalls2, // same setValue(999) call
         });
@@ -557,6 +549,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         // New router should succeed
         const successEvent2 = parsedLogs3.find((e) => e.name === 'OperationResult')!;
         expect(successEvent2.args.id.hash).to.equal(keccak256(toBytes(txId3)));
+        console.log('REASON', successEvent2.args.reason);
         expect(successEvent2.args.success).to.equal(true);
         expect(await multicallTarget.getValue()).to.equal(999n);
     });
@@ -606,7 +599,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: factory.target as `0x${string}`,
-            provideAccount: false,
             depositPermit: [],
             multiCalls,
         });
@@ -648,7 +640,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload2 = encodeRouterPayload({
             id: txId2,
             expectedAccountAddress: newAccountAddress,
-            provideAccount: true, // Create the new account
             depositPermit: [],
             multiCalls: [],
         });
@@ -689,7 +680,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload3 = encodeRouterPayload({
             id: txId3,
             expectedAccountAddress: anotherAccountAddress,
-            provideAccount: true,
             depositPermit: [],
             multiCalls: [],
         });
@@ -779,7 +769,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: factory.target as `0x${string}`,
-            provideAccount: false,
             depositPermit: [],
             multiCalls,
         });
@@ -839,7 +828,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload2 = encodeRouterPayload({
             id: txId2,
             expectedAccountAddress: newAccountAddress,
-            provideAccount: false,
             depositPermit: [],
             multiCalls: multiCalls2,
         });
@@ -872,7 +860,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload3 = encodeRouterPayload({
             id: txId3,
             expectedAccountAddress: newAccountAddress,
-            provideAccount: false,
             depositPermit: [],
             multiCalls: multiCalls2,
         });
@@ -902,9 +889,8 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const errorEvent = parsedLogs3.find((e) => e.name === 'OperationResult')!;
         expect(errorEvent.args.success).to.equal(false);
 
-        // Decode error - should be OwnableUnauthorizedAccount
-        const remoteAccountInterface = (await ethers.getContractFactory('RemoteAccount')).interface;
-        const decodedError = remoteAccountInterface.parseError(errorEvent.args.reason);
-        expect(decodedError?.name).to.equal('OwnableUnauthorizedAccount');
+        // Decode error - should be InvalidAccountAtAddress from factory
+        const decodedError = factory.interface.parseError(errorEvent.args.reason);
+        expect(decodedError?.name).to.equal('InvalidAccountAtAddress');
     });
 });

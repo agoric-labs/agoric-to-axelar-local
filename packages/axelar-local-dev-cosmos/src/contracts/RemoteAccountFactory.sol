@@ -52,15 +52,20 @@ contract RemoteAccountFactory is OwnableByReplaceableOwner, IRemoteAccount, IRem
 
     /**
      * @notice Compute the CREATE2 address for a RemoteAccount deployed by this factory
+     * @dev Return the address of this factory if the salt matches the factory's principal
      * @param salt The salt generated from the principal for the RemoteAccount
      * @return The deterministic address where the RemoteAccount is deployed
      */
     function _getRemoteAccountAddress(bytes32 salt) internal view returns (address) {
+        if (salt == _principalSalt) {
+            return address(this);
+        }
         return Create2.computeAddress(salt, _remoteAccountBytecodeHash);
     }
 
     /**
      * @notice Compute the CREATE2 address for a RemoteAccount deployed by this factory
+     * @dev Return the address of this factory if the principalAccount matches the factory's principal
      * @param principalAccount The address of the principal for the RemoteAccount
      * @return The deterministic address where the RemoteAccount is deployed
      */
@@ -68,33 +73,22 @@ contract RemoteAccountFactory is OwnableByReplaceableOwner, IRemoteAccount, IRem
         string calldata principalAccount
     ) public view override returns (address) {
         bytes32 salt = _getSalt(principalAccount);
-        if (salt == _principalSalt) {
-            return address(this);
-        }
         return _getRemoteAccountAddress(salt);
     }
 
     /**
-     * @notice Check if a valid RemoteAccount exists at the given address
-     * @dev Verifies code exists, address derives from the principal, and owner matches
+     * @notice Check if a RemoteAccount with the expected owner exists at the given address
+     * @dev Assumes caller derived account address from principal account, and verified code exists for address.
+     *      Checks that the owner matches.
+     *      TODO: check that contract is a RemoteAccount.
      * @param accountAddress The address to check
-     * @param salt The salt generated from the principal for the RemoteAccount
      * @param routerOwner The expected address of the current owner
      * @return true if valid account exists with matching principal and owner
      */
-    function _isValidExistingAccount(
+    function _verifyRemoteAccountOwner(
         address accountAddress,
-        bytes32 salt,
         address routerOwner
     ) internal view returns (bool) {
-        if (_getRemoteAccountAddress(salt) != accountAddress) {
-            return false;
-        }
-
-        if (accountAddress.code.length == 0) {
-            return false;
-        }
-
         if (accountAddress == address(this)) {
             if (owner() != routerOwner) {
                 return false;
@@ -129,9 +123,18 @@ contract RemoteAccountFactory is OwnableByReplaceableOwner, IRemoteAccount, IRem
         string calldata principalAccount,
         address expectedRouter,
         address accountAddress
-    ) external view override returns (bool) {
+    ) public view override returns (bool) {
         bytes32 salt = _getSalt(principalAccount);
-        return _isValidExistingAccount(accountAddress, salt, expectedRouter);
+
+        if (_getRemoteAccountAddress(salt) != accountAddress) {
+            return false;
+        }
+
+        if (accountAddress.code.length == 0) {
+            return false;
+        }
+
+        return _verifyRemoteAccountOwner(accountAddress, expectedRouter);
     }
 
     /**
@@ -161,6 +164,12 @@ contract RemoteAccountFactory is OwnableByReplaceableOwner, IRemoteAccount, IRem
         address expectedAddress
     ) external override returns (bool) {
         if (owner() != expectedRouter) {
+            // If the factory is used to "provide" a remote account for a different router,
+            // we can check whether that remote account already exists and is valid,
+            // but we cannot create a new one on behalf of another router.
+            if (verifyRemoteAccount(principalAccount, expectedRouter, expectedAddress)) {
+                return false;
+            }
             revert UnauthorizedRouter(expectedRouter);
         }
         return _provideForRouter(principalAccount, expectedRouter, expectedAddress);
@@ -208,25 +217,30 @@ contract RemoteAccountFactory is OwnableByReplaceableOwner, IRemoteAccount, IRem
         // from the current router setup.
         bytes32 salt = _getSalt(principalAccount);
 
-        try new RemoteAccount{ salt: salt }() returns (RemoteAccount account) {
-            address newAccount = address(account);
-            if (newAccount != expectedAddress) {
-                revert AddressMismatch(expectedAddress, newAccount);
-            }
-            // Immediately transfer ownership to router
-            // not using constructor args so that address only depends on immutable controller
-            // and not on transferable owner
-            account.transferOwnership(routerAddress);
+        address accountAddress = _getRemoteAccountAddress(salt);
 
-            emit RemoteAccountCreated(newAccount, principalAccount, routerAddress);
+        if (accountAddress != expectedAddress) {
+            revert AddressMismatch(expectedAddress, accountAddress);
+        }
+
+        if (accountAddress.code.length == 0) {
+            RemoteAccount newAccount = new RemoteAccount{ salt: salt }();
+            address newAccountAddress = address(newAccount);
+            assert(newAccountAddress == accountAddress);
+
+            // Immediately transfer ownership to router as an initialization step
+            // not using constructor args so that remote account address only depends
+            // on principal account through salt, and not on transferable owner.
+            newAccount.transferOwnership(routerAddress);
+
+            emit RemoteAccountCreated(newAccountAddress, principalAccount, routerAddress);
 
             return true;
-        } catch {
-            if (_isValidExistingAccount(expectedAddress, salt, routerAddress)) {
-                return false;
+        } else {
+            if (!_verifyRemoteAccountOwner(accountAddress, routerAddress)) {
+                revert InvalidAccountAtAddress(expectedAddress);
             }
-
-            revert InvalidAccountAtAddress(expectedAddress);
+            return false;
         }
     }
 
