@@ -109,7 +109,7 @@ contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRo
         uint256 len = instructions.length;
         for (uint256 i = 0; i < len; i++) {
             try this.processInstruction(instructions[i]) {
-                emit OperationResult(instructions[i].id, true, '0x');
+                emit OperationResult(instructions[i].id, true, "");
             } catch (bytes memory reason) {
                 emit OperationResult(instructions[i].id, false, reason);
             }
@@ -146,6 +146,8 @@ contract PortfolioRouter is AxelarExecutable, RemoteRepresentative, IPortfolioRo
                 revert InvalidRemoteAccount(accountAddress);
             }
 
+            // Use structured call (not generic encoded payload) to ensure transfer
+            // destination matches the verified accountAddress from the instruction.
             IPermit2.SignatureTransferDetails memory details = IPermit2.SignatureTransferDetails({
                 to: accountAddress,
                 requestedAmount: deposit.permit.permitted.amount
