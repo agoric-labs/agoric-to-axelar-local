@@ -1,13 +1,13 @@
 # Contract Deployment Guide
 
-This guide covers deploying `RemoteAccountFactory` and `PortfolioRouter` contracts across multiple EVM chains.
+This guide covers deploying `RemoteAccountFactory` and `RemoteAccountAxelarRouter` contracts across multiple EVM chains.
 
 ## Overview
 
-| Contract               | Purpose                                                     | Dependencies                     |
-| ---------------------- | ----------------------------------------------------------- | -------------------------------- |
-| `RemoteAccountFactory` | Creates deterministic RemoteAccount contracts using CREATE2 | None                             |
-| `PortfolioRouter`      | Single Axelar GMP entry point for remote account operations | RemoteAccountFactory, AGORIC_LCA |
+| Contract                    | Purpose                                                     | Dependencies         |
+| --------------------------- | ----------------------------------------------------------- | -------------------- |
+| `RemoteAccountFactory`      | Creates deterministic RemoteAccount contracts using CREATE2 | None                 |
+| `RemoteAccountAxelarRouter` | Single Axelar GMP entry point for remote account operations | RemoteAccountFactory |
 
 ## Prerequisites
 
@@ -43,26 +43,31 @@ This guide covers deploying `RemoteAccountFactory` and `PortfolioRouter` contrac
 Deploy contracts in this order due to dependencies:
 
 ```
-1. RemoteAccountFactory  (no dependencies)
+1. RemoteAccountFactory        (no dependencies)
          ↓
-2. PortfolioRouter       (requires RemoteAccountFactory address + AGORIC_LCA)
+2. RemoteAccountAxelarRouter   (requires RemoteAccountFactory address)
+                               (automatically transfers factory ownership)
 ```
 
 ## Deploying RemoteAccountFactory
 
-`RemoteAccountFactory` has no constructor arguments and can be deployed directly.
+`RemoteAccountFactory` requires principal CAIP2 and account constructor arguments to identify the controlling portfolio contract.
 
 ### Single Chain
 
 ```bash
 cd packages/axelar-local-dev-cosmos
-./scripts/deploy.sh <network> remoteAccountFactory
+./scripts/deploy.sh <network> remoteAccountFactory [owner_type]
 ```
 
 Example:
 
 ```bash
+# Deploy with ymax0 principal (default)
 ./scripts/deploy.sh eth-sepolia remoteAccountFactory
+
+# Deploy with ymax1 principal
+./scripts/deploy.sh eth-sepolia remoteAccountFactory ymax1
 ```
 
 ### Multi-Chain (from repo root)
@@ -78,64 +83,45 @@ npm run deploy:all -- -c remoteAccountFactory --mainnet
 npm run deploy:all -- -c remoteAccountFactory --chains eth-sepolia,fuji,base-sepolia
 ```
 
-## Deploying PortfolioRouter
+## Deploying RemoteAccountAxelarRouter
 
-`PortfolioRouter` requires the `REMOTE_ACCOUNT_FACTORY` environment variable. The `AGORIC_LCA` is optional and defaults to ymax0/ymax1 addresses based on network and owner type.
+`RemoteAccountAxelarRouter` requires the following environment variables:
 
-| Variable                 | Required | Description                                                    |
-| ------------------------ | -------- | -------------------------------------------------------------- |
-| `REMOTE_ACCOUNT_FACTORY` | Yes      | Address of the deployed RemoteAccountFactory contract          |
-| `AGORIC_LCA`             | No       | Authorized Agoric LCA address (defaults to ymax0/ymax1 values) |
+| Variable                 | Required | Description                                           |
+| ------------------------ | -------- | ----------------------------------------------------- |
+| `REMOTE_ACCOUNT_FACTORY` | Yes      | Address of the deployed RemoteAccountFactory contract |
+| `OWNER_AUTHORITY`        | Yes      | Address authorized to designate router replacement    |
 
-### Default AGORIC_LCA Values
-
-| Network  | Owner Type | AGORIC_LCA                                                           |
-| -------- | ---------- | -------------------------------------------------------------------- |
-| Mainnet  | ymax0      | `agoric1wl2529tfdlfvure7mw6zteam02prgaz88p0jru4tlzuxdawrdyys6jlmnq`   |
-| Mainnet  | ymax1      | `agoric13ecz27mm2ug5kv96jyal2k6z8874mxzs4m4yuet36s4nqdl0ey6qr09p74`   |
-| Testnet  | ymax0      | `agoric18ek5td2h397cmejnlndes50k84ywx82kau7aff80t74fcxmjnzqstjclj0`   |
-| Testnet  | ymax1      | `agoric1ps63986jnululzkmg7h3nhs5at6vkatcgsjy9ttgztykuaepwpxsrw2sus`   |
+**Note:** Factory ownership is automatically transferred to the router during deployment.
 
 ### Single Chain
 
 ```bash
 cd packages/axelar-local-dev-cosmos
 
-# Using default AGORIC_LCA (ymax0)
-REMOTE_ACCOUNT_FACTORY=0x... ./scripts/deploy.sh <network> portfolioRouter
-
-# Using ymax1 AGORIC_LCA
-REMOTE_ACCOUNT_FACTORY=0x... ./scripts/deploy.sh <network> portfolioRouter ymax1
-
-# Using custom AGORIC_LCA
-REMOTE_ACCOUNT_FACTORY=0x... AGORIC_LCA=agoric1custom... ./scripts/deploy.sh <network> portfolioRouter
+REMOTE_ACCOUNT_FACTORY=0x... OWNER_AUTHORITY=0x... ./scripts/deploy.sh <network> portfolioRouter
 ```
 
 Example:
 
 ```bash
-# Deploy with default ymax0 AGORIC_LCA
 REMOTE_ACCOUNT_FACTORY=0x1234567890abcdef1234567890abcdef12345678 \
+OWNER_AUTHORITY=0xabcd1234567890abcdef1234567890abcdef5678 \
 ./scripts/deploy.sh eth-sepolia portfolioRouter
-
-# Deploy with ymax1 AGORIC_LCA
-REMOTE_ACCOUNT_FACTORY=0x1234567890abcdef1234567890abcdef12345678 \
-./scripts/deploy.sh eth-sepolia portfolioRouter ymax1
 ```
 
 ### Multi-Chain (from repo root)
 
 ```bash
-# All testnets with default ymax0 AGORIC_LCA
-REMOTE_ACCOUNT_FACTORY=0x... npm run deploy:all -- -c portfolioRouter --testnet
+# All testnets
+REMOTE_ACCOUNT_FACTORY=0x... OWNER_AUTHORITY=0x... \
+npm run deploy:all -- -c portfolioRouter --testnet
 
-# All testnets with ymax1 AGORIC_LCA
-REMOTE_ACCOUNT_FACTORY=0x... npm run deploy:all -- -c portfolioRouter -o ymax1 --testnet
+# All mainnets
+REMOTE_ACCOUNT_FACTORY=0x... OWNER_AUTHORITY=0x... \
+npm run deploy:all -- -c portfolioRouter --mainnet
 
-# All mainnets with default ymax0 AGORIC_LCA
-REMOTE_ACCOUNT_FACTORY=0x... npm run deploy:all -- -c portfolioRouter --mainnet
-
-# Specific chains with custom AGORIC_LCA
-REMOTE_ACCOUNT_FACTORY=0x... AGORIC_LCA=agoric1custom... \
+# Specific chains
+REMOTE_ACCOUNT_FACTORY=0x... OWNER_AUTHORITY=0x... \
 npm run deploy:all -- -c portfolioRouter --chains eth-sepolia,fuji
 ```

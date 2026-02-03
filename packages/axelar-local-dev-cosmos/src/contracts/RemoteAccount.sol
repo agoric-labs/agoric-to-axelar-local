@@ -7,7 +7,7 @@ import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
 /**
  * @title RemoteAccount
  * @notice A wallet contract representing a designated remote account, controlled
-           by a replaceable PortfolioRouter owner. 
+           by a replaceable RemoteAccountAxelarRouter owner.
  * @dev Uses a OwnableByReplaceableOwner, derived from OZ Ownable for address-based
         ownership of the router, and a similar RemoteRepresentative contract to
         designate the principal remote account this wallet contract is acting on
