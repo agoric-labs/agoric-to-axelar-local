@@ -473,6 +473,6 @@ sequenceDiagram
 
 **Migration Features**:
 - Non-disruptive: Can migrate one account at a time
-- Safe: Requires both old and new router agreement
+- Safe: Requires both owner of old router and portfolio manager agreement
 - Flexible: RemoteAccount addresses remain constant
 - Auditable: All transfers via on-chain multicalls
