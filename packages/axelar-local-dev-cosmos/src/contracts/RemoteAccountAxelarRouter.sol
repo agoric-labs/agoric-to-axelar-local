@@ -3,32 +3,42 @@ pragma solidity ^0.8.20;
 
 import { AxelarExecutable } from '@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol';
 import { Ownable } from '@openzeppelin/contracts/access/Ownable.sol';
+import { Pausable } from '@openzeppelin/contracts/utils/Pausable.sol';
 import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
 import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
+import { ImmutableOwnable } from './ImmutableOwnable.sol';
 import { IRemoteAccountRouter, IPermit2, DepositPermit, RemoteAccountInstruction, UpdateOwnerInstruction, ProvideForRouterInstruction } from './interfaces/IRemoteAccountRouter.sol';
 
 /**
  * @title RemoteAccountAxelarRouter
  * @notice The single AxelarExecutable entry point for all remote account operations
  * @dev Handles account creation, deposits, and multicalls atomically.
- *      Each RemoteAccount is owned by this router, enabling future migration
+ *      Each RemoteAccount and the factory is owned by this router, enabling future migration
  *      by deploying a new router and transferring ownership.
  *
- *      Migration to a new router can be done via multicall:
- *      Agoric sends a message with multiCalls containing:
- *        target: remoteAccountAddress
- *        data: abi.encodeCall(Ownable.transferOwnership, (newRouterAddress))
- *      This makes RemoteAccount call itself to transfer ownership to the new router.
+ *      Migration to a new router is done in 2 steps:
+ *      - owner of the current router designates a successor
+ *      - each principal of contracts owned by this router (RemoteAccount and Factory)
+ *        sends an UpdateOwner instruction to the current router asking to update their
+ *        owner to that recorded successor.
+ *      We use an immutable owner for the router, changing owner requires designating a
+ *      successor router with a different owner. This way a leak of owner credentials
+ *      does not grant exclusive access to the router's successor mechanism, maintaining
+ *      the possibility to transition owned contracts to a rightful successor.
  */
-contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
+contract RemoteAccountAxelarRouter is
+    AxelarExecutable,
+    ImmutableOwnable,
+    Pausable,
+    IRemoteAccountRouter
+{
     IRemoteAccountFactory public immutable override factory;
     IPermit2 public immutable override permit2;
 
     string private axelarSourceChain;
     bytes32 private immutable axelarSourceChainHash;
 
-    address private immutable ownerAuthority;
-    address public replacementOwner;
+    address public successor;
 
     error InvalidSourceChain(string expected, string actual);
     error InvalidSourceAddress(string expected, string actual);
@@ -43,19 +53,17 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
      * @param axelarSourceChain_ The source chain name
      * @param factory_ The RemoteAccountFactory address
      * @param permit2_ The Permit2 contract address
-     * @param ownerAuthority_ The address authorized to designate a new owner
+     * @param owner The address authorized to designate a successor
      */
     constructor(
         address axelarGateway,
         string memory axelarSourceChain_,
         address factory_,
         address permit2_,
-        address ownerAuthority_
-    ) AxelarExecutable(axelarGateway) {
+        address owner
+    ) AxelarExecutable(axelarGateway) ImmutableOwnable(owner) {
         factory = IRemoteAccountFactory(factory_);
         permit2 = IPermit2(permit2_);
-
-        ownerAuthority = ownerAuthority_;
 
         axelarSourceChain = axelarSourceChain_;
         axelarSourceChainHash = keccak256(bytes(axelarSourceChain_));
@@ -63,10 +71,11 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
 
     /**
      * @notice Internal handler for Axelar GMP messages
-     * @dev Validates source chain and address, then processes the payload
-     * @param sourceChain The source chain (must be "agoric")
-     * @param sourceAddress The source address (must be agoricLCA)
-     * @param payload The encoded RouterPayload
+     * @dev Validates source chain, then decodes the payload and processes it
+     *      The source address is validated against the payload data by each processor.
+     * @param sourceChain The source chain
+     * @param sourceAddress The source address
+     * @param payload The router instruction encoded as a call selector
      */
     function _execute(
         bytes32 /*commandId*/,
@@ -128,7 +137,8 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
     /**
      * @notice Process the remote account instruction in order: deposit -> provide -> multicall
      * @dev This is an external function which can only be called by this contract
-     * Used to create a call stack that can be reverted atomically
+     *      Used to create a call stack that can be reverted atomically
+     *      Can only be called when the contract is not paused
      * @param sourceAddress The principal account address of the remote account
      * @param expectedAccountAddress The expected account address corresponding to the source address
      * @param instruction The decoded RemoteAccountInstruction
@@ -137,7 +147,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
         string calldata sourceAddress,
         address expectedAccountAddress,
         RemoteAccountInstruction calldata instruction
-    ) external override {
+    ) external override whenNotPaused {
         require(msg.sender == address(this));
 
         bool hasDeposit = instruction.depositPermit.length > 0;
@@ -177,7 +187,9 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
     /**
      * @notice Process the update owner instruction
      * @dev This is an external function which can only be called by this contract
-     * Used to create a call stack that can be reverted atomically
+     *      Used to create a call stack that can be reverted atomically
+     *      Update owner can be called in any paused or unpaused state
+     *      The owned contract can be a RemoteAccount or the factory
      * @param sourceAddress The principal account address of the owned contract
      * @param expectedAccountAddress The expected contract address corresponding to the principal address
      * @param instruction The decoded UpdateOwnerInstruction
@@ -191,11 +203,16 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
 
         address newOwner = instruction.newOwner;
 
-        if (newOwner != replacementOwner) {
+        if (newOwner != successor) {
             revert Ownable.OwnableInvalidOwner(newOwner);
         }
 
+        if (newOwner == address(0)) {
+            revert Ownable.OwnableInvalidOwner(address(0));
+        }
+
         // Provide or verify the remote account matches the source principal and owner
+        // The factory recognizes its principal and checks against its own address and current owner
         factory.provide(sourceAddress, address(this), expectedAccountAddress);
 
         Ownable(expectedAccountAddress).transferOwnership(newOwner);
@@ -231,11 +248,16 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
         );
     }
 
-    function replaceOwner(address newOwner) external {
-        if (msg.sender != ownerAuthority) {
-            revert UnauthorizedAuthority(ownerAuthority, msg.sender);
-        }
-        replacementOwner = newOwner;
+    function setSuccessor(address newSuccessor) external onlyOwner {
+        successor = newSuccessor;
+    }
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
     }
 
     receive() external payable {

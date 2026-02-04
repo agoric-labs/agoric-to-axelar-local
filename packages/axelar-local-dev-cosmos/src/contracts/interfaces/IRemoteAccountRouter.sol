@@ -51,7 +51,7 @@ interface IRemoteAccountRouter {
 
     function permit2() external view returns (IPermit2);
 
-    function replacementOwner() external view returns (address);
+    function successor() external view returns (address);
 
     function processRemoteAccountInstruction(
         string calldata sourceAddress,

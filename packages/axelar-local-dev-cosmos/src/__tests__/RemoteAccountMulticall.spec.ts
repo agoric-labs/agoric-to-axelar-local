@@ -407,11 +407,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         );
         await newRouter.waitForDeployment();
 
-        // Old router authority pre-designates the new owner
-        await router.replaceOwner(newRouter.target);
+        // Old router owner pre-designates the successor
+        await router.setSuccessor(newRouter.target);
 
-        // Verify replacement owner was set
-        expect(await router.replacementOwner()).to.equal(newRouter.target);
+        // Verify successor was set
+        expect(await router.successor()).to.equal(newRouter.target);
 
         // Verify RemoteAccount is still owned by old router before transfer
         const remoteAccount = await ethers.getContractAt('RemoteAccount', accountAddress);
@@ -564,8 +564,8 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         );
         await newRouter.waitForDeployment();
 
-        // Old router authority pre-designates the new owner
-        await router.replaceOwner(newRouter.target);
+        // Old router owner pre-designates its successor
+        await router.setSuccessor(newRouter.target);
 
         // Verify factory is currently owned by old router
         expect(await factory.owner()).to.equal(router.target);
