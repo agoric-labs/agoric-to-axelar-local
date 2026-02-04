@@ -89,8 +89,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const payload = encodeRouterPayload({
             id: 'tx2',
             expectedAccountAddress,
-            depositPermit: [],
-            multiCalls: [],
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit: [],
+                multiCalls: [],
+            },
         });
 
         const payloadHash = keccak256(toBytes(payload));
@@ -123,8 +126,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const payload = encodeRouterPayload({
             id: 'tx3',
             expectedAccountAddress,
-            depositPermit: [],
-            multiCalls: [],
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit: [],
+                multiCalls: [],
+            },
         });
 
         const payloadHash = keccak256(toBytes(payload));
@@ -176,8 +182,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress,
-            depositPermit: [],
-            multiCalls: [],
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit: [],
+                multiCalls: [],
+            },
         });
 
         const payloadHash = keccak256(toBytes(payload));
@@ -233,8 +242,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress,
-            depositPermit: [],
-            multiCalls: [],
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit: [],
+                multiCalls: [],
+            },
         });
 
         const payloadHash = keccak256(toBytes(payload));
@@ -292,8 +304,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: wrongAddress, // Wrong address for this portfolioLCA
-            depositPermit: [],
-            multiCalls: [],
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit: [],
+                multiCalls: [],
+            },
         });
 
         const payloadHash = keccak256(toBytes(payload));
@@ -364,8 +379,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const payload1 = encodeRouterPayload({
             id: txId1,
             expectedAccountAddress,
-            depositPermit: [],
-            multiCalls: [],
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit: [],
+                multiCalls: [],
+            },
         });
 
         const payloadHash1 = keccak256(toBytes(payload1));
@@ -400,8 +418,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const payload2 = encodeRouterPayload({
             id: txId2,
             expectedAccountAddress,
-            depositPermit: [],
-            multiCalls: [],
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit: [],
+                multiCalls: [],
+            },
         });
 
         const payloadHash2 = keccak256(toBytes(payload2));

@@ -147,8 +147,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: accountAddress,
-            depositPermit: [],
-            multiCalls,
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit: [],
+                multiCalls,
+            },
         });
 
         const payloadHash = keccak256(toBytes(payload));
@@ -223,8 +226,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: accountAddress,
-            depositPermit: [],
-            multiCalls,
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit: [],
+                multiCalls,
+            },
         });
 
         const payloadHash = keccak256(toBytes(payload));
@@ -278,8 +284,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: accountAddress,
-            depositPermit: [],
-            multiCalls,
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit: [],
+                multiCalls,
+            },
         });
 
         const payloadHash = keccak256(toBytes(payload));
@@ -342,8 +351,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: accountAddress,
-            depositPermit: [],
-            multiCalls,
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit: [],
+                multiCalls,
+            },
         });
 
         const payloadHash = keccak256(toBytes(payload));
@@ -405,36 +417,17 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const remoteAccount = await ethers.getContractAt('RemoteAccount', accountAddress);
         expect(await remoteAccount.owner()).to.equal(router.target);
 
-        // Execute multicall to transfer ownership
+        // Execute UpdateOwner to transfer ownership
         const commandId = getCommandId();
         const txId = 'ownerUpdate1';
-
-        // Encode call to RemoteAccount.replaceOwner(newRouter)
-        const replaceOwnerData = encodeFunctionData({
-            abi: [
-                {
-                    name: 'replaceOwner',
-                    type: 'function',
-                    inputs: [{ name: 'newOwner', type: 'address' }],
-                },
-            ],
-            functionName: 'replaceOwner',
-            args: [newRouter.target as `0x${string}`],
-        });
-
-        // The multicall targets the RemoteAccount itself to call replaceOwner
-        const multiCalls: ContractCall[] = [
-            {
-                target: accountAddress,
-                data: replaceOwnerData,
-            },
-        ];
 
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: accountAddress,
-            depositPermit: [],
-            multiCalls,
+            instructionType: 'UpdateOwner',
+            instruction: {
+                newOwner: newRouter.target as `0x${string}`,
+            },
         });
 
         const payloadHash = keccak256(toBytes(payload));
@@ -486,8 +479,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload2 = encodeRouterPayload({
             id: txId2,
             expectedAccountAddress: accountAddress,
-            depositPermit: [],
-            multiCalls: multiCalls2,
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit: [],
+                multiCalls: multiCalls2,
+            },
         });
 
         const payloadHash2 = keccak256(toBytes(payload2));
@@ -524,8 +520,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload3 = encodeRouterPayload({
             id: txId3,
             expectedAccountAddress: accountAddress,
-            depositPermit: [],
-            multiCalls: multiCalls2, // same setValue(999) call
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit: [],
+                multiCalls: multiCalls2, // same setValue(999) call
+            },
         });
 
         const payloadHash3 = keccak256(toBytes(payload3));
@@ -571,35 +570,17 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         // Verify factory is currently owned by old router
         expect(await factory.owner()).to.equal(router.target);
 
-        // Transfer factory ownership via multicall
+        // Transfer factory ownership via UpdateOwner
         const commandId = getCommandId();
         const txId = 'factoryOwnerUpdate1';
-
-        const replaceOwnerData = encodeFunctionData({
-            abi: [
-                {
-                    name: 'replaceOwner',
-                    type: 'function',
-                    inputs: [{ name: 'newOwner', type: 'address' }],
-                },
-            ],
-            functionName: 'replaceOwner',
-            args: [newRouter.target as `0x${string}`],
-        });
-
-        // Target the factory to call replaceOwner
-        const multiCalls: ContractCall[] = [
-            {
-                target: factory.target as `0x${string}`,
-                data: replaceOwnerData,
-            },
-        ];
 
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: factory.target as `0x${string}`,
-            depositPermit: [],
-            multiCalls,
+            instructionType: 'UpdateOwner',
+            instruction: {
+                newOwner: newRouter.target as `0x${string}`,
+            },
         });
 
         const payloadHash = keccak256(toBytes(payload));
@@ -639,8 +620,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload2 = encodeRouterPayload({
             id: txId2,
             expectedAccountAddress: newAccountAddress,
-            depositPermit: [],
-            multiCalls: [],
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit: [],
+                multiCalls: [],
+            },
         });
 
         const payloadHash2 = keccak256(toBytes(payload2));
@@ -679,8 +663,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload3 = encodeRouterPayload({
             id: txId3,
             expectedAccountAddress: anotherAccountAddress,
-            depositPermit: [],
-            multiCalls: [],
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit: [],
+                multiCalls: [],
+            },
         });
 
         const payloadHash3 = keccak256(toBytes(payload3));
@@ -736,40 +723,21 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
             newPortfolioLCA,
         );
 
-        // Encode call to factory.provideForRouter() - creates account owned by targetRouter
-        const provideForRouterData = encodeFunctionData({
-            abi: [
-                {
-                    name: 'provideForRouter',
-                    type: 'function',
-                    inputs: [
-                        { name: 'principalAccount', type: 'string' },
-                        { name: 'routerAddress', type: 'address' },
-                        { name: 'expectedAddress', type: 'address' },
-                    ],
-                },
-            ],
-            functionName: 'provideForRouter',
-            args: [newPortfolioLCA, targetRouter.target as `0x${string}`, newAccountAddress],
-        });
-
-        // Multicall targets the factory to call provideForRouter
+        // router will call the factory's provideForRouter
         // Must be executed by the router that currently owns the factory
         const commandId = getCommandId();
         const txId = 'tx301';
 
-        const multiCalls: ContractCall[] = [
-            {
-                target: factory.target as `0x${string}`,
-                data: provideForRouterData,
-            },
-        ];
-
+        // creates account owned by targetRouter
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: factory.target as `0x${string}`,
-            depositPermit: [],
-            multiCalls,
+            instructionType: 'ProvideForRouter',
+            instruction: {
+                principalAccount: newPortfolioLCA,
+                router: targetRouter.target as `0x${string}`,
+                expectedAccountAddress: newAccountAddress,
+            },
         });
 
         const payloadHash = keccak256(toBytes(payload));
@@ -827,8 +795,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload2 = encodeRouterPayload({
             id: txId2,
             expectedAccountAddress: newAccountAddress,
-            depositPermit: [],
-            multiCalls: multiCalls2,
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit: [],
+                multiCalls: multiCalls2,
+            },
         });
 
         const payloadHash2 = keccak256(toBytes(payload2));
@@ -859,8 +830,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload3 = encodeRouterPayload({
             id: txId3,
             expectedAccountAddress: newAccountAddress,
-            depositPermit: [],
-            multiCalls: multiCalls2,
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit: [],
+                multiCalls: multiCalls2,
+            },
         });
 
         const payloadHash3 = keccak256(toBytes(payload3));

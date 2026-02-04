@@ -126,8 +126,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: accountAddress,
-            depositPermit,
-            multiCalls: [],
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit,
+                multiCalls: [],
+            },
         });
 
         const payloadHash = keccak256(toBytes(payload));
@@ -198,8 +201,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: accountAddress,
-            depositPermit,
-            multiCalls: [],
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit,
+                multiCalls: [],
+            },
         });
 
         const payloadHash = keccak256(toBytes(payload));
@@ -263,8 +269,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: accountAddress,
-            depositPermit,
-            multiCalls: [], // No multicall
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit,
+                multiCalls: [], // No multicall
+            },
         });
 
         const payloadHash = keccak256(toBytes(payload));
@@ -317,8 +326,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         const setupPayload = encodeRouterPayload({
             id: 'tx4',
             expectedAccountAddress: wrongAccountAddress,
-            depositPermit: [],
-            multiCalls: [],
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit: [],
+                multiCalls: [],
+            },
         });
         const setupPayloadHash = keccak256(toBytes(setupPayload));
         await approveMessage({
@@ -358,8 +370,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: wrongAccountAddress, // But wrong account address
-            depositPermit,
-            multiCalls: [],
+            instructionType: 'RemoteAccount',
+            instruction: {
+                depositPermit,
+                multiCalls: [],
+            },
         });
 
         const payloadHash = keccak256(toBytes(payload));
