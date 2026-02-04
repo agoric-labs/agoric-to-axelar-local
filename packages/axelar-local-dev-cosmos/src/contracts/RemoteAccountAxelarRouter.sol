@@ -3,7 +3,6 @@ pragma solidity ^0.8.20;
 
 import { AxelarExecutable } from '@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol';
 import { Ownable } from '@openzeppelin/contracts/access/Ownable.sol';
-import { Pausable } from '@openzeppelin/contracts/utils/Pausable.sol';
 import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
 import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
 import { ImmutableOwnable } from './ImmutableOwnable.sol';
@@ -26,12 +25,7 @@ import { IRemoteAccountRouter, IPermit2, DepositPermit, RemoteAccountInstruction
  *      does not grant exclusive access to the router's successor mechanism, maintaining
  *      the possibility to transition owned contracts to a rightful successor.
  */
-contract RemoteAccountAxelarRouter is
-    AxelarExecutable,
-    ImmutableOwnable,
-    Pausable,
-    IRemoteAccountRouter
-{
+contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemoteAccountRouter {
     IRemoteAccountFactory public immutable override factory;
     IPermit2 public immutable override permit2;
 
@@ -138,7 +132,7 @@ contract RemoteAccountAxelarRouter is
         string calldata sourceAddress,
         address expectedAccountAddress,
         RemoteAccountInstruction calldata instruction
-    ) external override whenNotPaused {
+    ) external override {
         require(msg.sender == address(this));
 
         bool hasDeposit = instruction.depositPermit.length > 0;
@@ -211,14 +205,6 @@ contract RemoteAccountAxelarRouter is
 
     function setSuccessor(address newSuccessor) external onlyOwner {
         successor = newSuccessor;
-    }
-
-    function pause() external onlyOwner {
-        _pause();
-    }
-
-    function unpause() external onlyOwner {
-        _unpause();
     }
 
     receive() external payable {
