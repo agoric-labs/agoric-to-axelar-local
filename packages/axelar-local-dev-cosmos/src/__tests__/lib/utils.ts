@@ -1,34 +1,6 @@
 import { encodeFunctionData, keccak256, toBytes, encodeAbiParameters } from 'viem';
+import type { Abi, AbiParameter, AbiParameterToPrimitiveType } from 'viem';
 import { ethers, network } from 'hardhat';
-
-// ==================== Types ====================
-
-export interface ContractCall {
-    target: `0x${string}`;
-    data: `0x${string}`;
-}
-
-export interface DepositPermit {
-    tokenOwner: `0x${string}`;
-    permit: {
-        permitted: {
-            token: `0x${string}`;
-            amount: bigint;
-        };
-        nonce: bigint;
-        deadline: bigint;
-    };
-    witness: `0x${string}`;
-    witnessTypeString: string;
-    signature: `0x${string}`;
-}
-
-export interface RouterPayloadParams {
-    id: string;
-    expectedAccountAddress: `0x${string}`;
-    depositPermit?: DepositPermit[];
-    multiCalls?: ContractCall[];
-}
 
 // ==================== RemoteAccount Helpers ====================
 
@@ -49,6 +21,219 @@ export const computeRemoteAccountAddress = async (
     return ethers.getCreate2Address(factoryAddress, salt, initCodeHash) as `0x${string}`;
 };
 
+export const TokenPermissionsComponents = [
+    { name: 'token', type: 'address' },
+    { name: 'amount', type: 'uint256' },
+] as const satisfies AbiParameter[];
+export const TokenPermissionsInternalTypeName =
+    'struct ISignatureTransfer.TokenPermissions' as const;
+
+export const PermitTransferFromComponents = [
+    {
+        name: 'permitted',
+        type: 'tuple',
+        internalType: TokenPermissionsInternalTypeName,
+        components: TokenPermissionsComponents,
+    },
+    { name: 'nonce', type: 'uint256' },
+    { name: 'deadline', type: 'uint256' },
+] as const satisfies AbiParameter[];
+export const PermitTransferFromInternalTypeName =
+    'struct ISignatureTransfer.PermitTransferFrom' as const;
+export type PermitTransferFromStruct = AbiParameterToPrimitiveType<{
+    type: 'tuple';
+    internalType: typeof PermitTransferFromInternalTypeName;
+    components: typeof PermitTransferFromComponents;
+}>;
+
+export const contractCallComponents = [
+    { name: 'target', type: 'address' },
+    { name: 'data', type: 'bytes' },
+] as const satisfies AbiParameter[];
+
+export type ContractCall = AbiParameterToPrimitiveType<{
+    type: 'tuple';
+    components: typeof contractCallComponents;
+}>;
+
+export const depositPermitComponents = [
+    { name: 'tokenOwner', type: 'address' },
+    {
+        name: 'permit',
+        type: 'tuple',
+        internalType: PermitTransferFromInternalTypeName,
+        components: PermitTransferFromComponents,
+    },
+    { name: 'witness', type: 'bytes32' },
+    { name: 'witnessTypeString', type: 'string' },
+    { name: 'signature', type: 'bytes' },
+] as const satisfies AbiParameter[];
+
+export type DepositPermit = AbiParameterToPrimitiveType<{
+    type: 'tuple';
+    components: typeof depositPermitComponents;
+}>;
+
+export const routerProcessSharedInputComponents = [
+    { name: 'idOrSourceChain', type: 'string' },
+    { name: 'expectedAccountAddress', type: 'address' },
+] as const satisfies AbiParameter[];
+
+export const remoteAccountInstructionComponents = [
+    {
+        name: 'depositPermit',
+        type: 'tuple[]',
+        components: depositPermitComponents,
+    },
+    {
+        name: 'multiCalls',
+        type: 'tuple[]',
+        components: contractCallComponents,
+    },
+] as const satisfies AbiParameter[];
+export type RemoteAccountInstruction = AbiParameterToPrimitiveType<{
+    type: 'tuple';
+    components: typeof remoteAccountInstructionComponents;
+}>;
+
+export const updateOwnerInstructionComponents = [
+    {
+        name: 'newOwner',
+        type: 'address',
+    },
+] as const satisfies AbiParameter[];
+export type UpdateOwnerInstruction = AbiParameterToPrimitiveType<{
+    type: 'tuple';
+    components: typeof updateOwnerInstructionComponents;
+}>;
+
+export const ProvideForRouterInstructionComponents = [
+    {
+        name: 'principalAccount',
+        type: 'string',
+    },
+    {
+        name: 'router',
+        type: 'address',
+    },
+    {
+        name: 'expectedAccountAddress',
+        type: 'address',
+    },
+] as const satisfies AbiParameter[];
+export type ProvideForRouterInstruction = AbiParameterToPrimitiveType<{
+    type: 'tuple';
+    components: typeof ProvideForRouterInstructionComponents;
+}>;
+
+/**
+ * ABI inputs for encoding RouterPayload with encodeAbiParameters.
+ */
+export const processRemoteAccountInstructionInputs = [
+    ...routerProcessSharedInputComponents,
+    {
+        name: 'instruction',
+        type: 'tuple',
+        components: remoteAccountInstructionComponents,
+    },
+] as const satisfies AbiParameter[];
+
+export const processUpdateOwnerInstructionInputs = [
+    ...routerProcessSharedInputComponents,
+    {
+        name: 'instruction',
+        type: 'tuple',
+        components: updateOwnerInstructionComponents,
+    },
+] as const satisfies AbiParameter[];
+
+export const processProvideForRouterInstructionInputs = [
+    ...routerProcessSharedInputComponents,
+    {
+        name: 'instruction',
+        type: 'tuple',
+        components: ProvideForRouterInstructionComponents,
+    },
+] as const satisfies AbiParameter[];
+
+export const remoteAccountAxelarRouterABI = [
+    {
+        type: 'function',
+        name: 'factory',
+        inputs: [],
+        outputs: [{ name: '', type: 'address' }],
+        stateMutability: 'view',
+    },
+    {
+        type: 'function',
+        name: 'permit2',
+        inputs: [],
+        outputs: [{ name: '', type: 'address' }],
+        stateMutability: 'view',
+    },
+    {
+        type: 'function',
+        name: 'execute',
+        inputs: [
+            { name: 'commandId', type: 'bytes32' },
+            { name: 'sourceChain', type: 'string' },
+            { name: 'sourceAddress', type: 'string' },
+            { name: 'payload', type: 'bytes' },
+        ],
+        outputs: [],
+        stateMutability: 'nonpayable',
+    },
+    {
+        type: 'function',
+        name: 'processRemoteAccountInstruction',
+        inputs: processRemoteAccountInstructionInputs,
+        outputs: [],
+        stateMutability: 'nonpayable',
+    },
+    {
+        type: 'function',
+        name: 'processUpdateOwnerInstruction',
+        inputs: processUpdateOwnerInstructionInputs,
+        outputs: [],
+        stateMutability: 'nonpayable',
+    },
+    {
+        type: 'function',
+        name: 'processProvideForRouterInstruction',
+        inputs: processProvideForRouterInstructionInputs,
+        outputs: [],
+        stateMutability: 'nonpayable',
+    },
+] as const satisfies Abi;
+
+export type SupportedOperations = Extract<
+    (typeof remoteAccountAxelarRouterABI)[number]['name'],
+    `process${string}`
+>;
+
+type ExtractInstructionTypeFromOperation<T extends string> =
+    T extends `process${infer U}Instruction` ? U : never;
+
+export type SupportedInstructions = ExtractInstructionTypeFromOperation<SupportedOperations>;
+
+export type RouterInstruction<T extends SupportedOperations> = {
+    [K in T]: AbiParameterToPrimitiveType<
+        Extract<(typeof remoteAccountAxelarRouterABI)[number], { name: K }>['inputs'][2]
+    >;
+}[T];
+
+export type RouterOperationPayload<T extends SupportedOperations> = {
+    [K in T]: {
+        instructionType: ExtractInstructionTypeFromOperation<K>;
+        instruction: RouterInstruction<K>;
+    };
+}[T];
+
+export type RouterPayloadParams<T extends SupportedOperations = SupportedOperations> = {
+    id: string;
+    expectedAccountAddress: `0x${string}`;
+} & RouterOperationPayload<T>;
+
 /**
  * Encode RouterPayload for RemoteAccountAxelarRouter
  * Encodes as RouterInstruction (single instruction)
@@ -56,62 +241,15 @@ export const computeRemoteAccountAddress = async (
 export const encodeRouterPayload = ({
     id,
     expectedAccountAddress,
-    depositPermit = [],
-    multiCalls = [],
+    ...operationPayload
 }: RouterPayloadParams) => {
-    return encodeAbiParameters(
-        [
-            {
-                type: 'tuple',
-                components: [
-                    { name: 'id', type: 'string' },
-                    { name: 'expectedAccountAddress', type: 'address' },
-                    {
-                        name: 'depositPermit',
-                        type: 'tuple[]',
-                        components: [
-                            { name: 'tokenOwner', type: 'address' },
-                            {
-                                name: 'permit',
-                                type: 'tuple',
-                                components: [
-                                    {
-                                        name: 'permitted',
-                                        type: 'tuple',
-                                        components: [
-                                            { name: 'token', type: 'address' },
-                                            { name: 'amount', type: 'uint256' },
-                                        ],
-                                    },
-                                    { name: 'nonce', type: 'uint256' },
-                                    { name: 'deadline', type: 'uint256' },
-                                ],
-                            },
-                            { name: 'witness', type: 'bytes32' },
-                            { name: 'witnessTypeString', type: 'string' },
-                            { name: 'signature', type: 'bytes' },
-                        ],
-                    },
-                    {
-                        name: 'multiCalls',
-                        type: 'tuple[]',
-                        components: [
-                            { name: 'target', type: 'address' },
-                            { name: 'data', type: 'bytes' },
-                        ],
-                    },
-                ],
-            },
-        ],
-        [
-            {
-                id,
-                expectedAccountAddress,
-                depositPermit,
-                multiCalls,
-            },
-        ],
-    );
+    const functionName = `process${operationPayload.instructionType}Instruction` as const;
+    const instruction = operationPayload.instruction;
+    return encodeFunctionData({
+        abi: remoteAccountAxelarRouterABI,
+        functionName,
+        args: [id, expectedAccountAddress, instruction as any],
+    });
 };
 
 export const constructContractCall = ({ target, functionSignature, args }) => {
