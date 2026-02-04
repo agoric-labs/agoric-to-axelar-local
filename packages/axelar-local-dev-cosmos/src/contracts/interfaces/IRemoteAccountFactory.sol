@@ -27,4 +27,10 @@ interface IRemoteAccountFactory {
         address expectedRouter,
         address expectedAddress
     ) external returns (bool);
+
+    function provideForRouter(
+        string calldata principalAccount,
+        address router,
+        address expectedAddress
+    ) external returns (bool);
 }

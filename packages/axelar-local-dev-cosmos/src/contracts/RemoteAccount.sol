@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.20;
 
-import { OwnableByReplaceableOwner } from './OwnableByReplaceableOwner.sol';
+import { Ownable } from '@openzeppelin/contracts/access/Ownable.sol';
 import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
 
 /**
@@ -14,24 +14,10 @@ import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
         behalf of. This design enables migration paths - if the Axelar-based router
         is replaced, ownership can be transferred to a new router.
  */
-contract RemoteAccount is OwnableByReplaceableOwner, IRemoteAccount {
+contract RemoteAccount is Ownable, IRemoteAccount {
     event Received(address indexed sender, uint256 amount);
 
-    constructor() OwnableByReplaceableOwner(_msgSender()) {}
-
-    /**
-     * @notice Replace the owner with the specified address
-     * @dev External function checking that the caller is this contract itself
-     *      before invoking the replace owner behavior of OwnableByReplaceableOwner
-     *      which checks that the current owner has designated the new owner as
-     *      its replacement. Allows executeCalls to replace ownership, enforcing
-     *      that both the principal and the owner agree.
-     */
-    function replaceOwner(address newOwner) external virtual {
-        // Allows the multicall to update the contract ownership
-        require(_msgSender() == address(this));
-        _replaceOwner(newOwner);
-    }
+    constructor() Ownable(_msgSender()) {}
 
     /**
      * @notice Execute a batch of calls on behalf of the controller

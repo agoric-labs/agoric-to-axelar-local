@@ -2,9 +2,8 @@
 pragma solidity ^0.8.20;
 
 import { Create2 } from '@openzeppelin/contracts/utils/Create2.sol';
+import { Ownable } from '@openzeppelin/contracts/access/Ownable.sol';
 import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
-import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
-import { OwnableByReplaceableOwner } from './OwnableByReplaceableOwner.sol';
 import { RemoteAccount } from './RemoteAccount.sol';
 
 /**
@@ -20,7 +19,7 @@ import { RemoteAccount } from './RemoteAccount.sol';
         router owner, as well as RemoteAccount for an arbitrary router through
         relayed calls to provideForRouter() via executeCalls.
  */
-contract RemoteAccountFactory is OwnableByReplaceableOwner, IRemoteAccount, IRemoteAccountFactory {
+contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     // Store the principal details of this factory purely for reference
     string public factoryPrincipalCaip2;
     string public factoryPrincipalAccount;
@@ -30,8 +29,6 @@ contract RemoteAccountFactory is OwnableByReplaceableOwner, IRemoteAccount, IRem
 
     event Received(address indexed sender, uint256 amount);
 
-    error InvalidCallTarget(address target);
-
     /**
      * @param factoryPrincipalCaip2_ The caip2 of the principal for this RemoteAccountFactory
      * @param factoryPrincipalAccount_ The address of the principal for this RemoteAccountFactory
@@ -39,7 +36,7 @@ contract RemoteAccountFactory is OwnableByReplaceableOwner, IRemoteAccount, IRem
     constructor(
         string memory factoryPrincipalCaip2_,
         string memory factoryPrincipalAccount_
-    ) OwnableByReplaceableOwner(_msgSender()) {
+    ) Ownable(_msgSender()) {
         factoryPrincipalCaip2 = factoryPrincipalCaip2_;
         factoryPrincipalAccount = factoryPrincipalAccount_;
         _principalSalt = keccak256(bytes(factoryPrincipalAccount_)); // _getSalt(factoryPrincipalAccount_);
@@ -179,8 +176,9 @@ contract RemoteAccountFactory is OwnableByReplaceableOwner, IRemoteAccount, IRem
      * @notice Provide a RemoteAccount - creates if new, verifies if exists
      * @dev Idempotent: calling multiple times with same params succeeds as
      *      long as the RemoteAccount's current owner matches the provided routerAddress.
-     *      This allows an executeCall to create a RemoteAccount with an arbitrary
-     *      router address, allowing the portfolio manager which is the principal of
+     *      This allows the owner router to provide and account with a specific
+     *      router address. The router is supposed to only call this on specific "control"
+     *      instructions sent by the manager which is the principal of
      *      this factory to create remote accounts for alternative routers it may use.
      * @param principalAccount The address of the principal for the RemoteAccount
      * @param routerAddress The address of the router to use as owner of the RemoteAccount
@@ -191,8 +189,7 @@ contract RemoteAccountFactory is OwnableByReplaceableOwner, IRemoteAccount, IRem
         string calldata principalAccount,
         address routerAddress,
         address expectedAddress
-    ) external returns (bool) {
-        require(_msgSender() == address(this));
+    ) external override onlyOwner returns (bool) {
         return _provideForRouter(principalAccount, routerAddress, expectedAddress);
     }
 
@@ -241,45 +238,6 @@ contract RemoteAccountFactory is OwnableByReplaceableOwner, IRemoteAccount, IRem
                 revert InvalidAccountAtAddress(expectedAddress);
             }
             return false;
-        }
-    }
-
-    /**
-     * @notice Replace the owner with the specified address
-     * @dev External function checking that the caller is this contract itself
-     *      before invoking the replace owner behavior of OwnableByReplaceableOwner
-     *      which checks that the current owner has designated the new owner as
-     *      its replacement. Allows executeCalls to replace ownership, enforcing
-     *      that both the principal and the owner agree.
-     */
-    function replaceOwner(address newOwner) external {
-        // Allows the multicall to update the contract ownership
-        require(_msgSender() == address(this));
-        _replaceOwner(newOwner);
-    }
-
-    /**
-     * @notice Execute a batch of calls on behalf of the controller
-     * @dev Requires router ownership check
-     *      All call targets MUST be address(this) - the factory only allows calls to itself.
-     * @param calls Array of contract calls to execute (all targets must be address(this))
-     */
-    function executeCalls(ContractCall[] calldata calls) external override onlyOwner {
-        uint256 len = calls.length;
-        for (uint256 i = 0; i < len; ) {
-            if (calls[i].target != address(this)) {
-                revert InvalidCallTarget(calls[i].target);
-            }
-
-            (bool success, bytes memory reason) = calls[i].target.call(calls[i].data);
-
-            if (!success) {
-                revert ContractCallFailed(i, reason);
-            }
-
-            unchecked {
-                ++i;
-            }
         }
     }
 
