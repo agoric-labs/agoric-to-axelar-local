@@ -697,7 +697,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         expect(decodedError?.name).to.equal('UnauthorizedRouter');
     });
 
-    it('should create account for different router via factory.provideForRouter multicall', async () => {
+    it.skip('should create account for different router via factory.provideForRouter multicall', async () => {
         // Get current factory owner (may have changed from previous tests)
         const factoryOwnerAddress = await factory.owner();
         const factoryOwnerRouter = await ethers.getContractAt(

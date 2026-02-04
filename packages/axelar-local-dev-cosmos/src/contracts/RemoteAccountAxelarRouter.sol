@@ -7,7 +7,7 @@ import { Pausable } from '@openzeppelin/contracts/utils/Pausable.sol';
 import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
 import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
 import { ImmutableOwnable } from './ImmutableOwnable.sol';
-import { IRemoteAccountRouter, IPermit2, DepositPermit, RemoteAccountInstruction, UpdateOwnerInstruction, ProvideForRouterInstruction } from './interfaces/IRemoteAccountRouter.sol';
+import { IRemoteAccountRouter, IPermit2, DepositPermit, RemoteAccountInstruction, UpdateOwnerInstruction } from './interfaces/IRemoteAccountRouter.sol';
 
 /**
  * @title RemoteAccountAxelarRouter
@@ -116,16 +116,6 @@ contract RemoteAccountAxelarRouter is
                 IRemoteAccountRouter.processUpdateOwnerInstruction,
                 (sourceAddress, expectedAddress, instruction)
             );
-        } else if (selector == IRemoteAccountRouter.processProvideForRouterInstruction.selector) {
-            ProvideForRouterInstruction memory instruction;
-            (txId, expectedAddress, instruction) = abi.decode(
-                encodedArgs,
-                (string, address, ProvideForRouterInstruction)
-            );
-            rewrittenPayload = abi.encodeCall(
-                IRemoteAccountRouter.processProvideForRouterInstruction,
-                (sourceAddress, expectedAddress, instruction)
-            );
         } else {
             revert InvalidPayload(selector);
         }
@@ -217,36 +207,6 @@ contract RemoteAccountAxelarRouter is
         factory.provide(sourceAddress, address(this), expectedAccountAddress);
 
         Ownable(expectedAccountAddress).transferOwnership(newOwner);
-    }
-
-    /**
-     * @notice Process the arbitrary creation of a remote account
-     * @dev This is an external function which can only be called by this contract
-     *      Used to create a call stack that can be reverted atomically
-     *      Only the factory's principal can invoke this operation
-     * @param sourceAddress The principal account address of the factory
-     * @param factoryAddress The address of the factory
-     * @param instruction The decoded RemoteAccountInstruction
-     */
-    function processProvideForRouterInstruction(
-        string calldata sourceAddress,
-        address factoryAddress,
-        ProvideForRouterInstruction calldata instruction
-    ) external override {
-        require(msg.sender == address(this));
-
-        // Check the factory's principal is the source
-        require(factoryAddress == address(factory));
-        require(factory.getRemoteAccountAddress(sourceAddress) == factoryAddress);
-
-        // NOTE: this allows the factory's principal to create a remote account for any principal account,
-        // without proof that it holds the principal account
-
-        factory.provideForRouter(
-            instruction.principalAccount,
-            instruction.router,
-            instruction.expectedAccountAddress
-        );
     }
 
     function setSuccessor(address newSuccessor) external onlyOwner {
