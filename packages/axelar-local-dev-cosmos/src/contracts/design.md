@@ -226,7 +226,7 @@ graph TB
         _verifyRemoteAccountOwner
 
         provide
-        SAME_OWNER{owner matches?}
+        SAME_OWNER{owner matches<br>expected router?}
         _provideForRouter
         ACCOUNT_EXISTS{account exists?}
         provideForRouter[provideForRouter<br>Privileged create with specific owner]
@@ -285,7 +285,7 @@ graph TB
     _getRemoteAccountAddress -.->|reads| _principalSalt
     _getRemoteAccountAddress -.->|reads| _remoteAccountBytecodeHash
     _verifyRemoteAccountOwner -.->|checks| owner
-    provide -->|checks| owner
+    SAME_OWNER -->|checks| owner
     onlyOwner -->|checks| owner
     transferOwnership -->|updates| owner
     
@@ -311,6 +311,7 @@ sequenceDiagram
     participant RA as RemoteAccount
     participant DEFI as DeFi Protocol
     
+    Note right of PM: using portfolio LCA
     PM->>AXL: send RouterInstruction
     AXL->>PR: _execute(sourceChain, sourceAddress, payload)
     
@@ -321,11 +322,13 @@ sequenceDiagram
         opt if depositPermit exists
             PR->>P2: permitWitnessTransferFrom(...)
             P2->>RA: transfer tokens
-            RA->>RA: emit Received(msg.sender, msg.value)
         end
 
         PR->>RAF: provide(sourceAddress, self, expectedAddress)
-        opt if does not exist
+        alt if exists
+            RAF->>RA: owner()
+            RAF->>RAF: verify match
+        else
             RAF->>RA: CREATE2
             RAF->>RA: transferOwnership(self)
         end
@@ -334,7 +337,7 @@ sequenceDiagram
             PR->>RA: executeCalls(multiCalls)
             RA->>RA: Validate owner
             loop for each call{target, data}
-                RA->>DEFI: call(target, data)
+                RA->>DEFI: target.call(data)
                 DEFI-->>RA: result
             end
         end
@@ -346,20 +349,18 @@ sequenceDiagram
 ```
 
 **Flow Description**:
-1. Portfolio Manager sends instructions via Axelar GMP
+1. Portfolio Manager sends instructions from portfolio LCA via Axelar GMP
 2. RemoteAccountAxelarRouter validates message source
 3. If requested, RemoteAccountAxelarRouter transfers tokens via Permit2
 4. RemoteAccountAxelarRouter provides account (creating if necessary)
-5. If calls for RemoteAccount exist, RemoteAccountAxelarRouter sends them and RemoteAccount executes them
+5. If calls for RemoteAccount exist, RemoteAccountAxelarRouter forwards them and RemoteAccount executes them
 6. RemoteAccountAxelarRouter emits an event describing success or failure
-
-# FIXME: The remainder has not yet been edited
 
 ## Ownership and Security Model
 
 ```mermaid
 graph TB
-    Axelar["Axelar<br>(including inherited contract code)"]
+    Axelar
     EVM_OPERATOR["EVM operator multisig"]
     ROUTER1[old RemoteAccountAxelarRouter v1]
     ROUTER2[old RemoteAccountAxelarRouter v2]
@@ -378,14 +379,14 @@ graph TB
     EVM_OPERATOR -.->|replaceOwner| ROUTERn
     
     ROUTER1 ==>|owns| RA1
-    ROUTER1 -->|"executeCalls&lt;replaceOwner&gt;"| RA1
-    ROUTER1 -.->|transferred| RA2
-    ROUTER1 -.->|transferred| RAF
+    ROUTER1 -.->|"transferred by<br>executeCalls&lt;replaceOwner&gt;"| RA2
+    ROUTER1 -.->|"transferred by<br>executeCalls"| RAF
     ROUTER1 -.->|old replacementOwner_| ROUTER2
     ROUTER1 -->|replacementOwner_| ROUTERn
-    ROUTER2 -.->|transferred| RAF
+    ROUTER2 -.->|"transferred by<br>executeCalls"| RAF
     ROUTER2 -->|replacementOwner_| ROUTERn
     ROUTERn ==>|owns| RA2
+    ROUTERn -->|executeCalls| RA2
     ROUTERn ==>|owns| RAn
     ROUTERn -->|executeCalls| RAn
     ROUTERn ==>|owns| RAF
@@ -400,27 +401,22 @@ graph TB
 
 **Ownership**:
 - Current RemoteAccountAxelarRouter owns RemoteAccountFactory and all new accounts
-- Ownership of old accounts is transferred upon activity (old router calls `replaceOwner`)
+- Ownership of old accounts is transferred upon activity (`replaceOwner` call through old router)
 
 **Security Checks**:
 - **RemoteAccountAxelarRouter `replaceOwner`**: Validate `msg.sender` against immutable `ownerAuthority`
 - **RemoteAccountAxelarRouter `_execute`**: Validate sourceChain against immutable hash
-- **RemoteAccountFactory `provide`**: For account creation, validate requested owner against its own owner
+- **RemoteAccountFactory `provide`**: For account creation, validate requested owner against its own owner. Validates remote account address derives from sourceAddress.
 - **RemoteAccountFactory `provideForRouter`**: Validate self-call (from `executeCalls`)
 - **RemoteAccountFactory/RemoteAccount `executeCalls`**: Validate that sender is current owner
 - **RemoteAccountFactory/RemoteAccount `replaceOwner`**: Validate self-call (from `executeCalls`) and (via OwnableByReplaceableOwner inheritance) that the old owner confirms the requested new owner
-
-**Security Layers**:
-1. **Axelar Validation**: Only messages from specific chain and address accepted
-2. **Principal Validation**: RemoteAccount verifies CAIP-10 identity of controller
-3. **Ownership**: Router owns all RemoteAccounts and Factory
-4. **Replaceability**: Migration path via designated replacement owner
 
 ## Deployment
 
 ```mermaid
 sequenceDiagram
     participant PM as Portfolio Manager<br>(Agoric)
+    participant EVM_DEPLOYER as EVM deployer
     participant EVM_OPERATOR as EVM operator<br>multisig
     participant ROUTER1 as RemoteAccountAxelarRouter<br>v1
     participant ROUTER2 as RemoteAccountAxelarRouter<br>v2
@@ -429,8 +425,13 @@ sequenceDiagram
     participant RA1 as RemoteAccount<br>(old)
     participant RAn as RemoteAccount<br>(new)
 
+    Note over PM,RAn: Initial deployment
+    EVM_DEPLOYER->>RAF: deploy
+    EVM_DEPLOYER->>ROUTER1: deploy
+    EVM_DEPLOYER->>RAF: transferOwnership to router
+
     Note over PM,RAn: Deploy new router
-    EVM_OPERATOR->>ROUTERn: deploy
+    EVM_DEPLOYER->>ROUTERn: deploy
 
     Note over PM,RAn: Update old routers
     par
@@ -448,10 +449,15 @@ sequenceDiagram
         RAF->>RAF: replace owner
     end
     ROUTER2->>PM: [via Resolver] ready
-    PM->>PM: Switch to new router
-
+    PM->>PM: new router ready
+    
     Note over PM,RAn: Account interactions
-    opt Transfer old account
+    alt account does not exist
+        PM->>ROUTERn: [via Axelar] send RouterInstruction{factoryAddr, [ContractCall{factoryAddr, encodeCall(provide)}]}
+        ROUTERn->>RAF: executeCalls([ContractCall{factoryAddr, encodeCall(provide)}])
+        RAF->>RAF: provide
+        RAF->>RAn: CREATE2
+    else if account uses old router
         PM->>ROUTER1: [via Axelar] send RouterInstruction{addr, [ContractCall{addr, encodeCall(replaceOwner)}]}
         ROUTER1->>RA1: executeCalls([ContractCall{addr, encodeCall(replaceOwner)}])
         RA1->>RA1: replaceOwner
@@ -461,12 +467,8 @@ sequenceDiagram
             RA1->>RA1: replace owner
         end
     end
-    opt Create new account
-        PM->>ROUTERn: [via Axelar] send RouterInstruction{factoryAddr, [ContractCall{factoryAddr, encodeCall(provide)}]}
-        ROUTERn->>RAF: executeCalls([ContractCall{factoryAddr, encodeCall(provide)}])
-        RAF->>RAF: provide
-        RAF->>RAn: CREATE2
-    end
+    PM->>ROUTERn: [via Axelar] send RouterInstruction
+    ROUTERn->>RA1: executeCalls
 ```
 
 **Migration Features**:
