@@ -2,10 +2,10 @@
 pragma solidity ^0.8.20;
 
 import { AxelarExecutable } from '@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol';
+import { Ownable } from '@openzeppelin/contracts/access/Ownable.sol';
 import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
-import { IReplaceableOwner } from './interfaces/IReplaceableOwner.sol';
 import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
-import { IRemoteAccountRouter, IPermit2, DepositPermit, RouterInstruction } from './interfaces/IRemoteAccountRouter.sol';
+import { IRemoteAccountRouter, IPermit2, DepositPermit, RemoteAccountInstruction, UpdateOwnerInstruction, ProvideForRouterInstruction } from './interfaces/IRemoteAccountRouter.sol';
 
 /**
  * @title RemoteAccountAxelarRouter
@@ -28,7 +28,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
     bytes32 private immutable axelarSourceChainHash;
 
     address private immutable ownerAuthority;
-    IReplaceableOwner private replacementOwner_;
+    address public replacementOwner;
 
     error InvalidSourceChain(string expected, string actual);
     error InvalidSourceAddress(string expected, string actual);
@@ -78,29 +78,67 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
             revert InvalidSourceChain(axelarSourceChain, sourceChain);
         }
 
-        // Parse and validate structure of message
-        RouterInstruction memory instruction = abi.decode(payload, (RouterInstruction));
+        string memory txId;
+        address expectedAddress;
 
-        try this.processInstruction(sourceAddress, instruction) {
-            emit OperationResult(instruction.id, true, '');
-        } catch (bytes memory reason) {
-            emit OperationResult(instruction.id, false, reason);
+        bytes4 selector = bytes4(payload[:4]);
+        bytes calldata encodedArgs = payload[4:];
+
+        bytes memory rewrittenPayload;
+
+        // Parse and validate structure of message
+        if (selector == IRemoteAccountRouter.processRemoteAccountInstruction.selector) {
+            RemoteAccountInstruction memory instruction;
+            (txId, expectedAddress, instruction) = abi.decode(
+                encodedArgs,
+                (string, address, RemoteAccountInstruction)
+            );
+            rewrittenPayload = abi.encodeCall(
+                IRemoteAccountRouter.processRemoteAccountInstruction,
+                (sourceAddress, expectedAddress, instruction)
+            );
+        } else if (selector == IRemoteAccountRouter.processUpdateOwnerInstruction.selector) {
+            UpdateOwnerInstruction memory instruction;
+            (txId, expectedAddress, instruction) = abi.decode(
+                encodedArgs,
+                (string, address, UpdateOwnerInstruction)
+            );
+            rewrittenPayload = abi.encodeCall(
+                IRemoteAccountRouter.processUpdateOwnerInstruction,
+                (sourceAddress, expectedAddress, instruction)
+            );
+        } else if (selector == IRemoteAccountRouter.processProvideForRouterInstruction.selector) {
+            ProvideForRouterInstruction memory instruction;
+            (txId, expectedAddress, instruction) = abi.decode(
+                encodedArgs,
+                (string, address, ProvideForRouterInstruction)
+            );
+            rewrittenPayload = abi.encodeCall(
+                IRemoteAccountRouter.processProvideForRouterInstruction,
+                (sourceAddress, expectedAddress, instruction)
+            );
+        } else {
+            revert InvalidPayload(selector);
         }
+
+        (bool success, bytes memory result) = address(this).call(rewrittenPayload);
+        emit OperationResult(txId, sourceAddress, expectedAddress, success, result);
     }
 
     /**
-     * @notice Process the router instruction in order: deposit -> provide -> multicall
+     * @notice Process the remote account instruction in order: deposit -> provide -> multicall
      * @dev This is an external function which can only be called by this contract
      * Used to create a call stack that can be reverted atomically
-     * @param instruction The decoded RouterInstruction
+     * @param sourceAddress The principal account address of the remote account
+     * @param expectedAccountAddress The expected account address corresponding to the source address
+     * @param instruction The decoded RemoteAccountInstruction
      */
-    function processInstruction(
+    function processRemoteAccountInstruction(
         string calldata sourceAddress,
-        RouterInstruction calldata instruction
-    ) external {
+        address expectedAccountAddress,
+        RemoteAccountInstruction calldata instruction
+    ) external override {
         require(msg.sender == address(this));
-
-        address expectedAccountAddress = instruction.expectedAccountAddress;
 
         bool hasDeposit = instruction.depositPermit.length > 0;
         bool hasMultiCalls = instruction.multiCalls.length > 0;
@@ -136,15 +174,58 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
         }
     }
 
-    function replacementOwner() external view override returns (IReplaceableOwner) {
-        return replacementOwner_;
+    /**
+     * @notice Process the update owner instruction
+     * @dev This is an external function which can only be called by this contract
+     * Used to create a call stack that can be reverted atomically
+     * @param sourceAddress The principal account address of the owned contract
+     * @param expectedAccountAddress The expected contract address corresponding to the principal address
+     * @param instruction The decoded UpdateOwnerInstruction
+     */
+    function processUpdateOwnerInstruction(
+        string calldata sourceAddress,
+        address expectedAccountAddress,
+        UpdateOwnerInstruction calldata instruction
+    ) external override {
+        require(msg.sender == address(this));
+
+        address newOwner = instruction.newOwner;
+
+        if (newOwner != replacementOwner) {
+            revert Ownable.OwnableInvalidOwner(newOwner);
+        }
+
+        // Provide or verify the remote account matches the source principal and owner
+        factory.provide(sourceAddress, address(this), expectedAccountAddress);
+
+        Ownable(expectedAccountAddress).transferOwnership(newOwner);
+    }
+
+    /**
+     * @notice Process the remote account instruction in order: deposit -> provide -> multicall
+     * @dev This is an external function which can only be called by this contract
+     * Used to create a call stack that can be reverted atomically
+     * @param sourceAddress The principal account address of the remote account
+     * @param expectedAccountAddress The expected account address corresponding to the source address
+     * @param instruction The decoded RemoteAccountInstruction
+     */
+    function processProvideForRouterInstruction(
+        string calldata sourceAddress,
+        address expectedAccountAddress,
+        ProvideForRouterInstruction calldata instruction
+    ) external override {
+        require(msg.sender == address(this));
+
+        address router = instruction.router;
+
+        factory.provideForRouter(sourceAddress, router, expectedAccountAddress);
     }
 
     function replaceOwner(address newOwner) external {
         if (msg.sender != ownerAuthority) {
             revert UnauthorizedAuthority(ownerAuthority, msg.sender);
         }
-        replacementOwner_ = IReplaceableOwner(newOwner);
+        replacementOwner = newOwner;
     }
 
     receive() external payable {
