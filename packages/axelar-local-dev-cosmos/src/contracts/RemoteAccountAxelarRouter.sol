@@ -131,6 +131,7 @@ contract RemoteAccountAxelarRouter is
         }
 
         (bool success, bytes memory result) = address(this).call(rewrittenPayload);
+        // Note that this is a transport-level event applicable to any input.
         emit OperationResult(txId, sourceAddress, expectedAddress, success, result);
     }
 
