@@ -31,7 +31,9 @@ struct UpdateOwnerInstruction {
 }
 
 struct ProvideForRouterInstruction {
+    string principalAccount;
     address router;
+    address expectedAccountAddress;
 }
 
 interface IRemoteAccountRouter {

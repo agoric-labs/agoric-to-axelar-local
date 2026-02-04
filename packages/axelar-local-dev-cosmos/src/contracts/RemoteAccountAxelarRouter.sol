@@ -202,23 +202,33 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
     }
 
     /**
-     * @notice Process the remote account instruction in order: deposit -> provide -> multicall
+     * @notice Process the arbitrary creation of a remote account
      * @dev This is an external function which can only be called by this contract
-     * Used to create a call stack that can be reverted atomically
-     * @param sourceAddress The principal account address of the remote account
-     * @param expectedAccountAddress The expected account address corresponding to the source address
+     *      Used to create a call stack that can be reverted atomically
+     *      Only the factory's principal can invoke this operation
+     * @param sourceAddress The principal account address of the factory
+     * @param factoryAddress The address of the factory
      * @param instruction The decoded RemoteAccountInstruction
      */
     function processProvideForRouterInstruction(
         string calldata sourceAddress,
-        address expectedAccountAddress,
+        address factoryAddress,
         ProvideForRouterInstruction calldata instruction
     ) external override {
         require(msg.sender == address(this));
 
-        address router = instruction.router;
+        // Check the factory's principal is the source
+        require(factoryAddress == address(factory));
+        require(factory.getRemoteAccountAddress(sourceAddress) == factoryAddress);
 
-        factory.provideForRouter(sourceAddress, router, expectedAccountAddress);
+        // NOTE: this allows the factory's principal to create a remote account for any principal account,
+        // without proof that it holds the principal account
+
+        factory.provideForRouter(
+            instruction.principalAccount,
+            instruction.router,
+            instruction.expectedAccountAddress
+        );
     }
 
     function replaceOwner(address newOwner) external {
