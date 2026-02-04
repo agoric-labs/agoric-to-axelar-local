@@ -30,12 +30,6 @@ struct UpdateOwnerInstruction {
     address newOwner;
 }
 
-struct ProvideForRouterInstruction {
-    string principalAccount;
-    address router;
-    address expectedAccountAddress;
-}
-
 interface IRemoteAccountRouter {
     event OperationResult(
         string indexed id,
@@ -63,11 +57,5 @@ interface IRemoteAccountRouter {
         string calldata sourceAddress,
         address expectedAccountAddress,
         UpdateOwnerInstruction calldata instruction
-    ) external;
-
-    function processProvideForRouterInstruction(
-        string calldata sourceAddress,
-        address expectedAccountAddress,
-        ProvideForRouterInstruction calldata instruction
     ) external;
 }
