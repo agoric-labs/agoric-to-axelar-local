@@ -2,6 +2,14 @@ name: Deploy to Sepolia
 on:
   workflow_dispatch:
     inputs:
+      CONTRACT_OPTION:
+        description: EVM contract to be deployed
+        required: true
+        type: choice
+        options:
+          - factory
+          - depositFactory
+          - portfolioRouter
       REMOTE_ACCOUNT_FACTORY:
         description: Remote account factory address
         required: true
@@ -10,7 +18,7 @@ on:
         required: true
 
 jobs:
-  deploy:
+  deploy-to-sepolia:
     runs-on: ubuntu-latest
     steps:
       - name: Setup Node
@@ -34,7 +42,7 @@ jobs:
         run: cd integration && yarn install
 
       - name: Deploy to Sepolia
-        run: npm run deploy:all -- -c factory --chains eth-sepolia,base-sepolia,arb-sepolia
+        run: npm run deploy:all -- -c ${{ github.event.inputs.CONTRACT_OPTION }} --chains eth-sepolia,base-sepolia,arb-sepolia
         env:
           REMOTE_ACCOUNT_FACTORY: ${{ github.event.inputs.REMOTE_ACCOUNT_FACTORY }}
           OWNER_AUTHORITY: ${{ github.event.inputs.OWNER_AUTHORITY }}
