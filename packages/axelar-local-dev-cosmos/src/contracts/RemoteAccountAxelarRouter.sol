@@ -35,10 +35,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
     address public successor;
 
     error InvalidSourceChain(string expected, string actual);
-    error InvalidSourceAddress(string expected, string actual);
-    error InvalidRemoteAccount(address account);
-
-    error UnauthorizedAuthority(address expected, address actual);
+    error InvalidPayload(bytes4 selector);
 
     event Received(address indexed sender, uint256 amount);
 
@@ -69,7 +66,8 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
      *      The source address is validated against the payload data by each processor.
      * @param sourceChain The source chain
      * @param sourceAddress The source address
-     * @param payload The router instruction encoded as a call selector
+     * @param payload The router instruction encoded as a call selector with a signature in the
+     *                form of (string txId, address expectedAccountAddress, Instruction instruction)
      */
     function _execute(
         bytes32 /*commandId*/,
@@ -81,6 +79,21 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
             revert InvalidSourceChain(axelarSourceChain, sourceChain);
         }
 
+        // Parse and validate the payload as a 4-byte ABI function selector (see
+        // https://docs.soliditylang.org/en/latest/abi-spec.html#function-selector
+        // ) for a function of this contract, followed by relevant data that has
+        // the same typing as arguments to that function but contains a source
+        // chain transaction id in place of `sourceAddress` (which is
+        // communicated to this function as a separate argument), and translate
+        // the result into an actual encoded function call.
+        // Using such a function-call payload encoding potentially allows
+        // explorers to show more details about it, and simplifies the implementation
+        // of the sender, which can rely on the contract ABI.
+        // Note that the second argument of all functions is `expectedAddress`,
+        // relevant to RemoteAccountFactory and included in the emitted
+        // OperationResult event.
+        // The transaction id is included in the OperationResult event, allowing a
+        // resolver to observe/trace transactions.
         string memory txId;
         address expectedAddress;
 
@@ -89,7 +102,6 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
 
         bytes memory rewrittenPayload;
 
-        // Parse and validate structure of message
         if (selector == IRemoteAccountRouter.processRemoteAccountInstruction.selector) {
             RemoteAccountInstruction memory instruction;
             (txId, expectedAddress, instruction) = abi.decode(
@@ -114,6 +126,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
             revert InvalidPayload(selector);
         }
 
+        // Call the function and emit an event describing the result.
         (bool success, bytes memory result) = address(this).call(rewrittenPayload);
         // Note that this is a transport-level event applicable to any input.
         emit OperationResult(txId, sourceAddress, expectedAddress, success, result);
