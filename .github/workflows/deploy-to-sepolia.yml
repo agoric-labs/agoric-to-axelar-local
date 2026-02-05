@@ -46,6 +46,12 @@ jobs:
         env:
           REMOTE_ACCOUNT_FACTORY: ${{ github.event.inputs.REMOTE_ACCOUNT_FACTORY }}
           OWNER_AUTHORITY: ${{ github.event.inputs.OWNER_AUTHORITY }}
+          # `0x15626280BF6a502b2F7f01944Ca23774567Cd56C` is the address
+          # corresponding to the PRIVATE_KEY below
+          # use https://cloud.google.com/application/web3/faucet/ethereum/sepolia
+          # to get ETH on sepolia testnet
+          # and https://testnets.superbridge.app/ to bridge from eth-sepolia to
+          # base/arb sepolia testnets
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
           ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
           INFURA_KEY: ${{ secrets.INFURA_KEY }}
