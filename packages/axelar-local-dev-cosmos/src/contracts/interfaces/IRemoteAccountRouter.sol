@@ -13,16 +13,6 @@ struct DepositPermit {
     bytes signature;
 }
 
-// The execute payload is in the form of
-// (string txId, address expectedAccountAddress, Instruction instruction)
-// where Instruction matches one of the *Instruction type. This shape matches
-// the signature of the respective `process*Instruction` function, where
-// sourceAddress is substituted by txId. This makes the implementation of the
-// sender simpler, and potentially allows explorers to show more details about
-// the payload.
-// txId is a unique identifier matching the id published by the controller.
-// Used by a resolver to observe/trace transactions.
-
 struct RemoteAccountInstruction {
     DepositPermit[] depositPermit;
     ContractCall[] multiCalls;
@@ -40,8 +30,6 @@ interface IRemoteAccountRouter {
         bool success,
         bytes reason
     );
-
-    error InvalidPayload(bytes4 selector);
 
     function factory() external view returns (IRemoteAccountFactory);
 
