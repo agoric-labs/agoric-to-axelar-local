@@ -2,6 +2,14 @@ name: Deploy to Sepolia
 on:
   workflow_dispatch:
     inputs:
+      CONTRACT_OPTION:
+        description: EVM contract to be deployed
+        required: true
+        type: choice
+        options:
+          - factory
+          - depositFactory
+          - portfolioRouter
       REMOTE_ACCOUNT_FACTORY:
         description: Remote account factory address
         required: true
@@ -10,7 +18,7 @@ on:
         required: true
 
 jobs:
-  deploy:
+  deploy-to-sepolia:
     runs-on: ubuntu-latest
     steps:
       - name: Setup Node
@@ -34,10 +42,16 @@ jobs:
         run: cd integration && yarn install
 
       - name: Deploy to Sepolia
-        run: npm run deploy:all -- -c factory --chains eth-sepolia,base-sepolia,arb-sepolia
+        run: npm run deploy:all -- -c ${{ github.event.inputs.CONTRACT_OPTION }} --chains eth-sepolia,base-sepolia,arb-sepolia
         env:
           REMOTE_ACCOUNT_FACTORY: ${{ github.event.inputs.REMOTE_ACCOUNT_FACTORY }}
           OWNER_AUTHORITY: ${{ github.event.inputs.OWNER_AUTHORITY }}
+          # `0x15626280BF6a502b2F7f01944Ca23774567Cd56C` is the address
+          # corresponding to the PRIVATE_KEY below
+          # use https://cloud.google.com/application/web3/faucet/ethereum/sepolia
+          # to get ETH on sepolia testnet
+          # and https://testnets.superbridge.app/ to bridge from eth-sepolia to
+          # base/arb sepolia testnets
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
           ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
           INFURA_KEY: ${{ secrets.INFURA_KEY }}
