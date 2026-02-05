@@ -1,0 +1,43 @@
+name: Deploy to Sepolia
+on:
+  workflow_dispatch:
+    inputs:
+      REMOTE_ACCOUNT_FACTORY:
+        description: Remote account factory address
+        required: true
+      OWNER_AUTHORITY:
+        description: Owner authority address
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cache node_modules
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install dependencies under integration folder
+        run: cd integration && yarn install
+
+      - name: Deploy to Sepolia
+        run: npm run deploy:all -- -c factory --chains eth-sepolia,base-sepolia,arb-sepolia
+        env:
+          REMOTE_ACCOUNT_FACTORY: ${{ github.event.inputs.REMOTE_ACCOUNT_FACTORY }}
+          OWNER_AUTHORITY: ${{ github.event.inputs.OWNER_AUTHORITY }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
+          INFURA_KEY: ${{ secrets.INFURA_KEY }}
