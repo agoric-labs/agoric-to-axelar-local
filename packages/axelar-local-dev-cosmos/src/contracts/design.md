@@ -43,10 +43,13 @@ graph TB
 ```mermaid
 graph TB
     subgraph "Agoric Chain"
+        YMAX[Portfolio Manager<br>contract]
         LCA1[LCA account 1]
         LCA2[LCA account 2]
         LCAn[LCA account n]
     end
+    
+    AXL[Axelar]
     
     subgraph "Remote Account Router System"
         PR[RemoteAccountAxelarRouter]
@@ -57,22 +60,22 @@ graph TB
     end
     
     subgraph "External Contracts"
-        AXL[Axelar Gateway]
         P2[Permit2]
         PROTO[DeFi Protocols]
     end
     
-    LCA1 --> PR
-    LCA2 --> PR
-    LCAn --> PR
-    PR --> |validateContractCall| AXL
+    YMAX --> AXL
+    LCA1 --> AXL
+    LCA2 --> AXL
+    LCAn --> AXL
+    AXL -->|_execute| PR
     PR -->|provide| RAF
     RAF ==>|creates| RA1
     RAF ==>|creates| RA2
     RAF ==>|creates| RAn
-    PR -->|executeCalls| RA1
-    PR -->|executeCalls| RA2
-    PR -->|executeCalls| RAn
+    PR -->|"executeCalls |<br>transferOwnership"| RA1
+    PR -->|"executeCalls |<br>transferOwnership"| RA2
+    PR -->|"executeCalls |<br>transferOwnership"| RAn
     PR -.->|permitWitnessTransferFrom| P2
     RA1 -->|call| PROTO
     RA2 -->|call| PROTO
@@ -94,192 +97,217 @@ graph TB
 
 ```mermaid
 graph TB
-    subgraph "Inherited Behaviors"
-        AXLEXEC[AxelarExecutable]
-        ROUTER[IRemoteAccountRouter]
+    subgraph AxelarExecutable
+        AxelarExecutable__execute["_execute<br>(message handler)"]
+    end
+    subgraph ImmutableOwnable
+        %% modifiers
+        onlyOwner@{shape: odd}
+        %% state
+        owner@{shape: stored-data, label: "owner: address"}
+    end
+    subgraph IRemoteAccountRouter
+        IRemoteAccountRouter_factory["factory(): IRemoteAccountFactory"]
+        IRemoteAccountRouter_permit2["permit2(): IPermit2"]
+        IRemoteAccountRouter_processRemoteAccountInstruction[processRemoteAccountInstruction]
+        IRemoteAccountRouter_processUpdateOwnerInstruction[processUpdateOwnerInstruction]
+        subgraph IRemoteAccountRouter_state[state]
+            successor["successor(): address"]
+        end
+        %% events
+        OperationResult@{shape: flag}
     end
     
-    subgraph "RemoteAccountAxelarRouter Components"
-        direction TB
-        EXE[_execute<br/>Message Handler]
-        VALIDATE[Axelar inbound validation]
-        PROC[processInstruction]
-        DEP[Permit2 Integration]
-        PROV[account creation/<br>verification]
-        MULTI[account use]
-        REP[replaceOwner<br/>migration support]
-    end
-    
-    subgraph "State"
-        SRCCHAIN[axelarSourceChainHash]
-        PER[permit2: IPermit2]
-        FAC[factory: IRemoteAccountFactory]
-        AUTH[ownerAuthority: address]
-        REPL[replacementOwner_: IReplaceableOwner]
+    subgraph RemoteAccountAxelarRouter
+        START@{shape: start}
+        _execute["_execute<br/>override AxelarExecutable"]
+        VALIDATE@{shape: text, label: "Axelar inbound validation"}
+        DECODE{decode and select}
+        processRemoteAccountInstruction["processRemoteAccountInstruction<br>override IRemoteAccountRouter"]
+        processRemoteAccountInstruction_self@{shape: comment, label: "require self-call"}
+        processUpdateOwnerInstruction["processUpdateOwnerInstruction<br>override IRemoteAccountRouter"]
+        processUpdateOwnerInstruction_self@{shape: comment, label: "require self-call"}
+        DEP@{shape: text, label: "Permit2 Integration"}
+        PROV@{shape: text, label: "account creation/<br>verification"}
+        MULTI@{shape: text, label: "account use"}
+        setSuccessor
+        subgraph state
+            factory@{shape: stored-data, label: "factory: IRemoteAccountFactory<br>override IRemoteAccountRouter"}
+            permit2@{shape: stored-data, label: "permit2: IPermit2<br>override IRemoteAccountRouter"}
+            axelarSourceChainHash@{shape: stored-data, label: "axelarSourceChainHash: bytes32"}
+            successor@{shape: stored-data, label: "successor: address"}
+        end
     end
     
     RAn[RemoteAccount N]
 
     %% inheritance
-    AXLEXEC --> EXE
-    ROUTER --> EXE
+    RemoteAccountAxelarRouter -.->|is| AxelarExecutable
+    RemoteAccountAxelarRouter -.->|is| IRemoteAccountRouter
+    RemoteAccountAxelarRouter -.->|is| ImmutableOwnable
     
     %% operation
-    EXE --> VALIDATE
-    EXE -->|decode| PROC
-    PROC -.->|effect deposit| DEP
-    PROC -->|provide account| PROV
-    PROC --> MULTI
+    START --> _execute
+    START --> setSuccessor
+    _execute -->|"[1]"| VALIDATE
+    _execute -->|"[2]"| DECODE
+    DECODE -.-> processRemoteAccountInstruction
+    DECODE -.-> processUpdateOwnerInstruction
+    processRemoteAccountInstruction --> processRemoteAccountInstruction_self
+    processRemoteAccountInstruction -.->|"[1] effect deposit"| DEP
+    processRemoteAccountInstruction -->|"[2] provide account"| PROV
+    processRemoteAccountInstruction -->|"[3] send calls"| MULTI
+    _execute -->|"[3] emit"| OperationResult
     
-    %% state access
-    VALIDATE -->|checks| SRCCHAIN
-    DEP -->|uses| PER
-    PROV -->|calls provide| FAC
-    MULTI --> |calls executeCalls| RAn
-    REP -->|updates| REPL
-    REP -->|checks| AUTH
+    %% state/dependency access
+    VALIDATE -->|checks| axelarSourceChainHash
+    DEP -->|call<br>permitWitnessTransferFrom| permit2
+    PROV -->|call provide| factory
+    MULTI --> |call executeCalls| RAn
+    processUpdateOwnerInstruction --> processUpdateOwnerInstruction_self
+    processUpdateOwnerInstruction -->|"[1] checks"| successor
+    processUpdateOwnerInstruction -->|"[2] call provide"| factory
+    processUpdateOwnerInstruction -->|"[3] call transferOwnership"| RAn
+    setSuccessor -->|updates| successor
+    setSuccessor -->|modifier| onlyOwner
+    onlyOwner -->|checks| owner
     
-    style EXE fill:#ffe6e6
-    style PROC fill:#fff0e6
-    style DEP fill:#e6f7ff
-    style PROV fill:#f0ffe6
-    style MULTI fill:#ffe6f7
+    style _execute fill:#ffe6e6
+    style setSuccessor fill:#ffe6e6
+    style processRemoteAccountInstruction fill:#fff0e6
+    style processUpdateOwnerInstruction fill:#fff0e6
     style RAn fill:#ccccff
 ```
 
 **Key Components**:
 - **_execute**: Validates source chain, decodes RouterInstruction
-- **processInstruction**: Atomically handles (depositPermit?, multiCalls) input, automatically performing account provisioning/verification
+- **processRemoteAccountInstruction**: Atomically handles (depositPermit?, multiCalls) input, automatically performing account provisioning/verification
+- **processUpdateOwnerInstruction**: Transfers remote account to a new router
 - **Permit2 Integration**: Transfers tokens to RemoteAccount via Permit2 signature-based transfers
 - **account creation/verification**: Creates or verifies RemoteAccount via factory
 - **account use**: Instructs RemoteAccount to execute arbitrary multicalls
-- **replaceOwner**: Enables ownership transfer to new router versions
+- **setSuccessor**: Enables ownership transfer to new router versions
 
 ----
 ## C4 Level 3: Component Diagram - RemoteAccount
 
 ```mermaid
 graph TB
-    subgraph "Inherited Behaviors"
-        Ownable
-        OwnableByReplaceableOwner
-        IRemoteAccount
-    end
-    
-    subgraph "RemoteAccount Components"
-        executeCalls
-        replaceOwner
-        _replaceOwner
-        onlyOwner
+    subgraph Ownable
+        owner
         transferOwnership
+        renounceOwnership
+        %% modifiers
+        onlyOwner@{shape: odd}
+    end
+    subgraph IRemoteAccount
+        IRemoteAccount_executeCalls[executeCalls]
     end
     
-    subgraph "State & Validation"
-        owner[owner: address]
+    subgraph RemoteAccount
+        START@{shape: start}
+        executeCalls
     end
     
     EXTERNAL[target contracts]
     
     %% inheritance
-    IRemoteAccount -.->|override| executeCalls
-    Ownable --> OwnableByReplaceableOwner
-    OwnableByReplaceableOwner -->|provides| _replaceOwner
-    Ownable -->|provides| onlyOwner
-    Ownable -->|provides| transferOwnership
-    Ownable -->|provides| owner
+    RemoteAccount -.->|is| Ownable
+    RemoteAccount -.->|is| IRemoteAccount
+    executeCalls -.->|override| IRemoteAccount_executeCalls
     
     %% operation
+    START --> executeCalls
+    START --> transferOwnership
+    START --> renounceOwnership
     executeCalls -->|modifier| onlyOwner
     executeCalls -.->|loops & calls| EXTERNAL
-    executeCalls -.->|calls| replaceOwner
-    replaceOwner -->|calls| _replaceOwner
-    _replaceOwner -->|calls| transferOwnership
+    transferOwnership -->|modifier| onlyOwner
+    renounceOwnership -->|modifier| onlyOwner
     
     %% state access
     onlyOwner -->|checks| owner
     transferOwnership -->|updates| owner
+    renounceOwnership -->|updates| owner
     
-    style executeCalls fill:#e6f3ff
-    style replaceOwner fill:#ffe6f0
+    style executeCalls fill:#ffe6e6
+    style transferOwnership fill:#ffe6e6
+    style renounceOwnership fill:#ffe6e6
 ```
 
 **Key Components**:
 - **executeCalls**: Validates owner, then atomically executes array of contract calls
-- **replaceOwner**: Enables migration by transferring to designated replacement owner
 
 ## C4 Level 3: Component Diagram - RemoteAccountFactory
 
 ```mermaid
 graph TB
-    subgraph "Inherited Behaviors"
-        Ownable
-        OwnableByReplaceableOwner
-        IRemoteAccount
-        IRemoteAccountFactory
+    subgraph Ownable
+        owner
+        transferOwnership
+        renounceOwnership
+        %% modifiers
+        onlyOwner@{shape: odd}
+    end
+    subgraph IRemoteAccountFactory
+        IRemoteAccountFactory_getRemoteAccountAddress[getRemoteAccountAddress]
+        IRemoteAccountFactory_verifyRemoteAccount[verifyRemoteAccount]
+        IRemoteAccountFactory_provide[provide]
+        %% events
+        RemoteAccountCreated@{shape: flag}
     end
 
-    subgraph "RemoteAccountFactory Components"
-        getRemoteAccountAddress
+    subgraph RemoteAccountFactory
+        START@{shape: start}
+        getRemoteAccountAddress["getRemoteAccountAddress<br>override IRemoteAccountFactory"]
         _getRemoteAccountAddress
 
-        verifyRemoteAccount
+        verifyRemoteAccount["verifyRemoteAccount<br>override IRemoteAccountFactory"]
         _verifyRemoteAccountOwner
 
-        provide
+        provide["provide<br>override IRemoteAccountFactory"]
         SAME_OWNER{owner matches<br>expected router?}
         _provideForRouter
         ACCOUNT_EXISTS{account exists?}
-        provideForRouter[provideForRouter<br>Privileged create with specific owner]
+        MAKE_ACCOUNT@{shape: text, label: "create account"}
 
         _getSalt[_getSalt<br>deterministic by CAIP-10 principal acount]
-
-        executeCalls
-        replaceOwner
-        _replaceOwner
-        onlyOwner
-        transferOwnership
-    end
-    
-    subgraph "State & Validation"
-        _principalSalt[bytes32: _principalSalt]
-        _remoteAccountBytecodeHash[bytes32: _remoteAccountBytecodeHash]
-        owner[owner: address]
+        subgraph state
+            factoryPrincipalCaip2@{shape: stored-data}
+            factoryPrincipalAccount@{shape: stored-data}
+            _principalSalt@{shape: stored-data}
+            _remoteAccountBytecodeHash@{shape: stored-data}
+        end
     end
     
     RAn[RemoteAccount N]
     
     %% inheritance
-    IRemoteAccount -.->|override| executeCalls
-    IRemoteAccountFactory -.->|override| getRemoteAccountAddress
-    IRemoteAccountFactory -.->|override| verifyRemoteAccount
-    IRemoteAccountFactory -.->|override| provide
-    Ownable --> OwnableByReplaceableOwner
-    OwnableByReplaceableOwner -->|provides| _replaceOwner
-    Ownable -->|provides| onlyOwner
-    Ownable -->|provides| transferOwnership
-    Ownable -->|provides| owner
+    RemoteAccountFactory -.->|is| Ownable
+    RemoteAccountFactory -.->|is| IRemoteAccountFactory
     
     %% operation
-    getRemoteAccountAddress -->|calls| _getSalt
-    getRemoteAccountAddress -->|calls| _getRemoteAccountAddress
-    verifyRemoteAccount -->|calls| _getSalt
-    verifyRemoteAccount -->|calls| _getRemoteAccountAddress
-    verifyRemoteAccount -->|calls| _verifyRemoteAccountOwner
-    _verifyRemoteAccountOwner -.->|"calls owner()"| RAn
+    START --> provide
+    START --> verifyRemoteAccount
+    START --> getRemoteAccountAddress
+    START --> transferOwnership
+    START --> renounceOwnership
     provide --> SAME_OWNER
     SAME_OWNER -.->|no: calls| verifyRemoteAccount
     SAME_OWNER -.->|yes: calls| _provideForRouter
+    verifyRemoteAccount -->|calls| _getSalt
+    verifyRemoteAccount -->|calls| _getRemoteAccountAddress
+    verifyRemoteAccount -->|calls| _verifyRemoteAccountOwner
+    _verifyRemoteAccountOwner -.->|"call owner()"| RAn
     _provideForRouter -->|calls| _getSalt
     _provideForRouter -->|calls| _getRemoteAccountAddress
     _provideForRouter --> ACCOUNT_EXISTS
     ACCOUNT_EXISTS -.->|yes: calls| _verifyRemoteAccountOwner
-    ACCOUNT_EXISTS -.->|no: deterministically creates| RAn
-    provideForRouter -->|calls| _provideForRouter
-    executeCalls -->|modifier| onlyOwner
-    executeCalls -.->|calls| replaceOwner
-    executeCalls -.->|calls| provideForRouter
-    replaceOwner -->|calls| _replaceOwner
-    _replaceOwner -->|calls| transferOwnership
+    ACCOUNT_EXISTS -.->|no| MAKE_ACCOUNT
+    MAKE_ACCOUNT -->|"[1] deterministically creates"| RAn
+    MAKE_ACCOUNT -->|"[2] emit"| RemoteAccountCreated
+    getRemoteAccountAddress -->|calls| _getSalt
+    getRemoteAccountAddress -->|calls| _getRemoteAccountAddress
     
     %% state access
     _getRemoteAccountAddress -.->|reads| _principalSalt
@@ -288,9 +316,13 @@ graph TB
     SAME_OWNER -->|checks| owner
     onlyOwner -->|checks| owner
     transferOwnership -->|updates| owner
+    renounceOwnership -->|updates| owner
     
-    style provide fill:#e6ffe6
-    style _provideForRouter fill:#ffe6e6
+    style provide fill:#ffe6e6
+    style verifyRemoteAccount fill:#ffe6e6
+    style getRemoteAccountAddress fill:#ffe6e6
+    style transferOwnership fill:#ffe6e6
+    style renounceOwnership fill:#ffe6e6
 ```
 
 **Key Components**:
@@ -310,36 +342,55 @@ sequenceDiagram
     participant RAF as RemoteAccountFactory
     participant RA as RemoteAccount
     participant DEFI as DeFi Protocol
-    
+
     Note right of PM: using portfolio LCA
-    PM->>AXL: send RouterInstruction
-    AXL->>PR: _execute(sourceChain, sourceAddress, payload)
-    
+    PM->>AXL: send RemoteAccountInstruction |<br>UpdateOwnerInstruction
+    AXL->>PR: _execute(sourceChain,<br>sourceAddress, payload)
+
     PR->>PR: validate source chain
-    PR->>PR: decode RouterInstruction
-    
-    critical [processInstruction(instruction)]
-        opt if depositPermit exists
-            PR->>P2: permitWitnessTransferFrom(...)
-            P2->>RA: transfer tokens
-        end
 
-        PR->>RAF: provide(sourceAddress, self, expectedAddress)
-        alt if exists
-            RAF->>RA: owner()
-            RAF->>RAF: verify match
-        else
-            RAF->>RA: CREATE2
-            RAF->>RA: transferOwnership(self)
-        end
-
-        opt if multiCalls exist
-            PR->>RA: executeCalls(multiCalls)
-            RA->>RA: Validate owner
-            loop for each call{target, data}
-                RA->>DEFI: target.call(data)
-                DEFI-->>RA: result
+    critical
+        alt processRemoteAccountInstruction
+            Note over PR,RA: pull deposit
+            opt if depositPermit exists
+                PR->>P2: permitWitnessTransferFrom(...)
+                P2->>RA: transfer tokens
             end
+
+            Note over PR,RA: provide account
+            PR->>RAF: provide(sourceAddress, address(this), expectedAddress)
+            alt if exists
+                RAF->>RA: owner()
+                RAF->>RAF: verify match
+            else
+                RAF->>RA: CREATE2
+                RAF->>RA: transferOwnership(router)
+            end
+
+            Note over PR,RA: make calls
+            opt if multiCalls exist
+                PR->>RA: executeCalls(multiCalls)
+                RA->>RA: Validate owner
+                loop for each {target, data}
+                    RA->>DEFI: target.call(data)
+                    DEFI-->>RA: result
+                end
+            end
+        else processUpdateOwnerInstruction
+            PR->>PR: verify newOwner is successor
+
+            Note over PR,RA: provide account
+            PR->>RAF: provide(sourceAddress, address(this), expectedAddress)
+            alt if exists
+                RAF->>RA: owner()
+                RAF->>RAF: verify match
+            else
+                RAF->>RA: CREATE2
+                RAF->>RA: transferOwnership(router)
+            end
+
+            Note over PR,RA: transfer to new router
+            PR->>RA: transferOwnership(newOwner)
         end
     option [success]
         PR->>PR: emit OperationResult(id, true, '')
@@ -351,10 +402,16 @@ sequenceDiagram
 **Flow Description**:
 1. Portfolio Manager sends instructions from portfolio LCA via Axelar GMP
 2. RemoteAccountAxelarRouter validates message source
-3. If requested, RemoteAccountAxelarRouter transfers tokens via Permit2
-4. RemoteAccountAxelarRouter provides account (creating if necessary)
-5. If calls for RemoteAccount exist, RemoteAccountAxelarRouter forwards them and RemoteAccount executes them
-6. RemoteAccountAxelarRouter emits an event describing success or failure
+3. RemoteAccountAxelarRouter parses and processes input
+   * For `processRemoteAccountInstruction`:
+     1. If requested, RemoteAccountAxelarRouter transfers tokens via Permit2
+     2. RemoteAccountAxelarRouter provides account (creating if necessary)
+     3. If calls for RemoteAccount exist, RemoteAccountAxelarRouter forwards them and RemoteAccount executes them
+   * For `processUpdateOwnerInstruction`:
+     1. RemoteAccountAxelarRouter verifies that the new owner identifies its successor
+     2. RemoteAccountAxelarRouter provides account (creating if necessary)
+     3. RemoteAccountAxelarRouter transfers account ownership
+4. RemoteAccountAxelarRouter emits an event describing success or failure
 
 ## Ownership and Security Model
 
@@ -374,23 +431,20 @@ graph TB
     Axelar -->|_execute| ROUTER2
     Axelar -->|_execute| ROUTERn
     
-    EVM_OPERATOR -.->|replaceOwner| ROUTER1
-    EVM_OPERATOR -.->|replaceOwner| ROUTER2
-    EVM_OPERATOR -.->|replaceOwner| ROUTERn
+    EVM_OPERATOR -.->|setSuccessor| ROUTER1
+    EVM_OPERATOR -.->|setSuccessor| ROUTER2
+    EVM_OPERATOR -.->|setSuccessor| ROUTERn
     
     ROUTER1 ==>|owns| RA1
-    ROUTER1 -.->|"transferred by<br>executeCalls&lt;replaceOwner&gt;"| RA2
-    ROUTER1 -.->|"transferred by<br>executeCalls"| RAF
-    ROUTER1 -.->|old replacementOwner_| ROUTER2
-    ROUTER1 -->|replacementOwner_| ROUTERn
-    ROUTER2 -.->|"transferred by<br>executeCalls"| RAF
-    ROUTER2 -->|replacementOwner_| ROUTERn
+    ROUTER1 -.->|transferred| RA2
+    ROUTER1 -.->|transferred| RAF
+    ROUTER1 -.->|old successor| ROUTER2
+    ROUTER1 -->|successor| ROUTERn
+    ROUTER2 -.->|transferred| RAF
+    ROUTER2 -->|successor| ROUTERn
     ROUTERn ==>|owns| RA2
-    ROUTERn -->|executeCalls| RA2
     ROUTERn ==>|owns| RAn
-    ROUTERn -->|executeCalls| RAn
     ROUTERn ==>|owns| RAF
-    ROUTERn -->|"executeCalls&lt;provide|provideForRouter&gt;"| RAF
     
     style Axelar fill:#ffe6e6
     style EVM_OPERATOR fill:#ffe6e6
@@ -401,15 +455,13 @@ graph TB
 
 **Ownership**:
 - Current RemoteAccountAxelarRouter owns RemoteAccountFactory and all new accounts
-- Ownership of old accounts is transferred upon activity (`replaceOwner` call through old router)
+- Ownership of old accounts is transferred upon activity (`transferOwnership` call through old router)
 
 **Security Checks**:
-- **RemoteAccountAxelarRouter `replaceOwner`**: Validate `msg.sender` against immutable `ownerAuthority`
-- **RemoteAccountAxelarRouter `_execute`**: Validate sourceChain against immutable hash
+- **RemoteAccountAxelarRouter `setSuccessor`**: Validate `msg.sender` against immutable `owner`
+- **RemoteAccountAxelarRouter `_execute`**: Validate `sourceChain` against immutable hash
 - **RemoteAccountFactory `provide`**: For account creation, validate requested owner against its own owner. Validates remote account address derives from sourceAddress.
-- **RemoteAccountFactory `provideForRouter`**: Validate self-call (from `executeCalls`)
-- **RemoteAccountFactory/RemoteAccount `executeCalls`**: Validate that sender is current owner
-- **RemoteAccountFactory/RemoteAccount `replaceOwner`**: Validate self-call (from `executeCalls`) and (via OwnableByReplaceableOwner inheritance) that the old owner confirms the requested new owner
+- **RemoteAccountFactory/RemoteAccount `executeCalls` and `transferOwnership`**: Validate that sender is current owner
 
 ## Deployment
 
@@ -422,53 +474,44 @@ sequenceDiagram
     participant ROUTER2 as RemoteAccountAxelarRouter<br>v2
     participant ROUTERn as RemoteAccountAxelarRouter<br>v3
     participant RAF as RemoteAccountFactory
-    participant RA1 as RemoteAccount<br>(old)
-    participant RAn as RemoteAccount<br>(new)
+    participant RA as RemoteAccount
 
-    Note over PM,RAn: Initial deployment
+    Note over PM,RA: Initial deployment
     EVM_DEPLOYER->>RAF: deploy
     EVM_DEPLOYER->>ROUTER1: deploy
     EVM_DEPLOYER->>RAF: transferOwnership to router
 
-    Note over PM,RAn: Deploy new router
+    Note over PM,RA: Deploy new router
     EVM_DEPLOYER->>ROUTERn: deploy
 
-    Note over PM,RAn: Update old routers
+    Note over PM,RA: Update old routers
     par
-        EVM_OPERATOR->>ROUTER1: replaceOwner(new router)
-        EVM_OPERATOR->>ROUTER2: replaceOwner(new router)
+        EVM_OPERATOR->>ROUTER1: setSuccessor(new router)
+        EVM_OPERATOR->>ROUTER2: setSuccessor(new router)
     end
 
-    Note over PM,RAn: Upgrade contract for new router
+    Note over PM,RA: Upgrade contract for new router
     PM->>PM: upgrade
-    PM->>ROUTER2: [via Axelar] send RouterInstruction{factoryAddr, [ContractCall{factoryAddr, encodeCall(replaceOwner)}]}
-    ROUTER2->>RAF: executeCalls([ContractCall{factoryAddr, encodeCall(replaceOwner)}])
-    critical replaceOwner
-        RAF->>ROUTER2: replacementOwner()
-        RAF->>RAF: confirm match
-        RAF->>RAF: replace owner
-    end
+    PM->>ROUTER2: [via Axelar] send (processUpdateOwnerInstruction, txId, factoryAddr, UpdateOwnerInstruction{newRouterAddr})
+    ROUTER2->>RAF: transferOwnership(newRouterAddr)
+    RAF->>RAF: confirm sender is current owner
+    RAF->>RAF: replace owner
     ROUTER2->>PM: [via Resolver] ready
     PM->>PM: new router ready
     
-    Note over PM,RAn: Account interactions
-    alt account does not exist
-        PM->>ROUTERn: [via Axelar] send RouterInstruction{factoryAddr, [ContractCall{factoryAddr, encodeCall(provide)}]}
-        ROUTERn->>RAF: executeCalls([ContractCall{factoryAddr, encodeCall(provide)}])
-        RAF->>RAF: provide
-        RAF->>RAn: CREATE2
-    else if account uses old router
-        PM->>ROUTER1: [via Axelar] send RouterInstruction{addr, [ContractCall{addr, encodeCall(replaceOwner)}]}
-        ROUTER1->>RA1: executeCalls([ContractCall{addr, encodeCall(replaceOwner)}])
-        RA1->>RA1: replaceOwner
-        critical replaceOwner
-            RA1->>ROUTER1: replacementOwner()
-            RA1->>RA1: confirm match
-            RA1->>RA1: replace owner
-        end
+    Note over PM,RA: Account interactions
+    opt if account uses old router
+        PM->>ROUTER1: [via Axelar] send (processUpdateOwnerInstruction, txId, addr, UpdateOwnerInstruction{newRouterAddr})
+        ROUTER1->>RAF: provide
+        RAF-->>RA: create/validate
+        ROUTER1->>RA: transferOwnership(newRouterAddr)
+        RA->>RA: confirm sender is current owner
+        RA->>RA: replace owner
     end
-    PM->>ROUTERn: [via Axelar] send RouterInstruction
-    ROUTERn->>RA1: executeCalls
+    PM->>ROUTERn: [via Axelar] send (processRemoteAccountInstruction, txId, expectedAddr, RemoteAccountInstruction{...})
+    ROUTERn->>RAF: provide
+    RAF-->>RA: create/validate
+    ROUTERn->>RA: executeCalls
 ```
 
 **Migration Features**:
