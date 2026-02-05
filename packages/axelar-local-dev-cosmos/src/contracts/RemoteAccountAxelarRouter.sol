@@ -15,10 +15,12 @@ import { IRemoteAccountRouter, IPermit2, DepositPermit, RouterInstruction } from
  *      by deploying a new router and transferring ownership.
  *
  *      Migration to a new router can be done via multicall:
- *      Agoric sends a message with multiCalls containing:
+ *      - The current router first designates the new router via replaceOwner().
+ *      - Agoric sends a message with multiCalls containing:
  *        target: remoteAccountAddress
- *        data: abi.encodeCall(Ownable.transferOwnership, (newRouterAddress))
- *      This makes RemoteAccount call itself to transfer ownership to the new router.
+ *        data: abi.encodeCall(RemoteAccount.replaceOwner, (newRouterAddress))
+ *      This makes RemoteAccount call itself to replace ownership, which checks
+ *      the replacement owner was pre-designated by the current router.
  */
 contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
     IRemoteAccountFactory public immutable override factory;
@@ -63,9 +65,9 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
 
     /**
      * @notice Internal handler for Axelar GMP messages
-     * @dev Validates source chain and address, then processes the payload
-     * @param sourceChain The source chain (must be "agoric")
-     * @param sourceAddress The source address (must be agoricLCA)
+     * @dev Validates source chain, then processes the payload
+     * @param sourceChain The source chain (must match configured axelarSourceChain)
+     * @param sourceAddress The source address (used as principal; not validated here)
      * @param payload The encoded RouterPayload
      */
     function _execute(

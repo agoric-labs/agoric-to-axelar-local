@@ -9,10 +9,9 @@ import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
  * @notice A wallet contract representing a designated remote account, controlled
            by a replaceable RemoteAccountAxelarRouter owner.
  * @dev Uses a OwnableByReplaceableOwner, derived from OZ Ownable for address-based
-        ownership of the router, and a similar RemoteRepresentative contract to
-        designate the principal remote account this wallet contract is acting on
-        behalf of. This design enables migration paths - if the Axelar-based router
-        is replaced, ownership can be transferred to a new router.
+        ownership of the router. This contract does not track the principal on-chain.
+        This design enables migration paths - if the Axelar-based router is replaced,
+        ownership can be transferred to a new router.
  */
 contract RemoteAccount is OwnableByReplaceableOwner, IRemoteAccount {
     event Received(address indexed sender, uint256 amount);
