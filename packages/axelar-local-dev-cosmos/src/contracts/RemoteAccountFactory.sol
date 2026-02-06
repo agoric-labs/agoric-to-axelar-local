@@ -43,26 +43,41 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
         _remoteAccountBytecodeHash = keccak256(type(RemoteAccount).creationCode);
     }
 
+    /**
+     * @notice Verify a principal account matches the factory's designated principal
+     * @dev Only checks the account part not the caip2. The intent is to help routers
+     *      disambiguate between the factory and a RemoteAccount.
+     *      Reverts if the principal does not match.
+     * @param expectedPrincipalAccount The expected address of the factory's principal
+     */
+    function verifyFactoryPrincipalAccount(
+        string calldata expectedPrincipalAccount
+    ) external view override {
+        if (_getSalt(expectedPrincipalAccount) != _principalSalt) {
+            revert PrincipalAccountMismatch(expectedPrincipalAccount, factoryPrincipalAccount);
+        }
+    }
+
     function _getSalt(string calldata principalAccount) internal pure returns (bytes32) {
         return keccak256(bytes(principalAccount));
     }
 
     /**
      * @notice Compute the CREATE2 address for a RemoteAccount deployed by this factory
-     * @dev Return the address of this factory if the salt matches the factory's principal
+     * @dev Return address(0) if the salt matches the factory's principal
      * @param salt The salt generated from the principal for the RemoteAccount
      * @return The deterministic address where the RemoteAccount is deployed
      */
     function _getRemoteAccountAddress(bytes32 salt) internal view returns (address) {
         if (salt == _principalSalt) {
-            return address(this);
+            return address(0);
         }
         return Create2.computeAddress(salt, _remoteAccountBytecodeHash);
     }
 
     /**
      * @notice Compute the CREATE2 address for a RemoteAccount deployed by this factory
-     * @dev Return the address of this factory if the principalAccount matches the factory's principal
+     * @dev Return address(0) if the principalAccount matches the factory's principal
      * @param principalAccount The address of the principal for the RemoteAccount
      * @return The deterministic address where the RemoteAccount is deployed
      */
@@ -75,63 +90,54 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
 
     /**
      * @notice Check if a RemoteAccount with the expected owner exists at the given address
-     * @dev Assumes caller derived account address from principal account, and verified code exists for address.
+     * @dev Assumes the caller already derived the account address from the principal account,
+     *      and verified code exists for the address.
      *      Checks that the owner matches.
-     *      TODO: check that contract is a RemoteAccount.
-     * @param accountAddress The address to check
-     * @param routerOwner The expected address of the current owner
-     * @return true if valid account exists with matching principal and owner
+     *      Does not check that contract is a RemoteAccount, relies on deterministic address derivation.
+     * @param accountAddress The derived remote account address to check
+     * @param routerOwner The expected address of the account's current owner
      */
-    function _verifyRemoteAccountOwner(
-        address accountAddress,
-        address routerOwner
-    ) internal view returns (bool) {
-        if (accountAddress == address(this)) {
-            if (owner() != routerOwner) {
-                return false;
-            }
+    function _verifyRemoteAccountOwner(address accountAddress, address routerOwner) internal view {
+        if (accountAddress == address(0)) {
+            revert UnauthorizedRouter(accountAddress, routerOwner);
         } else {
-            // if (keccak256(type(RemoteAccount).runtimeCode) != accountAddress.codehash) {
-            //     return false;
-            // }
-
             try RemoteAccount(payable(accountAddress)).owner() returns (address existingOwner) {
                 if (existingOwner != routerOwner) {
-                    return false;
+                    revert UnauthorizedRouter(accountAddress, routerOwner);
                 }
             } catch {
-                return false;
+                revert UnauthorizedRouter(accountAddress, routerOwner);
             }
         }
-
-        return true;
     }
 
     /**
      * @notice Verify an address is a remote account for a given principal and router owner
      * @dev Does not check the router matches the factory's current owner to allow a non current router
      *      to interact with remote accounts whose ownership needs to be updated.
+     *      Reverts if the account address does not match the expected address derived from the principal.
+     *      Reverts if there is no account at the address, or it does not have the expected owner.
      * @param principalAccount The address of the principal for the RemoteAccount
      * @param expectedRouter The expected address of the router owner
-     * @param accountAddress The address to verify
-     * @return true if a valid RemoteAccount exists at the address
+     * @param expectedAccountAddress The expected address to verify
      */
     function verifyRemoteAccount(
         string calldata principalAccount,
         address expectedRouter,
-        address accountAddress
-    ) public view override returns (bool) {
+        address expectedAccountAddress
+    ) public view override {
         bytes32 salt = _getSalt(principalAccount);
 
-        if (_getRemoteAccountAddress(salt) != accountAddress) {
-            return false;
+        address actualAccountAddress = _getRemoteAccountAddress(salt);
+        if (actualAccountAddress != expectedAccountAddress) {
+            revert AddressMismatch(expectedAccountAddress, actualAccountAddress);
         }
 
-        if (accountAddress.code.length == 0) {
-            return false;
+        if (actualAccountAddress.code.length == 0) {
+            revert InvalidAccountAtAddress(actualAccountAddress);
         }
 
-        return _verifyRemoteAccountOwner(accountAddress, expectedRouter);
+        _verifyRemoteAccountOwner(actualAccountAddress, expectedRouter);
     }
 
     /**
@@ -151,7 +157,7 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
      *        provide() call get reordered, the check ensures provide() fails rather than
      *        creating accounts with unexpected ownership.
      *
-     * @param expectedRouter The expected address of the router, must be current router of the factory
+     * @param expectedRouter The expected address of the router, must be current router owner of the factory
      * @param expectedAddress The expected CREATE2 address (for verification)
      * @return true if the RemoteAccount was created, false if it was pre-existing
      */
@@ -164,10 +170,8 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
             // If the factory is used to "provide" a remote account for a different router,
             // we can check whether that remote account already exists and is valid,
             // but we cannot create a new one on behalf of another router.
-            if (verifyRemoteAccount(principalAccount, expectedRouter, expectedAddress)) {
-                return false;
-            }
-            revert UnauthorizedRouter(expectedRouter);
+            verifyRemoteAccount(principalAccount, expectedRouter, expectedAddress);
+            return false;
         }
         return _provideForRouter(principalAccount, expectedRouter, expectedAddress);
     }
@@ -216,6 +220,10 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
 
         address accountAddress = _getRemoteAccountAddress(salt);
 
+        if (expectedAddress == address(0)) {
+            revert InvalidAccountAtAddress(expectedAddress);
+        }
+
         if (accountAddress != expectedAddress) {
             revert AddressMismatch(expectedAddress, accountAddress);
         }
@@ -234,9 +242,7 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
 
             return true;
         } else {
-            if (!_verifyRemoteAccountOwner(accountAddress, routerAddress)) {
-                revert InvalidAccountAtAddress(expectedAddress);
-            }
+            _verifyRemoteAccountOwner(accountAddress, routerAddress);
             return false;
         }
     }

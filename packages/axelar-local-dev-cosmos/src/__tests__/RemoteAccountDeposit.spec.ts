@@ -486,9 +486,10 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         expect(errorEvent.args.success).to.equal(false);
         expect(errorEvent.args.reason).to.not.equal('0x');
 
-        // Decode the error - should be UnauthorizedCaller from router
-        const decodedError = routerInterface.parseError(errorEvent.args.reason);
-        expect(decodedError?.name).to.equal('UnauthorizedCaller');
-        expect(decodedError?.args.source).to.equal(portfolioLCA);
+        // Decode the error - should be UnauthorizedCaller from factory
+        const decodedError = factory.interface.parseError(errorEvent.args.reason);
+        expect(decodedError?.name).to.equal('PrincipalAccountMismatch');
+        expect(decodedError?.args.expected).to.equal(portfolioLCA);
+        expect(decodedError?.args.actual).to.equal(portfolioContractAccount);
     });
 });

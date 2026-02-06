@@ -391,7 +391,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         expect(decodedError?.name).to.equal('AddressMismatch');
     });
 
-    it('should update owner of remote account through router authority + multicall', async () => {
+    it('should update owner of remote account with successor check', async () => {
         // Deploy a new router
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         const newRouter = await RouterContract.deploy(
@@ -504,9 +504,9 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         expect(errorEvent.args.id.hash).to.equal(keccak256(toBytes(txId2)));
         expect(errorEvent.args.success).to.equal(false);
 
-        // Decode error - should be InvalidAccountAtAddress from factory
+        // Decode error - should be UnauthorizedRouter from factory
         const decodedError = factory.interface.parseError(errorEvent.args.reason);
-        expect(decodedError?.name).to.equal('InvalidAccountAtAddress');
+        expect(decodedError?.name).to.equal('UnauthorizedRouter');
 
         // New router should succeed
         const commandId3 = getCommandId();
@@ -686,7 +686,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const factoryInterface = (await ethers.getContractFactory('RemoteAccountFactory'))
             .interface;
         const decodedError = factoryInterface.parseError(errorEvent.args.reason);
-        expect(decodedError?.name).to.equal('UnauthorizedRouter');
+        expect(decodedError?.name).to.equal('InvalidAccountAtAddress');
     });
 
     it.skip('should create account for different router via factory.provideForRouter multicall', async () => {
