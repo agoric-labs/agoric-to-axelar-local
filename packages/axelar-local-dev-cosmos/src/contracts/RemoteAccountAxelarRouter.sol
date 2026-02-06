@@ -6,7 +6,7 @@ import { Ownable } from '@openzeppelin/contracts/access/Ownable.sol';
 import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
 import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
 import { ImmutableOwnable } from './ImmutableOwnable.sol';
-import { IRemoteAccountRouter, IPermit2, DepositPermit, RemoteAccountInstruction, UpdateOwnerInstruction } from './interfaces/IRemoteAccountRouter.sol';
+import { IRemoteAccountRouter, IPermit2, DepositPermit, DepositInstruction, RemoteAccountInstruction, UpdateOwnerInstruction } from './interfaces/IRemoteAccountRouter.sol';
 
 /**
  * @title RemoteAccountAxelarRouter
@@ -38,6 +38,8 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
     error InvalidPayload(bytes4 selector);
 
     event Received(address indexed sender, uint256 amount);
+
+    error UnauthorizedCaller(string source);
 
     /**
      * @param axelarGateway The Axelar gateway address
@@ -112,6 +114,16 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
                 IRemoteAccountRouter.processRemoteAccountInstruction,
                 (sourceAddress, expectedAddress, instruction)
             );
+        } else if (selector == IRemoteAccountRouter.processDepositInstruction.selector) {
+            DepositInstruction memory instruction;
+            (txId, expectedAddress, instruction) = abi.decode(
+                encodedArgs,
+                (string, address, DepositInstruction)
+            );
+            rewrittenPayload = abi.encodeCall(
+                IRemoteAccountRouter.processDepositInstruction,
+                (sourceAddress, expectedAddress, instruction)
+            );
         } else if (selector == IRemoteAccountRouter.processUpdateOwnerInstruction.selector) {
             UpdateOwnerInstruction memory instruction;
             (txId, expectedAddress, instruction) = abi.decode(
@@ -133,26 +145,39 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
     }
 
     /**
-     * @notice Process the remote account instruction in order: deposit -> provide -> multicall
+     * @notice Process a deposit instruction, making sure the target account is provisioned
      * @dev This is an external function which can only be called by this contract
      *      Used to create a call stack that can be reverted atomically
-     *      Can only be called when the contract is not paused
-     * @param sourceAddress The principal account address of the remote account
-     * @param expectedAccountAddress The expected account address corresponding to the source address
-     * @param instruction The decoded RemoteAccountInstruction
+     *      Only the factory's principal can invoke this operation to ensure only the
+     *      controller can redeem signed permits.
+     * @param sourceAddress The principal account address of the factory
+     * @param factoryAddress The address of the factory
+     * @param instruction The decoded DepositInstruction
      */
-    function processRemoteAccountInstruction(
+    function processDepositInstruction(
         string calldata sourceAddress,
-        address expectedAccountAddress,
-        RemoteAccountInstruction calldata instruction
+        address factoryAddress,
+        DepositInstruction calldata instruction
     ) external override {
         require(msg.sender == address(this));
 
-        bool hasDeposit = instruction.depositPermit.length > 0;
-        bool hasMultiCalls = instruction.multiCalls.length > 0;
+        // Check the factory's principal is the source
+        if (
+            factoryAddress != address(factory) ||
+            factory.getRemoteAccountAddress(sourceAddress) != factoryAddress
+        ) {
+            revert UnauthorizedCaller(sourceAddress);
+        }
+
+        require(instruction.expectedAccountAddress != factoryAddress);
+
+        // NOTE: this allows the factory's principal to provision and deposit
+        // into any remote account without proof that it holds the corresponding
+        // principal account. Unfortunately there are no built-in capabilities
+        // over GMP, and implementing one would require some stateful mechanism.
 
         // Transfer first to avoid expensive creation if deposit fails
-        if (hasDeposit) {
+        if (instruction.depositPermit.length > 0) {
             // Verify that the instruction is well formed
             require(instruction.depositPermit.length == 1);
             DepositPermit calldata deposit = instruction.depositPermit[0];
@@ -161,7 +186,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
             // destination matches the verified accountAddress from the instruction.
             IPermit2.SignatureTransferDetails memory details = IPermit2.SignatureTransferDetails({
                 // We will check address matches expectations after transfer
-                to: expectedAccountAddress,
+                to: instruction.expectedAccountAddress,
                 requestedAmount: deposit.permit.permitted.amount
             });
             permit2.permitWitnessTransferFrom(
@@ -174,10 +199,32 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
             );
         }
 
+        factory.provide(
+            instruction.principalAccount,
+            address(this),
+            instruction.expectedAccountAddress
+        );
+    }
+
+    /**
+     * @notice Process the remote account instruction provide -> multicall
+     * @dev This is an external function which can only be called by this contract
+     *      Used to create a call stack that can be reverted atomically
+     * @param sourceAddress The principal account address of the remote account
+     * @param expectedAccountAddress The expected account address corresponding to the source address
+     * @param instruction The decoded RemoteAccountInstruction
+     */
+    function processRemoteAccountInstruction(
+        string calldata sourceAddress,
+        address expectedAccountAddress,
+        RemoteAccountInstruction calldata instruction
+    ) external override {
+        require(msg.sender == address(this));
+
         // Provide or verify the remote account matches the source principal and owner
         factory.provide(sourceAddress, address(this), expectedAccountAddress);
 
-        if (hasMultiCalls) {
+        if (instruction.multiCalls.length > 0) {
             IRemoteAccount(expectedAccountAddress).executeCalls(instruction.multiCalls);
         }
     }

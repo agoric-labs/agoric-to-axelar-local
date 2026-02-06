@@ -79,12 +79,27 @@ export const routerProcessSharedInputComponents = [
     { name: 'expectedAccountAddress', type: 'address' },
 ] as const satisfies AbiParameter[];
 
-export const remoteAccountInstructionComponents = [
+export const DepositInstructionComponents = [
     {
         name: 'depositPermit',
         type: 'tuple[]',
         components: depositPermitComponents,
     },
+    {
+        name: 'principalAccount',
+        type: 'string',
+    },
+    {
+        name: 'expectedAccountAddress',
+        type: 'address',
+    },
+] as const satisfies AbiParameter[];
+export type DepositInstruction = AbiParameterToPrimitiveType<{
+    type: 'tuple';
+    components: typeof DepositInstructionComponents;
+}>;
+
+export const remoteAccountInstructionComponents = [
     {
         name: 'multiCalls',
         type: 'tuple[]',
@@ -129,6 +144,15 @@ export type ProvideForRouterInstruction = AbiParameterToPrimitiveType<{
 /**
  * ABI inputs for encoding RouterPayload with encodeAbiParameters.
  */
+export const processDepositInstructionInputs = [
+    ...routerProcessSharedInputComponents,
+    {
+        name: 'instruction',
+        type: 'tuple',
+        components: DepositInstructionComponents,
+    },
+] as const satisfies AbiParameter[];
+
 export const processRemoteAccountInstructionInputs = [
     ...routerProcessSharedInputComponents,
     {
@@ -180,6 +204,13 @@ export const remoteAccountAxelarRouterABI = [
             { name: 'sourceAddress', type: 'string' },
             { name: 'payload', type: 'bytes' },
         ],
+        outputs: [],
+        stateMutability: 'nonpayable',
+    },
+    {
+        type: 'function',
+        name: 'processDepositInstruction',
+        inputs: processDepositInstructionInputs,
         outputs: [],
         stateMutability: 'nonpayable',
     },

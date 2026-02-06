@@ -125,11 +125,12 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
 
         const payload = encodeRouterPayload({
             id: txId,
-            expectedAccountAddress: accountAddress,
-            instructionType: 'RemoteAccount',
+            expectedAccountAddress: factory.target as `0x${string}`,
+            instructionType: 'Deposit',
             instruction: {
                 depositPermit,
-                multiCalls: [],
+                principalAccount: portfolioLCA,
+                expectedAccountAddress: accountAddress,
             },
         });
 
@@ -138,7 +139,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: portfolioLCA,
+            sourceAddress: portfolioContractAccount,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -148,7 +149,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
 
         const balanceBefore = await testToken.balanceOf(accountAddress);
 
-        const tx = await router.execute(commandId, sourceChain, portfolioLCA, payload);
+        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
         const receipt = await tx.wait();
 
         // Parse events
@@ -200,11 +201,12 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
 
         const payload = encodeRouterPayload({
             id: txId,
-            expectedAccountAddress: accountAddress,
-            instructionType: 'RemoteAccount',
+            expectedAccountAddress: factory.target as `0x${string}`,
+            instructionType: 'Deposit',
             instruction: {
                 depositPermit,
-                multiCalls: [],
+                principalAccount: portfolioLCA,
+                expectedAccountAddress: accountAddress,
             },
         });
 
@@ -213,7 +215,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: portfolioLCA,
+            sourceAddress: portfolioContractAccount,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -221,7 +223,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
             abiCoder,
         });
 
-        const tx = await router.execute(commandId, sourceChain, portfolioLCA, payload);
+        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
         const receipt = await tx.wait();
 
         // Parse events
@@ -268,11 +270,12 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
 
         const payload = encodeRouterPayload({
             id: txId,
-            expectedAccountAddress: accountAddress,
-            instructionType: 'RemoteAccount',
+            expectedAccountAddress: factory.target as `0x${string}`,
+            instructionType: 'Deposit',
             instruction: {
                 depositPermit,
-                multiCalls: [], // No multicall
+                principalAccount: portfolioLCA,
+                expectedAccountAddress: accountAddress,
             },
         });
 
@@ -281,7 +284,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: portfolioLCA,
+            sourceAddress: portfolioContractAccount,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -291,7 +294,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
 
         const balanceBefore = await testToken.balanceOf(accountAddress);
 
-        const tx = await router.execute(commandId, sourceChain, portfolioLCA, payload);
+        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
         const receipt = await tx.wait();
 
         const routerInterface = router.interface;
@@ -328,7 +331,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
             expectedAccountAddress: wrongAccountAddress,
             instructionType: 'RemoteAccount',
             instruction: {
-                depositPermit: [],
                 multiCalls: [],
             },
         });
@@ -369,11 +371,12 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
 
         const payload = encodeRouterPayload({
             id: txId,
-            expectedAccountAddress: wrongAccountAddress, // But wrong account address
-            instructionType: 'RemoteAccount',
+            expectedAccountAddress: factory.target as `0x${string}`,
+            instructionType: 'Deposit',
             instruction: {
                 depositPermit,
-                multiCalls: [],
+                principalAccount: portfolioLCA,
+                expectedAccountAddress: wrongAccountAddress, // But wrong account address
             },
         });
 
@@ -382,7 +385,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         await approveMessage({
             commandId,
             from: sourceChain,
-            sourceAddress: portfolioLCA,
+            sourceAddress: portfolioContractAccount,
             targetAddress: router.target,
             payload: payloadHash,
             owner,
@@ -390,7 +393,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
             abiCoder,
         });
 
-        const tx = await router.execute(commandId, sourceChain, portfolioLCA, payload);
+        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
         const receipt = await tx.wait();
 
         const routerInterface = router.interface;
@@ -415,5 +418,77 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         expect(decodedError?.name).to.equal('AddressMismatch');
         expect(decodedError?.args.expected).to.equal(wrongAccountAddress);
         expect(decodedError?.args.actual).to.equal(accountAddress);
+    });
+
+    it('should reject deposit from source other than factory principal', async () => {
+        const commandId = getCommandId();
+        const txId = 'tx5';
+        const depositAmount = ethers.parseEther('10');
+
+        const depositPermit: DepositPermit[] = [
+            {
+                owner: owner.address as `0x${string}`,
+                permit: {
+                    permitted: {
+                        token: testToken.target.toString() as `0x${string}`,
+                        amount: depositAmount,
+                    },
+                    nonce: 3n,
+                    deadline: BigInt(Math.floor(Date.now() / 1000) + 3600),
+                },
+                witness: ethers.ZeroHash as `0x${string}`,
+                witnessTypeString: 'Deposit(address account)',
+                signature: ('0x' + '00'.repeat(65)) as `0x${string}`,
+            },
+        ];
+
+        const payload = encodeRouterPayload({
+            id: txId,
+            expectedAccountAddress: factory.target as `0x${string}`,
+            instructionType: 'Deposit',
+            instruction: {
+                depositPermit,
+                principalAccount: portfolioLCA,
+                expectedAccountAddress: accountAddress,
+            },
+        });
+
+        const payloadHash = keccak256(toBytes(payload));
+
+        await approveMessage({
+            commandId,
+            from: sourceChain,
+            sourceAddress: portfolioLCA, // wrong source - should be portfolioContractAccount
+            targetAddress: router.target,
+            payload: payloadHash,
+            owner,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        });
+
+        const tx = await router.execute(commandId, sourceChain, portfolioLCA, payload);
+        const receipt = await tx.wait();
+
+        const routerInterface = router.interface;
+        const parsedLogs = receipt?.logs
+            .map((log: { topics: string[]; data: string }) => {
+                try {
+                    return routerInterface.parseLog(log);
+                } catch {
+                    return null;
+                }
+            })
+            .filter(Boolean);
+
+        // Should fail because source doesn't match factory principal
+        const errorEvent = parsedLogs.find((e: { name: string }) => e?.name === 'OperationResult');
+        expect(errorEvent.args.id.hash).to.equal(keccak256(toBytes(txId)));
+        expect(errorEvent.args.success).to.equal(false);
+        expect(errorEvent.args.reason).to.not.equal('0x');
+
+        // Decode the error - should be UnauthorizedCaller from router
+        const decodedError = routerInterface.parseError(errorEvent.args.reason);
+        expect(decodedError?.name).to.equal('UnauthorizedCaller');
+        expect(decodedError?.args.source).to.equal(portfolioLCA);
     });
 });
