@@ -504,9 +504,9 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         expect(errorEvent.args.id.hash).to.equal(keccak256(toBytes(txId2)));
         expect(errorEvent.args.success).to.equal(false);
 
-        // Decode error - should be UnauthorizedRouter from factory
+        // Decode error - should be UnauthorizedOwner from factory
         const decodedError = factory.interface.parseError(errorEvent.args.reason);
-        expect(decodedError?.name).to.equal('UnauthorizedRouter');
+        expect(decodedError?.name).to.equal('UnauthorizedOwner');
 
         // New router should succeed
         const commandId3 = getCommandId();
@@ -682,7 +682,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const errorEvent = parsedLogs3.find((e) => e.name === 'OperationResult')!;
         expect(errorEvent.args.success).to.equal(false);
 
-        // Decode error - should be UnauthorizedRouter from factory
+        // Decode error - should be InvalidAccountAtAddress from factory
         const factoryInterface = (await ethers.getContractFactory('RemoteAccountFactory'))
             .interface;
         const decodedError = factoryInterface.parseError(errorEvent.args.reason);

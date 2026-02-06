@@ -450,15 +450,15 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         expect(errorEvent.args.success).to.equal(false);
         expect(errorEvent.args.id.hash).to.equal(keccak256(toBytes(txId2)));
 
-        // Decode the error - should be UnauthorizedRouter
+        // Decode the error - should be UnauthorizedOwner
         const reason = errorEvent.args.reason;
         expect(reason).to.not.equal('0x');
 
         const factoryInterface = factory.interface;
         const decodedError = factoryInterface.parseError(reason);
-        expect(decodedError?.name).to.equal('UnauthorizedRouter');
+        expect(decodedError?.name).to.equal('UnauthorizedOwner');
         expect(decodedError?.args.account).to.equal(expectedAccountAddress);
-        expect(decodedError?.args.router).to.equal(router.target);
+        expect(decodedError?.args.owner).to.equal(router.target);
     });
 
     it('should be protected from front-running - factory rejects unauthorized routers', async () => {
