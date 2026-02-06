@@ -108,7 +108,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
 
         const depositPermit: DepositPermit[] = [
             {
-                tokenOwner: owner.address as `0x${string}`,
+                owner: owner.address as `0x${string}`,
                 permit: {
                     permitted: {
                         token: testToken.target.toString() as `0x${string}`,
@@ -183,7 +183,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
 
         const depositPermit: DepositPermit[] = [
             {
-                tokenOwner: owner.address as `0x${string}`,
+                owner: owner.address as `0x${string}`,
                 permit: {
                     permitted: {
                         token: testToken.target.toString() as `0x${string}`,
@@ -251,7 +251,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
 
         const depositPermit: DepositPermit[] = [
             {
-                tokenOwner: owner.address as `0x${string}`,
+                owner: owner.address as `0x${string}`,
                 permit: {
                     permitted: {
                         token: testToken.target as `0x${string}`,
@@ -352,7 +352,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
 
         const depositPermit: DepositPermit[] = [
             {
-                tokenOwner: owner.address as `0x${string}`,
+                owner: owner.address as `0x${string}`,
                 permit: {
                     permitted: {
                         token: testToken.target.toString() as `0x${string}`,

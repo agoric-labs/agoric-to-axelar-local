@@ -6,7 +6,7 @@ import { IRemoteAccountFactory } from './IRemoteAccountFactory.sol';
 import { IPermit2 } from './IPermit2.sol';
 
 struct DepositPermit {
-    address tokenOwner;
+    address owner;
     IPermit2.PermitTransferFrom permit;
     bytes32 witness;
     string witnessTypeString;

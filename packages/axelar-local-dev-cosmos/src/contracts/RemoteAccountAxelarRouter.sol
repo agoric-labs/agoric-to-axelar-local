@@ -167,7 +167,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
             permit2.permitWitnessTransferFrom(
                 deposit.permit,
                 details,
-                deposit.tokenOwner,
+                deposit.owner,
                 deposit.witness,
                 deposit.witnessTypeString,
                 deposit.signature
