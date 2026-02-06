@@ -57,7 +57,7 @@ export type ContractCall = AbiParameterToPrimitiveType<{
 }>;
 
 export const depositPermitComponents = [
-    { name: 'tokenOwner', type: 'address' },
+    { name: 'owner', type: 'address' },
     {
         name: 'permit',
         type: 'tuple',
