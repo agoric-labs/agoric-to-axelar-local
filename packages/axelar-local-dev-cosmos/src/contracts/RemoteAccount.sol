@@ -8,14 +8,14 @@ import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
  * @title RemoteAccount
  * @notice A wallet contract representing a principal account, controlled
            through a replaceable IRemoteAccountRouter owner.
- * @dev An Ownable for address-based, transferable ownership by the router.
+ * @dev An Ownable for address-based, transferable ownership by the owner router.
         This contract does not track its principal directly but instead relies
         on the factory to deploy it at a predictable CREATE2 address derived
-        from the principal. The router is responsible for validating the remote
+        from the principal. The owner is responsible for validating the remote
         account's address against the expected principal on each call.
-        This design enables migration paths - if the Axelar-based router is
-        replaced, ownership can be transferred to a new router - while keeping
-        this contract minimal with consistent account addresses.
+        This design enables migration paths - if the Axelar-based router owner
+        is replaced, ownership can be transferred to a new router - while
+        keeping this contract minimal with consistent account addresses.
  */
 contract RemoteAccount is Ownable, IRemoteAccount {
     event Received(address indexed sender, uint256 amount);
@@ -23,8 +23,10 @@ contract RemoteAccount is Ownable, IRemoteAccount {
     constructor() Ownable(_msgSender()) {}
 
     /**
-     * @notice Execute a batch of calls on behalf of the controller
-     * @dev Requires router ownership check
+     * @notice Execute a batch of calls on behalf of the principal
+     * @dev The owner router is the only authorized caller, and is expected to
+     *      target this RemoteAccount after deriving its address from the
+     *      principal using the factory that created this RemoteAccount.
      * @param calls Array of contract calls to execute
      */
     function executeCalls(ContractCall[] calldata calls) external override onlyOwner {

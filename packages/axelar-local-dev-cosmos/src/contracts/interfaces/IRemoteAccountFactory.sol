@@ -3,14 +3,14 @@ pragma solidity ^0.8.20;
 
 interface IRemoteAccountFactory {
     error AddressMismatch(address expected, address actual);
-    error UnauthorizedRouter(address account, address router);
+    error UnauthorizedOwner(address owner, address account);
     error InvalidAccountAtAddress(address account);
     error PrincipalAccountMismatch(string expected, string actual);
 
     event RemoteAccountCreated(
         address indexed accountAddress,
         string principalAccount,
-        address indexed routerAddress
+        address indexed ownerAddress
     );
 
     function factoryPrincipalCaip2() external view returns (string memory);
@@ -25,19 +25,19 @@ interface IRemoteAccountFactory {
 
     function verifyRemoteAccount(
         string calldata principalAccount,
-        address expectedRouter,
+        address expectedOwner,
         address accountAddress
     ) external view;
 
     function provide(
         string calldata principalAccount,
-        address expectedRouter,
+        address expectedOwner,
         address expectedAddress
     ) external returns (bool);
 
-    function provideForRouter(
+    function provideForOwner(
         string calldata principalAccount,
-        address router,
+        address owner,
         address expectedAddress
     ) external returns (bool);
 }
