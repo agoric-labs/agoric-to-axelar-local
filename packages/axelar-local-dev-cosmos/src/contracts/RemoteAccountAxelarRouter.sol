@@ -66,7 +66,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
      * @notice Internal handler for Axelar GMP messages
      * @dev Validates source chain, then decodes the payload and processes it
      *      The source address is validated against the payload data by each processor.
-     * @param sourceChain The source chain
+     * @param sourceChain The source chain (must match configured axelarSourceChain)
      * @param sourceAddress The source address
      * @param payload The router instruction encoded as a call selector with a signature in the
      *                form of (string txId, address expectedAccountAddress, Instruction instruction)
