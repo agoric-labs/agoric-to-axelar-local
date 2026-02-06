@@ -149,7 +149,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
             expectedAccountAddress: accountAddress,
             instructionType: 'RemoteAccount',
             instruction: {
-                depositPermit: [],
                 multiCalls,
             },
         });
@@ -228,7 +227,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
             expectedAccountAddress: accountAddress,
             instructionType: 'RemoteAccount',
             instruction: {
-                depositPermit: [],
                 multiCalls,
             },
         });
@@ -286,7 +284,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
             expectedAccountAddress: accountAddress,
             instructionType: 'RemoteAccount',
             instruction: {
-                depositPermit: [],
                 multiCalls,
             },
         });
@@ -353,7 +350,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
             expectedAccountAddress: accountAddress,
             instructionType: 'RemoteAccount',
             instruction: {
-                depositPermit: [],
                 multiCalls,
             },
         });
@@ -481,7 +477,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
             expectedAccountAddress: accountAddress,
             instructionType: 'RemoteAccount',
             instruction: {
-                depositPermit: [],
                 multiCalls: multiCalls2,
             },
         });
@@ -522,7 +517,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
             expectedAccountAddress: accountAddress,
             instructionType: 'RemoteAccount',
             instruction: {
-                depositPermit: [],
                 multiCalls: multiCalls2, // same setValue(999) call
             },
         });
@@ -622,7 +616,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
             expectedAccountAddress: newAccountAddress,
             instructionType: 'RemoteAccount',
             instruction: {
-                depositPermit: [],
                 multiCalls: [],
             },
         });
@@ -665,7 +658,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
             expectedAccountAddress: anotherAccountAddress,
             instructionType: 'RemoteAccount',
             instruction: {
-                depositPermit: [],
                 multiCalls: [],
             },
         });
@@ -797,7 +789,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
             expectedAccountAddress: newAccountAddress,
             instructionType: 'RemoteAccount',
             instruction: {
-                depositPermit: [],
                 multiCalls: multiCalls2,
             },
         });
@@ -832,7 +823,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
             expectedAccountAddress: newAccountAddress,
             instructionType: 'RemoteAccount',
             instruction: {
-                depositPermit: [],
                 multiCalls: multiCalls2,
             },
         });

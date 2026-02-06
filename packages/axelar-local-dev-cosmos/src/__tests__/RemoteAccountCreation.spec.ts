@@ -91,7 +91,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
             expectedAccountAddress,
             instructionType: 'RemoteAccount',
             instruction: {
-                depositPermit: [],
                 multiCalls: [],
             },
         });
@@ -128,7 +127,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
             expectedAccountAddress,
             instructionType: 'RemoteAccount',
             instruction: {
-                depositPermit: [],
                 multiCalls: [],
             },
         });
@@ -184,7 +182,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
             expectedAccountAddress,
             instructionType: 'RemoteAccount',
             instruction: {
-                depositPermit: [],
                 multiCalls: [],
             },
         });
@@ -244,7 +241,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
             expectedAccountAddress,
             instructionType: 'RemoteAccount',
             instruction: {
-                depositPermit: [],
                 multiCalls: [],
             },
         });
@@ -306,7 +302,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
             expectedAccountAddress: wrongAddress, // Wrong address for this portfolioLCA
             instructionType: 'RemoteAccount',
             instruction: {
-                depositPermit: [],
                 multiCalls: [],
             },
         });
@@ -381,7 +376,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
             expectedAccountAddress,
             instructionType: 'RemoteAccount',
             instruction: {
-                depositPermit: [],
                 multiCalls: [],
             },
         });
@@ -420,7 +414,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
             expectedAccountAddress,
             instructionType: 'RemoteAccount',
             instruction: {
-                depositPermit: [],
                 multiCalls: [],
             },
         });

@@ -13,8 +13,13 @@ struct DepositPermit {
     bytes signature;
 }
 
-struct RemoteAccountInstruction {
+struct DepositInstruction {
     DepositPermit[] depositPermit;
+    string principalAccount;
+    address expectedAccountAddress;
+}
+
+struct RemoteAccountInstruction {
     ContractCall[] multiCalls;
 }
 
@@ -36,6 +41,12 @@ interface IRemoteAccountRouter {
     function permit2() external view returns (IPermit2);
 
     function successor() external view returns (address);
+
+    function processDepositInstruction(
+        string calldata sourceAddress,
+        address expectedAccountAddress,
+        DepositInstruction calldata instruction
+    ) external;
 
     function processRemoteAccountInstruction(
         string calldata sourceAddress,
