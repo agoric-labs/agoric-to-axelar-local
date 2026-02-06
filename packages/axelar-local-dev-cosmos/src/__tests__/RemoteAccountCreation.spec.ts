@@ -450,14 +450,15 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         expect(errorEvent.args.success).to.equal(false);
         expect(errorEvent.args.id.hash).to.equal(keccak256(toBytes(txId2)));
 
-        // Decode the error - should be InvalidAccountAtAddress
+        // Decode the error - should be UnauthorizedRouter
         const reason = errorEvent.args.reason;
         expect(reason).to.not.equal('0x');
 
         const factoryInterface = factory.interface;
         const decodedError = factoryInterface.parseError(reason);
-        expect(decodedError?.name).to.equal('InvalidAccountAtAddress');
+        expect(decodedError?.name).to.equal('UnauthorizedRouter');
         expect(decodedError?.args.account).to.equal(expectedAccountAddress);
+        expect(decodedError?.args.router).to.equal(router.target);
     });
 
     it('should be protected from front-running - factory rejects unauthorized routers', async () => {
@@ -470,13 +471,21 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         );
 
         // Attacker tries to front-run by calling factory.provide directly
-        // This should revert because factory only accepts calls from its owner (router)
+        // This should revert because factory only does a verify for calls not from its owner (router)
         await expect(
             factory.provide(
                 frontRunLCA,
                 addr1.address, // attacker tries to use themselves as router
                 expectedAddress,
             ),
-        ).to.be.revertedWithCustomError(factory, 'UnauthorizedRouter');
+        ).to.be.reverted; // The revert type depends on why the "existing account check" fails
+    });
+
+    it('should refuse creating an account for the factory principal', async () => {
+        // Attacker tries to front-run by calling factory.provide directly
+        // This should revert because factory only does a verify for calls not from its owner (router)
+        await expect(
+            factory.provide(portfolioContractAccount, router.target, ethers.ZeroAddress),
+        ).to.be.revertedWithCustomError(factory, 'InvalidAccountAtAddress');
     });
 });

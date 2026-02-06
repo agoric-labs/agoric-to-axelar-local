@@ -150,7 +150,9 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
      *      Used to create a call stack that can be reverted atomically
      *      Only the factory's principal can invoke this operation to ensure only the
      *      controller can redeem signed permits.
-     * @param sourceAddress The principal account address of the factory
+     *      The depositPermit in the instruction is optional to allow the controller to
+     *      use the factory's public provide mechanism.
+     * @param sourceAddress Must be the principal account address of the factory
      * @param factoryAddress The address of the factory
      * @param instruction The decoded DepositInstruction
      */
@@ -162,12 +164,10 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
         require(msg.sender == address(this));
 
         // Check the factory's principal is the source
-        if (
-            factoryAddress != address(factory) ||
-            factory.getRemoteAccountAddress(sourceAddress) != factoryAddress
-        ) {
+        if (factoryAddress != address(factory)) {
             revert UnauthorizedCaller(sourceAddress);
         }
+        factory.verifyFactoryPrincipalAccount(sourceAddress);
 
         require(instruction.expectedAccountAddress != factoryAddress);
 
@@ -176,7 +176,10 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
         // principal account. Unfortunately there are no built-in capabilities
         // over GMP, and implementing one would require some stateful mechanism.
 
-        // Transfer first to avoid expensive creation if deposit fails
+        // Transfer first to avoid expensive creation if deposit fails (e.g. insufficient funds,
+        // expired permit).
+        // The subsequent provide call will revert this deposit if the expectedAccountAddress
+        // does not derive from the designated principal account.
         if (instruction.depositPermit.length > 0) {
             // Verify that the instruction is well formed
             require(instruction.depositPermit.length == 1);
@@ -221,7 +224,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
     ) external override {
         require(msg.sender == address(this));
 
-        // Provide or verify the remote account matches the source principal and owner
+        // Provide or verify the remote account matches the source principal and its owner is this router
         factory.provide(sourceAddress, address(this), expectedAccountAddress);
 
         if (instruction.multiCalls.length > 0) {
@@ -233,7 +236,6 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
      * @notice Process the update owner instruction
      * @dev This is an external function which can only be called by this contract
      *      Used to create a call stack that can be reverted atomically
-     *      Update owner can be called in any paused or unpaused state
      *      The owned contract can be a RemoteAccount or the factory
      * @param sourceAddress The principal account address of the owned contract
      * @param expectedAccountAddress The expected contract address corresponding to the principal address
@@ -256,9 +258,15 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
             revert Ownable.OwnableInvalidOwner(address(0));
         }
 
-        // Provide or verify the remote account matches the source principal and owner
-        // The factory recognizes its principal and checks against its own address and current owner
-        factory.provide(sourceAddress, address(this), expectedAccountAddress);
+        if (expectedAccountAddress == address(factory)) {
+            // Verify the factory's principal matches the expected source address
+            // No need to check the factory's current owner as the transfer will fail if we're not the owner
+            factory.verifyFactoryPrincipalAccount(sourceAddress);
+        } else {
+            // Provide or verify the remote account matches the source principal and owner
+            // The factory does an owner check as part of this, even though transfer would also check it.
+            factory.provide(sourceAddress, address(this), expectedAccountAddress);
+        }
 
         Ownable(expectedAccountAddress).transferOwnership(newOwner);
     }
