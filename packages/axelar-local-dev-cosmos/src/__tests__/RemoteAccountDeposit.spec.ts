@@ -4,13 +4,7 @@ import { Contract } from 'ethers';
 import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
-import { keccak256, stringToHex, toBytes } from 'viem';
-import {
-    approveMessage,
-    computeRemoteAccountAddress,
-    encodeRouterPayload,
-    DepositPermit,
-} from './lib/utils';
+import { computeRemoteAccountAddress, DepositPermit, routed } from './lib/utils';
 
 /**
  * Tests for RemoteAccount deposit functionality via RemoteAccountAxelarRouter.
@@ -31,12 +25,8 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
     const portfolioContractAccount = 'agoric1routerlca123456789abcdefghijklmnopqrs';
     const portfolioLCA = 'agoric1deposit123456789abcdefghijklmnopq';
 
-    let commandIdCounter = 1;
-    const getCommandId = () => {
-        const commandId = keccak256(stringToHex(String(commandIdCounter)));
-        commandIdCounter++;
-        return commandId;
-    };
+    let route: ReturnType<typeof routed>;
+    let routeConfig: Parameters<typeof routed>[1];
 
     before(async () => {
         [owner, addr1] = await ethers.getSigners();
@@ -99,11 +89,18 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
 
         // Compute account address
         accountAddress = await computeRemoteAccountAddress(factory.target.toString(), portfolioLCA);
+
+        routeConfig = {
+            sourceChain,
+            owner,
+            portfolioContractAccount,
+            AxelarGateway: axelarGatewayMock,
+            abiCoder,
+        };
+        route = routed(router, routeConfig);
     });
 
     it('should create account and deposit tokens in single call', async () => {
-        const commandId = getCommandId();
-        const txId = 'tx1';
         const depositAmount = ethers.parseEther('100');
 
         const depositPermit: DepositPermit[] = [
@@ -123,51 +120,13 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
             },
         ];
 
-        const payload = encodeRouterPayload({
-            id: txId,
-            expectedAccountAddress: factory.target as `0x${string}`,
-            instructionType: 'ProvideRemoteAccount',
-            instruction: {
-                depositPermit,
-                principalAccount: portfolioLCA,
-                expectedAccountAddress: accountAddress,
-            },
-        });
-
-        const payloadHash = keccak256(toBytes(payload));
-
-        await approveMessage({
-            commandId,
-            from: sourceChain,
-            sourceAddress: portfolioContractAccount,
-            targetAddress: router.target,
-            payload: payloadHash,
-            owner,
-            AxelarGateway: axelarGatewayMock,
-            abiCoder,
-        });
-
         const balanceBefore = await testToken.balanceOf(accountAddress);
-
-        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
-        const receipt = await tx.wait();
-
-        // Parse events
-        const routerInterface = router.interface;
-        const parsedLogs = receipt?.logs
-            .map((log: { topics: string[]; data: string }) => {
-                try {
-                    return routerInterface.parseLog(log);
-                } catch {
-                    return null;
-                }
-            })
-            .filter(Boolean);
-
-        // Check OperationResult event
-        const successEvent = parsedLogs.find((e: { name: string }) => e.name === 'OperationResult');
-        expect(successEvent.args.id.hash).to.equal(keccak256(toBytes(txId)));
-        expect(successEvent.args.success).to.equal(true);
+        const receipt = await route(portfolioContractAccount).doProvideRemoteAccount({
+            depositPermit,
+            principalAccount: portfolioLCA,
+            expectedAccountAddress: accountAddress,
+        });
+        receipt.expectOperationSuccess();
 
         // Verify token balance
         const balanceAfter = await testToken.balanceOf(accountAddress);
@@ -175,8 +134,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
     });
 
     it('should fail deposit with expired deadline', async () => {
-        const commandId = getCommandId();
-        const txId = 'tx2';
         const depositAmount = ethers.parseEther('50');
 
         // Use expired deadline (1 hour ago)
@@ -199,56 +156,17 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
             },
         ];
 
-        const payload = encodeRouterPayload({
-            id: txId,
-            expectedAccountAddress: factory.target as `0x${string}`,
-            instructionType: 'ProvideRemoteAccount',
-            instruction: {
-                depositPermit,
-                principalAccount: portfolioLCA,
-                expectedAccountAddress: accountAddress,
-            },
+        const receipt = await route(portfolioContractAccount).doProvideRemoteAccount({
+            depositPermit,
+            principalAccount: portfolioLCA,
+            expectedAccountAddress: accountAddress,
         });
-
-        const payloadHash = keccak256(toBytes(payload));
-
-        await approveMessage({
-            commandId,
-            from: sourceChain,
-            sourceAddress: portfolioContractAccount,
-            targetAddress: router.target,
-            payload: payloadHash,
-            owner,
-            AxelarGateway: axelarGatewayMock,
-            abiCoder,
-        });
-
-        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
-        const receipt = await tx.wait();
-
-        // Parse events
-        const routerInterface = router.interface;
-        const parsedLogs = receipt?.logs
-            .map((log: { topics: string[]; data: string }) => {
-                try {
-                    return routerInterface.parseLog(log);
-                } catch {
-                    return null;
-                }
-            })
-            .filter(Boolean);
-
-        // Check OperationResult event - should fail due to expired deadline
-        const errorEvent = parsedLogs.find((e: { name: string }) => e?.name === 'OperationResult');
-        expect(errorEvent.args.success).to.equal(false);
-        expect(errorEvent.args.id.hash).to.equal(keccak256(toBytes(txId)));
+        const errorEvent = receipt.expectOperationFailure();
         expect(errorEvent.args.reason).to.not.equal('0x');
     });
 
     it('should succeed deposit-only to existing valid RemoteAccount', async () => {
         // Account was created in first test, now deposit without provision or multicall
-        const commandId = getCommandId();
-        const txId = 'tx3';
         const depositAmount = ethers.parseEther('25');
 
         const depositPermit: DepositPermit[] = [
@@ -268,49 +186,13 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
             },
         ];
 
-        const payload = encodeRouterPayload({
-            id: txId,
-            expectedAccountAddress: factory.target as `0x${string}`,
-            instructionType: 'ProvideRemoteAccount',
-            instruction: {
-                depositPermit,
-                principalAccount: portfolioLCA,
-                expectedAccountAddress: accountAddress,
-            },
-        });
-
-        const payloadHash = keccak256(toBytes(payload));
-
-        await approveMessage({
-            commandId,
-            from: sourceChain,
-            sourceAddress: portfolioContractAccount,
-            targetAddress: router.target,
-            payload: payloadHash,
-            owner,
-            AxelarGateway: axelarGatewayMock,
-            abiCoder,
-        });
-
         const balanceBefore = await testToken.balanceOf(accountAddress);
-
-        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
-        const receipt = await tx.wait();
-
-        const routerInterface = router.interface;
-        const parsedLogs = receipt?.logs
-            .map((log: { topics: string[]; data: string }) => {
-                try {
-                    return routerInterface.parseLog(log);
-                } catch {
-                    return null;
-                }
-            })
-            .filter(Boolean);
-
-        const successEvent = parsedLogs.find((e: { name: string }) => e.name === 'OperationResult');
-        expect(successEvent.args.id.hash).to.equal(keccak256(toBytes(txId)));
-        expect(successEvent.args.success).to.equal(true);
+        const receipt = await route(portfolioContractAccount).doProvideRemoteAccount({
+            depositPermit,
+            principalAccount: portfolioLCA,
+            expectedAccountAddress: accountAddress,
+        });
+        receipt.expectOperationSuccess();
 
         const balanceAfter = await testToken.balanceOf(accountAddress);
         expect(balanceAfter - balanceBefore).to.equal(depositAmount);
@@ -319,37 +201,12 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
     it('should reject deposit-only to address with wrong principal', async () => {
         // Create account for a different portfolioLCA
         const wrongPortfolioLCA = 'agoric1wrongprincipal123456789abcdefgh';
-        const wrongAccountAddress = await computeRemoteAccountAddress(
-            factory.target.toString(),
-            wrongPortfolioLCA,
-        );
+        const wrongAccountAddress = await route(wrongPortfolioLCA).getRemoteAccountAddress();
 
         // First create this account
-        const setupCommandId = getCommandId();
-        const setupPayload = encodeRouterPayload({
-            id: 'tx4',
-            expectedAccountAddress: wrongAccountAddress,
-            instructionType: 'RemoteAccountExecute',
-            instruction: {
-                multiCalls: [],
-            },
-        });
-        const setupPayloadHash = keccak256(toBytes(setupPayload));
-        await approveMessage({
-            commandId: setupCommandId,
-            from: sourceChain,
-            sourceAddress: wrongPortfolioLCA,
-            targetAddress: router.target,
-            payload: setupPayloadHash,
-            owner,
-            AxelarGateway: axelarGatewayMock,
-            abiCoder,
-        });
-        await router.execute(setupCommandId, sourceChain, wrongPortfolioLCA, setupPayload);
+        await route(wrongPortfolioLCA).doRemoteAccountExecute({ multiCalls: [] });
 
         // Now try to deposit to wrongAccountAddress but with original portfolioLCA
-        const commandId = getCommandId();
-        const txId = 'tx5';
         const depositAmount = ethers.parseEther('10');
 
         const depositPermit: DepositPermit[] = [
@@ -369,60 +226,19 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
             },
         ];
 
-        const payload = encodeRouterPayload({
-            id: txId,
-            expectedAccountAddress: factory.target as `0x${string}`,
-            instructionType: 'ProvideRemoteAccount',
-            instruction: {
-                depositPermit,
-                principalAccount: portfolioLCA,
-                expectedAccountAddress: wrongAccountAddress, // But wrong account address
-            },
+        const receipt = await route(portfolioContractAccount).doProvideRemoteAccount({
+            depositPermit,
+            principalAccount: portfolioLCA,
+            expectedAccountAddress: wrongAccountAddress, // But wrong account address
         });
 
-        const payloadHash = keccak256(toBytes(payload));
-
-        await approveMessage({
-            commandId,
-            from: sourceChain,
-            sourceAddress: portfolioContractAccount,
-            targetAddress: router.target,
-            payload: payloadHash,
-            owner,
-            AxelarGateway: axelarGatewayMock,
-            abiCoder,
-        });
-
-        const tx = await router.execute(commandId, sourceChain, portfolioContractAccount, payload);
-        const receipt = await tx.wait();
-
-        const routerInterface = router.interface;
-        const parsedLogs = receipt?.logs
-            .map((log: { topics: string[]; data: string }) => {
-                try {
-                    return routerInterface.parseLog(log);
-                } catch {
-                    return null;
-                }
-            })
-            .filter(Boolean);
-
-        // Should fail because account's principal doesn't match portfolioLCA
-        const errorEvent = parsedLogs.find((e: { name: string }) => e?.name === 'OperationResult');
-        expect(errorEvent.args.id.hash).to.equal(keccak256(toBytes(txId)));
-        expect(errorEvent.args.success).to.equal(false);
-        expect(errorEvent.args.reason).to.not.equal('0x');
-
-        // Decode the error - should be AddressMismatch from factory
-        const decodedError = factory.interface.parseError(errorEvent.args.reason);
+        const decodedError = receipt.parseOperationError(factory.interface);
         expect(decodedError?.name).to.equal('AddressMismatch');
         expect(decodedError?.args.expected).to.equal(wrongAccountAddress);
         expect(decodedError?.args.actual).to.equal(accountAddress);
     });
 
     it('should reject deposit from source other than factory principal', async () => {
-        const commandId = getCommandId();
-        const txId = 'tx5';
         const depositAmount = ethers.parseEther('10');
 
         const depositPermit: DepositPermit[] = [
@@ -442,52 +258,15 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
             },
         ];
 
-        const payload = encodeRouterPayload({
-            id: txId,
-            expectedAccountAddress: factory.target as `0x${string}`,
-            instructionType: 'ProvideRemoteAccount',
-            instruction: {
-                depositPermit,
-                principalAccount: portfolioLCA,
-                expectedAccountAddress: accountAddress,
-            },
+        const receipt = await route(portfolioContractAccount, {
+            sourceAddress: portfolioLCA,
+        }).doProvideRemoteAccount({
+            depositPermit,
+            principalAccount: portfolioLCA,
+            expectedAccountAddress: accountAddress,
         });
 
-        const payloadHash = keccak256(toBytes(payload));
-
-        await approveMessage({
-            commandId,
-            from: sourceChain,
-            sourceAddress: portfolioLCA, // wrong source - should be portfolioContractAccount
-            targetAddress: router.target,
-            payload: payloadHash,
-            owner,
-            AxelarGateway: axelarGatewayMock,
-            abiCoder,
-        });
-
-        const tx = await router.execute(commandId, sourceChain, portfolioLCA, payload);
-        const receipt = await tx.wait();
-
-        const routerInterface = router.interface;
-        const parsedLogs = receipt?.logs
-            .map((log: { topics: string[]; data: string }) => {
-                try {
-                    return routerInterface.parseLog(log);
-                } catch {
-                    return null;
-                }
-            })
-            .filter(Boolean);
-
-        // Should fail because source doesn't match factory principal
-        const errorEvent = parsedLogs.find((e: { name: string }) => e?.name === 'OperationResult');
-        expect(errorEvent.args.id.hash).to.equal(keccak256(toBytes(txId)));
-        expect(errorEvent.args.success).to.equal(false);
-        expect(errorEvent.args.reason).to.not.equal('0x');
-
-        // Decode the error - should be UnauthorizedCaller from factory
-        const decodedError = factory.interface.parseError(errorEvent.args.reason);
+        const decodedError = receipt.parseOperationError(factory.interface);
         expect(decodedError?.name).to.equal('PrincipalAccountMismatch');
         expect(decodedError?.args.expected).to.equal(portfolioLCA);
         expect(decodedError?.args.actual).to.equal(portfolioContractAccount);

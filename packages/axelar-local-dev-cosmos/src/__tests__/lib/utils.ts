@@ -1,6 +1,17 @@
-import { encodeFunctionData, keccak256, toBytes, encodeAbiParameters } from 'viem';
-import type { Abi, AbiParameter, AbiParameterToPrimitiveType } from 'viem';
+import { encodeFunctionData, keccak256, toBytes, encodeAbiParameters, stringToHex } from 'viem';
+import type {
+    Abi,
+    AbiParameter,
+    AbiParameterToPrimitiveType,
+    AbiStateMutability,
+    Address,
+    ContractFunctionArgs,
+    ContractFunctionName,
+    Hex,
+} from 'viem';
+import { expect, use as chaiUse } from 'chai';
 import { ethers, network } from 'hardhat';
+import { Contract, Interface, TransactionReceipt } from 'ethers';
 
 // ==================== RemoteAccount Helpers ====================
 
@@ -401,4 +412,279 @@ export const encodeMulticallPayload = (calls, txId) => {
     );
 };
 
-export const getPayloadHash = (payload) => keccak256(toBytes(payload));
+type AbiContractArgs<
+    TAbi extends Abi,
+    Name extends ContractFunctionName<TAbi, AbiStateMutability>,
+> =
+    ContractFunctionArgs<TAbi, AbiStateMutability, Name> extends readonly unknown[]
+        ? ContractFunctionArgs<TAbi, AbiStateMutability, Name>
+        : readonly unknown[];
+
+export type AbiContract<TAbi extends Abi, R = void> = {
+    [Name in ContractFunctionName<TAbi, AbiStateMutability>]: (
+        ...args: AbiContractArgs<TAbi, Name>
+    ) => R;
+};
+
+/**
+ * Build a proxy from a contract ABI whose method returns the ABI encoded call data.
+ */
+export const makeEvmContract = <TAbi extends Abi>(
+    abi: TAbi,
+    target: Address,
+): AbiContract<TAbi, { target: Address; data: Hex }> => {
+    const stubs: Record<string, (...args: unknown[]) => { target: Address; data: Hex }> = {};
+    for (const item of abi) {
+        if (item.type !== 'function') continue;
+        // XXX: add and use prepareEncodeFunctionData to vendored viem
+        const fn = (...args: unknown[]) => {
+            // @ts-expect-error generic
+            return { target, data: encodeFunctionData({ abi, functionName: item.name, args }) };
+        };
+        stubs[item.name] ||= fn;
+    }
+    return stubs as any;
+};
+
+export const getPayloadHash = (payload: `0x${string}`) => keccak256(toBytes(payload));
+
+let commandIdCounter = 1;
+let txIdCounter = 1;
+
+export const getCommandId = () => {
+    const commandId = keccak256(stringToHex(String(commandIdCounter)));
+    commandIdCounter++;
+    return commandId;
+};
+
+const nextTxId = () => {
+    const txId = `tx${txIdCounter}`;
+    txIdCounter++;
+    return txId;
+};
+
+export type ParsedLog = { name: string; args: Record<string, any> };
+const parseLogs = (
+    receipt: TransactionReceipt | null,
+    contractInterface: Interface,
+): ParsedLog[] => {
+    return (
+        (receipt?.logs
+            .map((log) => {
+                try {
+                    return contractInterface.parseLog(log);
+                } catch {
+                    return null;
+                }
+            })
+            .filter(Boolean) as ParsedLog[]) ?? []
+    );
+};
+const getResultFromLogs = (logs: ParsedLog[]) => logs.find((e) => e.name === 'OperationResult');
+
+const executeResult = Symbol();
+
+const makeReceiptHelper = ({
+    router,
+    receipt,
+    error,
+    txId,
+    result,
+}: {
+    router: Contract;
+    receipt: TransactionReceipt | null;
+    error: any;
+    txId: string;
+    result: Promise<unknown>;
+}) => {
+    const logs = (iface: Interface = router.interface) => parseLogs(receipt, iface);
+
+    const expectTxSuccess = () => {
+        expect(error, 'execute reverted').to.equal(undefined);
+        expect(receipt?.status, 'missing receipt status').to.equal(1);
+    };
+
+    const getOperationResult = () => {
+        const event = getResultFromLogs(logs());
+        expect(event!.args.id.hash).to.equal(keccak256(toBytes(txId)));
+        return event;
+    };
+    const expectOperationSuccess = () => {
+        expectTxSuccess();
+        const event = getOperationResult();
+        expect(event, 'OperationResult not found').to.not.equal(null);
+        expect(event!.args.success).to.equal(true);
+        return event!;
+    };
+    const expectOperationFailure = () => {
+        expectTxSuccess();
+        const event = getOperationResult();
+        expect(event, 'OperationResult not found').to.not.equal(null);
+        expect(event!.args.success).to.equal(false);
+        return event!;
+    };
+
+    return {
+        receipt,
+        error,
+        txId,
+        [executeResult]: result,
+        result,
+        expectTxSuccess,
+        expectTxReverted() {
+            expect(error, 'execute should revert').to.not.equal(undefined);
+        },
+        parseLogs: logs,
+        getOperationResult,
+        expectOperationSuccess,
+        expectOperationFailure,
+        parseOperationError(contractInterface: Interface = router.interface) {
+            const event = expectOperationFailure();
+            return contractInterface.parseError(event.args.reason);
+        },
+    };
+};
+
+const unwrapExecuteResult = (chai, utils) => {
+    // We overwrite 'to' because it's the most common entry point
+    chai.Assertion.overwriteProperty('to', function (_super) {
+        return function () {
+            const obj = utils.flag(this, 'object');
+
+            // 1. Pivot Logic: Check if the value needs unwrapping
+            if (obj && typeof obj === 'object' && executeResult in obj) {
+                const unwrapped = obj[executeResult];
+
+                // 2. Pivot the internal flags to the new value
+                this._obj = unwrapped;
+                utils.flag(this, 'object', unwrapped);
+            }
+
+            // 3. Continue the chain (this allows 'to' to keep working)
+            _super.call(this);
+        };
+    });
+};
+chaiUse(unwrapExecuteResult);
+
+type InstructionTypeFromOperation<T extends SupportedOperations> =
+    T extends `process${infer U}Instruction` ? U : never;
+
+type RoutedOps = {
+    [K in SupportedOperations as `do${InstructionTypeFromOperation<K>}`]: (
+        instruction: RouterInstruction<K>,
+    ) => Promise<ReturnType<typeof makeReceiptHelper>>;
+};
+
+export const routed = (
+    router: Contract,
+    {
+        sourceChain,
+        owner,
+        portfolioContractAccount,
+        AxelarGateway,
+        abiCoder,
+    }: {
+        sourceChain: string;
+        owner: { address: string; signMessage: (msg: Uint8Array) => Promise<string> };
+        portfolioContractAccount: string;
+        AxelarGateway: Contract;
+        abiCoder: { encode: (types: string[], values: unknown[]) => string };
+    },
+) => {
+    return (
+        principalAccount: string,
+        overrides: {
+            sourceAddress?: string;
+            expectedAccountAddress?: `0x${string}`;
+            sourceChain?: string;
+        } = {},
+    ) => {
+        const getRemoteAccountAddress = async () => {
+            const factoryAddress = await router.factory();
+            const derivedAccount = await computeRemoteAccountAddress(
+                factoryAddress.toString(),
+                principalAccount,
+            );
+            return principalAccount === portfolioContractAccount
+                ? (factoryAddress as `0x${string}`)
+                : derivedAccount;
+        };
+
+        const exec = async (payload: RouterOperationPayload<SupportedOperations>) => {
+            const accountAddress = await getRemoteAccountAddress();
+            const expectedAccountAddress = overrides.expectedAccountAddress ?? accountAddress;
+            const resolvedSourceAddress = overrides.sourceAddress ?? principalAccount;
+            const commandId = getCommandId();
+            const txId = nextTxId();
+            const resolvedSourceChain = overrides.sourceChain ?? sourceChain;
+
+            const encodedPayload = encodeRouterPayload({
+                id: txId,
+                expectedAccountAddress,
+                ...payload,
+            });
+
+            const payloadHash = getPayloadHash(encodedPayload);
+
+            await approveMessage({
+                commandId,
+                from: resolvedSourceChain,
+                sourceAddress: resolvedSourceAddress,
+                targetAddress: router.target,
+                payload: payloadHash,
+                owner,
+                AxelarGateway,
+                abiCoder,
+            });
+
+            let receipt;
+            let error;
+            const result = router.execute(
+                commandId,
+                resolvedSourceChain,
+                resolvedSourceAddress,
+                encodedPayload,
+            );
+            try {
+                const tx = await result;
+                receipt = await tx.wait();
+            } catch (err) {
+                error = err;
+            }
+
+            return makeReceiptHelper({
+                router,
+                receipt,
+                error,
+                txId,
+                result,
+            });
+        };
+
+        const methods = Object.fromEntries(
+            remoteAccountAxelarRouterABI
+                .filter(
+                    (item) =>
+                        item.type === 'function' &&
+                        item.name?.startsWith('process') &&
+                        item.name.endsWith('Instruction'),
+                )
+                .map((item) => {
+                    const operation = item.name as SupportedOperations;
+                    const instructionType = operation.replace(
+                        /^process|Instruction$/g,
+                        '',
+                    ) as InstructionTypeFromOperation<typeof operation>;
+                    const methodName = `do${instructionType}`;
+                    const fn = (instruction: RouterInstruction<typeof operation>) =>
+                        exec({ instructionType, instruction } as RouterOperationPayload<
+                            typeof operation
+                        >);
+                    return [methodName, fn];
+                }),
+        ) as RoutedOps;
+
+        return { ...methods, exec, getRemoteAccountAddress };
+    };
+};
