@@ -60,6 +60,7 @@ export type PermitTransferFromStruct = AbiParameterToPrimitiveType<{
 export const contractCallComponents = [
     { name: 'target', type: 'address' },
     { name: 'data', type: 'bytes' },
+    { name: 'value', type: 'uint256' },
 ] as const satisfies AbiParameter[];
 
 export type ContractCall = AbiParameterToPrimitiveType<{
@@ -432,14 +433,19 @@ export type AbiContract<TAbi extends Abi, R = void> = {
 export const makeEvmContract = <TAbi extends Abi>(
     abi: TAbi,
     target: Address,
-): AbiContract<TAbi, { target: Address; data: Hex }> => {
-    const stubs: Record<string, (...args: unknown[]) => { target: Address; data: Hex }> = {};
+): AbiContract<TAbi, { target: Address; data: Hex; value: 0n }> => {
+    const stubs: Record<string, (...args: unknown[]) => { target: Address; data: Hex; value: 0n }> =
+        {};
     for (const item of abi) {
         if (item.type !== 'function') continue;
         // XXX: add and use prepareEncodeFunctionData to vendored viem
         const fn = (...args: unknown[]) => {
-            // @ts-expect-error generic
-            return { target, data: encodeFunctionData({ abi, functionName: item.name, args }) };
+            return {
+                target,
+                // @ts-expect-error generic
+                data: encodeFunctionData({ abi, functionName: item.name, args }),
+                value: 0n,
+            } as const;
         };
         stubs[item.name] ||= fn;
     }

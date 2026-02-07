@@ -18,8 +18,6 @@ import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
  *      a new contract.
  */
 contract RemoteAccount is Ownable, IRemoteAccount {
-    event Received(address indexed sender, uint256 amount);
-
     constructor() Ownable(_msgSender()) {}
 
     /**
@@ -29,10 +27,15 @@ contract RemoteAccount is Ownable, IRemoteAccount {
      *      principal using the factory that created this RemoteAccount.
      * @param calls Array of contract calls to execute
      */
-    function executeCalls(ContractCall[] calldata calls) external override onlyOwner {
+    function executeCalls(ContractCall[] calldata calls) external payable override onlyOwner {
+        if (msg.value > 0) {
+            emit Received(msg.sender, msg.value);
+        }
         uint256 len = calls.length;
         for (uint256 i = 0; i < len; ) {
-            (bool success, bytes memory reason) = calls[i].target.call(calls[i].data);
+            (bool success, bytes memory reason) = calls[i].target.call{ value: calls[i].value }(
+                calls[i].data
+            );
 
             if (!success) {
                 revert ContractCallFailed(i, reason);
@@ -45,10 +48,6 @@ contract RemoteAccount is Ownable, IRemoteAccount {
     }
 
     receive() external payable virtual {
-        emit Received(msg.sender, msg.value);
-    }
-
-    fallback() external payable virtual {
         emit Received(msg.sender, msg.value);
     }
 }
