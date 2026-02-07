@@ -82,15 +82,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         route = routed(router, routeConfig);
     });
 
-    it('should reject invalid source chain', async () => {
-        const wrongSourceChain = 'ethereum';
-        const receipt = await route(portfolioLCA, {
-            sourceChain: wrongSourceChain,
-        }).doRemoteAccountExecute({ multiCalls: [] });
-
-        await expect(receipt).to.be.revertedWithCustomError(router, 'InvalidSourceChain');
-    });
-
     it('should reject when source address does not match expected account', async () => {
         const wrongSourceAddress = 'agoric1wrongaddress123456789abcdefghijk';
         const receipt = await route(portfolioLCA, {

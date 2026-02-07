@@ -232,6 +232,14 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         );
         await newRouter.waitForDeployment();
 
+        // Create a new account with the old router
+        const tmpLCA = 'agoric1templca123456789abcdefghijklmno';
+        (
+            await route(tmpLCA).doRemoteAccountExecute({
+                multiCalls: [],
+            })
+        ).expectOperationSuccess();
+
         // Old router owner pre-designates its successor
         await router.setSuccessor(newRouter.target);
 
@@ -239,10 +247,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         expect(await factory.owner()).to.equal(router.target);
 
         // Transfer factory ownership via UpdateOwner
-        const receipt = await route(portfolioContractAccount).doUpdateOwner({
-            newOwner: newRouter.target as `0x${string}`,
-        });
-        receipt.expectOperationSuccess();
+        (
+            await route(portfolioContractAccount).doUpdateOwner({
+                newOwner: newRouter.target as `0x${string}`,
+            })
+        ).expectOperationSuccess();
 
         // Verify factory ownership was transferred
         expect(await factory.owner()).to.equal(newRouter.target);
@@ -256,10 +265,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
 
         const newRoute = routed(newRouter, routeConfig);
 
-        const receipt2 = await newRoute(newPortfolioLCA).doRemoteAccountExecute({
-            multiCalls: [],
-        });
-        receipt2.expectOperationSuccess();
+        (
+            await newRoute(newPortfolioLCA).doRemoteAccountExecute({
+                multiCalls: [],
+            })
+        ).expectOperationSuccess();
 
         // Verify new account was created and owned by new router
         const newAccount = await ethers.getContractAt('RemoteAccount', newAccountAddress);
@@ -267,11 +277,24 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
 
         // Verify old router cannot create accounts anymore
         const anotherPortfolioLCA = 'agoric1anotherportfolio123456789abcdefg';
-        const receipt3 = await route(anotherPortfolioLCA).doRemoteAccountExecute({
+        const receiptFailedCreate = await route(anotherPortfolioLCA).doRemoteAccountExecute({
             multiCalls: [],
         });
-        const decodedError = receipt3.parseOperationError(factory.interface);
+        const decodedError = receiptFailedCreate.parseOperationError(factory.interface);
         expect(decodedError?.name).to.equal('InvalidAccountAtAddress');
+
+        // Verify old router can update ownership of the accounts it still owns (tmpLCA) to the new router
+        (
+            await route(tmpLCA).doUpdateOwner({
+                newOwner: newRouter.target as `0x${string}`,
+            })
+        ).expectOperationSuccess();
+
+        const tmpAccount = await ethers.getContractAt(
+            'RemoteAccount',
+            await route(tmpLCA).getRemoteAccountAddress(),
+        );
+        expect(await tmpAccount.owner()).to.equal(newRouter.target);
     });
 
     it.skip('should create account for different router via factory.provideForRouter multicall', async () => {
