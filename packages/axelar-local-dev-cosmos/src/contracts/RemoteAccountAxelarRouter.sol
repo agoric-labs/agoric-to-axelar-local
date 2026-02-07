@@ -135,7 +135,12 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
                 (sourceAddress, expectedAddress, instruction)
             );
         } else {
-            revert InvalidPayload(selector);
+            // Attempt to decode the txId and expectedAddress even if the selector is invalid,
+            // to provide the necessary information in the emitted event.
+            (txId, expectedAddress) = abi.decode(encodedArgs, (string, address));
+            rewrittenPayload = abi.encodeWithSelector(InvalidPayload.selector, selector);
+            emit OperationResult(txId, sourceAddress, expectedAddress, false, rewrittenPayload);
+            return;
         }
 
         // Call the function and emit an event describing the result.
