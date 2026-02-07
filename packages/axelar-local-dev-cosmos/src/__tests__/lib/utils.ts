@@ -79,7 +79,7 @@ export const routerProcessSharedInputComponents = [
     { name: 'expectedAccountAddress', type: 'address' },
 ] as const satisfies AbiParameter[];
 
-export const DepositInstructionComponents = [
+export const ProvideRemoteAccountInstructionComponents = [
     {
         name: 'depositPermit',
         type: 'tuple[]',
@@ -94,21 +94,21 @@ export const DepositInstructionComponents = [
         type: 'address',
     },
 ] as const satisfies AbiParameter[];
-export type DepositInstruction = AbiParameterToPrimitiveType<{
+export type ProvideRemoteAccountInstruction = AbiParameterToPrimitiveType<{
     type: 'tuple';
-    components: typeof DepositInstructionComponents;
+    components: typeof ProvideRemoteAccountInstructionComponents;
 }>;
 
-export const remoteAccountInstructionComponents = [
+export const RemoteAccountExecuteInstructionComponents = [
     {
         name: 'multiCalls',
         type: 'tuple[]',
         components: contractCallComponents,
     },
 ] as const satisfies AbiParameter[];
-export type RemoteAccountInstruction = AbiParameterToPrimitiveType<{
+export type RemoteAccountExecuteInstruction = AbiParameterToPrimitiveType<{
     type: 'tuple';
-    components: typeof remoteAccountInstructionComponents;
+    components: typeof RemoteAccountExecuteInstructionComponents;
 }>;
 
 export const updateOwnerInstructionComponents = [
@@ -125,21 +125,21 @@ export type UpdateOwnerInstruction = AbiParameterToPrimitiveType<{
 /**
  * ABI inputs for encoding RouterPayload with encodeAbiParameters.
  */
-export const processDepositInstructionInputs = [
+export const processProvideRemoteAccountInstructionInputs = [
     ...routerProcessSharedInputComponents,
     {
         name: 'instruction',
         type: 'tuple',
-        components: DepositInstructionComponents,
+        components: ProvideRemoteAccountInstructionComponents,
     },
 ] as const satisfies AbiParameter[];
 
-export const processRemoteAccountInstructionInputs = [
+export const processRemoteAccountExecuteInstructionInputs = [
     ...routerProcessSharedInputComponents,
     {
         name: 'instruction',
         type: 'tuple',
-        components: remoteAccountInstructionComponents,
+        components: RemoteAccountExecuteInstructionComponents,
     },
 ] as const satisfies AbiParameter[];
 
@@ -181,15 +181,15 @@ export const remoteAccountAxelarRouterABI = [
     },
     {
         type: 'function',
-        name: 'processDepositInstruction',
-        inputs: processDepositInstructionInputs,
+        name: 'processProvideRemoteAccountInstruction',
+        inputs: processProvideRemoteAccountInstructionInputs,
         outputs: [],
         stateMutability: 'nonpayable',
     },
     {
         type: 'function',
-        name: 'processRemoteAccountInstruction',
-        inputs: processRemoteAccountInstructionInputs,
+        name: 'processRemoteAccountExecuteInstruction',
+        inputs: processRemoteAccountExecuteInstructionInputs,
         outputs: [],
         stateMutability: 'nonpayable',
     },
