@@ -7,15 +7,15 @@ import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
 /**
  * @title RemoteAccount
  * @notice A wallet contract representing a principal account, controlled
-           through a replaceable IRemoteAccountRouter owner.
+ *         through a replaceable owner (such as an IRemoteAccountRouter).
  * @dev An Ownable for address-based, transferable ownership by the owner router.
-        This contract does not track its principal directly but instead relies
-        on the factory to deploy it at a predictable CREATE2 address derived
-        from the principal. The owner is responsible for validating the remote
-        account's address against the expected principal on each call.
-        This design enables migration paths - if the Axelar-based router owner
-        is replaced, ownership can be transferred to a new router - while
-        keeping this contract minimal with consistent account addresses.
+ *      This contract does not track its principal directly but instead relies
+ *      on RemoteAccountFactory to deploy it at a predictable CREATE2 address
+ *      derived from the principal. The owner is responsible for validating the remote
+ *      account's address against the expected principal on each call.
+ *      This design keeps RemoteAccount as simple as possible while still
+ *      supporting migration paths in which the original owner is replaced with
+ *      a new contract.
  */
 contract RemoteAccount is Ownable, IRemoteAccount {
     event Received(address indexed sender, uint256 amount);
@@ -24,7 +24,7 @@ contract RemoteAccount is Ownable, IRemoteAccount {
 
     /**
      * @notice Execute a batch of calls on behalf of the principal
-     * @dev The owner router is the only authorized caller, and is expected to
+     * @dev The owner is the only authorized caller, and is expected to
      *      target this RemoteAccount after deriving its address from the
      *      principal using the factory that created this RemoteAccount.
      * @param calls Array of contract calls to execute
