@@ -5,7 +5,7 @@ import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { keccak256, toBytes } from 'viem';
-import { routed } from './lib/utils';
+import { encodeRouterPayload, padTxId, routed } from './lib/utils';
 
 describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
     let owner: HardhatEthersSigner;
@@ -88,7 +88,7 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
 
     it('should emit failure event when selector is invalid but txId/address decode', async () => {
         const invalidSelector = '0xdeadbeef' as const;
-        const txId = 'tx-invalid-selector';
+        const txId = padTxId('tx-invalid-selector', portfolioLCA);
         const encodedArgs = abiCoder.encode(['string', 'address'], [txId, expectedAccountAddress]);
         const payload = (invalidSelector + encodedArgs.slice(2)) as `0x${string}`;
 
@@ -98,10 +98,7 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
 
         expect(event.args.allegedRemoteAccount).to.equal(expectedAccountAddress);
         expect(event.args.sourceAddress.hash).to.equal(keccak256(toBytes(portfolioLCA)));
-
-        const decoded = router.interface.parseError(event.args.reason);
-        expect(decoded?.name).to.equal('InvalidPayload');
-        expect(decoded?.args?.[0]).to.equal(invalidSelector);
+        expect(event.args.reason).to.be.equal('0x');
     });
 
     it('should revert when payload cannot be decoded', async () => {
@@ -109,7 +106,43 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
 
         const receipt = await route(portfolioLCA).execRaw({
             payload,
-            txId: 'tx-invalid-decode',
+            txId: 'ignored',
+        });
+        receipt.expectTxReverted();
+    });
+
+    it('should revert when payload valid but txId is too short', async () => {
+        const txId = padTxId('tx-id-too-short', portfolioLCA).slice(0, -1);
+        const payload = encodeRouterPayload({
+            id: txId,
+            expectedAccountAddress,
+            instructionType: 'RemoteAccountExecute',
+            instruction: {
+                multiCalls: [],
+            },
+        });
+
+        const receipt = await route(portfolioLCA).execRaw({
+            payload,
+            txId,
+        });
+        receipt.expectTxReverted();
+    });
+
+    it('should revert when payload valid but txId is too long', async () => {
+        const txId = padTxId('tx-id-too-long', portfolioLCA) + '\0';
+        const payload = encodeRouterPayload({
+            id: txId,
+            expectedAccountAddress,
+            instructionType: 'RemoteAccountExecute',
+            instruction: {
+                multiCalls: [],
+            },
+        });
+
+        const receipt = await route(portfolioLCA).execRaw({
+            payload,
+            txId,
         });
         receipt.expectTxReverted();
     });
