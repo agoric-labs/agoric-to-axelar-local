@@ -29,8 +29,6 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     bytes32 private immutable _principalSalt;
     bytes32 private immutable _remoteAccountBytecodeHash;
 
-    event Received(address indexed sender, uint256 amount);
-
     /**
      * @param factoryPrincipalCaip2_ The caip2 of the principal for this RemoteAccountFactory
      * @param factoryPrincipalAccount_ The address of the principal for this RemoteAccountFactory
@@ -247,13 +245,5 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
             _verifyRemoteAccountOwner(accountAddress, ownerAddress);
             return false;
         }
-    }
-
-    receive() external payable {
-        emit Received(msg.sender, msg.value);
-    }
-
-    fallback() external payable {
-        emit Received(msg.sender, msg.value);
     }
 }

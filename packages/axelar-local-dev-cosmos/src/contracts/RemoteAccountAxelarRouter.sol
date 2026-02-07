@@ -37,8 +37,6 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
     error InvalidSourceChain(string expected, string actual);
     error InvalidPayload(bytes4 selector);
 
-    event Received(address indexed sender, uint256 amount);
-
     error UnauthorizedCaller(string source);
 
     /**
@@ -275,13 +273,5 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
 
     function setSuccessor(address newSuccessor) external onlyOwner {
         successor = newSuccessor;
-    }
-
-    receive() external payable {
-        emit Received(msg.sender, msg.value);
-    }
-
-    fallback() external payable {
-        emit Received(msg.sender, msg.value);
     }
 }

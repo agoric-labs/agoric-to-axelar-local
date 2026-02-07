@@ -4,6 +4,7 @@ import { Contract } from 'ethers';
 import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
+import * as helpers from '@nomicfoundation/hardhat-network-helpers';
 import { routed } from './lib/utils';
 
 describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
@@ -154,12 +155,12 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         // Step 2: Transfer ownership away from router (impersonate router)
         const account = await ethers.getContractAt('RemoteAccount', expectedAccountAddress);
 
-        await ethers.provider.send('hardhat_impersonateAccount', [router.target.toString()]);
-        await owner.sendTransaction({ to: router.target, value: ethers.parseEther('1') });
+        await helpers.impersonateAccount(router.target.toString());
+        await helpers.setBalance(router.target.toString(), ethers.parseEther('100'));
         const routerSigner = await ethers.getSigner(router.target.toString());
 
         await account.connect(routerSigner).getFunction('transferOwnership')(addr1.address);
-        await ethers.provider.send('hardhat_stopImpersonatingAccount', [router.target.toString()]);
+        await helpers.stopImpersonatingAccount(router.target.toString());
 
         // Verify ownership transferred
         expect(await account.owner()).to.equal(addr1.address);
