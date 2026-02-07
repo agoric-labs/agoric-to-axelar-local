@@ -617,21 +617,12 @@ export const routed = (
                 : derivedAccount;
         };
 
-        const exec = async (payload: RouterOperationPayload<SupportedOperations>) => {
-            const accountAddress = await getRemoteAccountAddress();
-            const expectedAccountAddress = overrides.expectedAccountAddress ?? accountAddress;
+        const execRaw = async ({ payload, txId }: { payload: `0x${string}`; txId: string }) => {
             const resolvedSourceAddress = overrides.sourceAddress ?? principalAccount;
             const commandId = getCommandId();
-            const txId = nextTxId();
             const resolvedSourceChain = overrides.sourceChain ?? sourceChain;
 
-            const encodedPayload = encodeRouterPayload({
-                id: txId,
-                expectedAccountAddress,
-                ...payload,
-            });
-
-            const payloadHash = getPayloadHash(encodedPayload);
+            const payloadHash = getPayloadHash(payload);
 
             await approveMessage({
                 commandId,
@@ -650,7 +641,7 @@ export const routed = (
                 commandId,
                 resolvedSourceChain,
                 resolvedSourceAddress,
-                encodedPayload,
+                payload,
             );
             try {
                 const tx = await result;
@@ -666,6 +657,20 @@ export const routed = (
                 txId,
                 result,
             });
+        };
+
+        const exec = async (payload: RouterOperationPayload<SupportedOperations>) => {
+            const accountAddress = await getRemoteAccountAddress();
+            const expectedAccountAddress = overrides.expectedAccountAddress ?? accountAddress;
+            const txId = nextTxId();
+
+            const encodedPayload = encodeRouterPayload({
+                id: txId,
+                expectedAccountAddress,
+                ...payload,
+            });
+
+            return execRaw({ payload: encodedPayload, txId });
         };
 
         const methods = Object.fromEntries(
@@ -691,6 +696,6 @@ export const routed = (
                 }),
         ) as RoutedOps;
 
-        return { ...methods, exec, getRemoteAccountAddress };
+        return { ...methods, exec, execRaw, getRemoteAccountAddress };
     };
 };
