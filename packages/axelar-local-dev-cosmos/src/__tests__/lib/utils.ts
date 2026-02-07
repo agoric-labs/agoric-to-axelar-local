@@ -469,6 +469,12 @@ const nextTxId = () => {
     return txId;
 };
 
+export const padTxId = (txId: string, template: string) => {
+    const paddingLength = template.length - txId.length;
+    if (paddingLength <= 0) throw new Error('Template must be longer than txId');
+    return txId + '\0'.repeat(paddingLength);
+};
+
 export type ParsedLog = { name: string; args: Record<string, any> };
 const parseLogs = (
     receipt: TransactionReceipt | null,
@@ -660,9 +666,10 @@ export const routed = (
         };
 
         const exec = async (payload: RouterOperationPayload<SupportedOperations>) => {
+            const resolvedSourceAddress = overrides.sourceAddress ?? principalAccount;
             const accountAddress = await getRemoteAccountAddress();
             const expectedAccountAddress = overrides.expectedAccountAddress ?? accountAddress;
-            const txId = nextTxId();
+            const txId = padTxId(nextTxId(), resolvedSourceAddress);
 
             const encodedPayload = encodeRouterPayload({
                 id: txId,

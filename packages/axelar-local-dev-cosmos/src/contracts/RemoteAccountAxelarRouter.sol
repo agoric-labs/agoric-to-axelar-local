@@ -61,6 +61,59 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
     }
 
     /**
+     * @notice Patch the first string slot in an ABI-encoded payload with a source string from calldata
+     * @dev This is a low-level function that uses inline assembly to directly
+     * manipulate the target payload in memory. It assumes the payload is an
+     * ABI-encoded function call where the first argument is a string, and it
+     * replaces that argument with the provided source string from calldata.
+     * The function also includes safety checks to ensure the payload is
+     * well-formed and that the length of the source string matches the length
+     * of the existing string in the payload.
+     * @param targetPayload The ABI-encoded function call payload in memory,
+     *        which will be modified in place.
+     * @param sourceString The source string as calldata bytes.
+     */
+    function patchFirstString(
+        bytes memory targetPayload,
+        bytes calldata sourceString
+    ) internal pure {
+        assembly {
+            // 1. Minimum Payload Check: 4 (selector) + 32 (offset) = 36 bytes (0x24)
+            let payloadTotalLen := mload(targetPayload)
+            if lt(payloadTotalLen, 0x24) {
+                revert(0, 0)
+            }
+
+            // 2. Get the pointer to the start of the ABI arguments (after the 4-byte selector)
+            let argsBase := add(targetPayload, 0x24)
+
+            // 3. Read the offset for the first argument (stored at the first 32-byte slot)
+            let stringOffset := mload(argsBase)
+
+            // 4. Calculate the absolute memory position of the string's length word
+            // Base + Offset (Relative to Base)
+            let lengthWordPos := add(argsBase, stringOffset)
+
+            // 5. Safety: Ensure lengthWordPos is still within the targetPayload bounds
+            if gt(add(stringOffset, 0x20), payloadTotalLen) {
+                revert(0, 0)
+            }
+
+            // 6. Read existing length and verify it matches the source exactly
+            let existingLen := mload(lengthWordPos)
+            if iszero(eq(existingLen, sourceString.length)) {
+                revert(0, 0)
+            }
+
+            // 7. Perform the Overwrite
+            // The data starts exactly 32 bytes (0x20) after the length word
+            let dataStartPos := add(lengthWordPos, 0x20)
+
+            calldatacopy(dataStartPos, sourceString.offset, sourceString.length)
+        }
+    }
+
+    /**
      * @notice Internal handler for Axelar GMP messages
      * @dev Validates source chain, then decodes the payload and processes it
      *      The source address is validated against the payload data by each processor.
@@ -79,69 +132,30 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
             revert InvalidSourceChain(axelarSourceChain, sourceChain);
         }
 
-        // Parse and validate the payload as a 4-byte ABI function selector (see
-        // https://docs.soliditylang.org/en/latest/abi-spec.html#function-selector
-        // ) for a function of this contract, followed by relevant data that has
-        // the same typing as arguments to that function but contains a source
-        // chain transaction id in place of `sourceAddress` (which is
-        // communicated to this function as a separate argument), and translate
-        // the result into an actual encoded function call.
+        // Parse the payload as an ABI-encoded function call (see
+        // https://docs.soliditylang.org/en/latest/abi-spec.html) whose arguments
+        // start with a string (the transaction id) followed by an address (the
+        // expected account address). The first argument is then replaced with
+        // the source address provided to this function (after checking the
+        // length matches) and the resulting payload is used to dynamically call
+        // the process function in this contract.
         // Using such a function-call payload encoding potentially allows
-        // explorers to show more details about it, and simplifies the implementation
-        // of the sender, which can rely on the contract ABI.
-        // Note that the second argument of all functions is `expectedAddress`,
-        // relevant to RemoteAccountFactory and included in the emitted
-        // OperationResult event.
+        // explorers to show more details about it, and simplifies the
+        // implementation of both the sender, which can rely on the contract ABI,
+        // and this receiver, which can avoid fully decoding the payload.
+        // The recommendation is to pad the transaction id argument with 0-bytes
+        // to match the length of the address and minimize gas costs.
         // The transaction id is included in the OperationResult event, allowing a
         // resolver to observe/trace transactions.
-        string memory txId;
-        address expectedAddress;
+        // Note that the second argument of all functions is `expectedAddress`,
+        // relevant to RemoteAccountFactory and also included in the emitted
+        // OperationResult event.
 
-        bytes4 selector = bytes4(payload[:4]);
         bytes calldata encodedArgs = payload[4:];
 
-        bytes memory rewrittenPayload;
-
-        if (selector == IRemoteAccountRouter.processRemoteAccountExecuteInstruction.selector) {
-            RemoteAccountExecuteInstruction memory instruction;
-            (txId, expectedAddress, instruction) = abi.decode(
-                encodedArgs,
-                (string, address, RemoteAccountExecuteInstruction)
-            );
-            rewrittenPayload = abi.encodeCall(
-                IRemoteAccountRouter.processRemoteAccountExecuteInstruction,
-                (sourceAddress, expectedAddress, instruction)
-            );
-        } else if (
-            selector == IRemoteAccountRouter.processProvideRemoteAccountInstruction.selector
-        ) {
-            ProvideRemoteAccountInstruction memory instruction;
-            (txId, expectedAddress, instruction) = abi.decode(
-                encodedArgs,
-                (string, address, ProvideRemoteAccountInstruction)
-            );
-            rewrittenPayload = abi.encodeCall(
-                IRemoteAccountRouter.processProvideRemoteAccountInstruction,
-                (sourceAddress, expectedAddress, instruction)
-            );
-        } else if (selector == IRemoteAccountRouter.processUpdateOwnerInstruction.selector) {
-            UpdateOwnerInstruction memory instruction;
-            (txId, expectedAddress, instruction) = abi.decode(
-                encodedArgs,
-                (string, address, UpdateOwnerInstruction)
-            );
-            rewrittenPayload = abi.encodeCall(
-                IRemoteAccountRouter.processUpdateOwnerInstruction,
-                (sourceAddress, expectedAddress, instruction)
-            );
-        } else {
-            // Attempt to decode the txId and expectedAddress even if the selector is invalid,
-            // to provide the necessary information in the emitted event.
-            (txId, expectedAddress) = abi.decode(encodedArgs, (string, address));
-            rewrittenPayload = abi.encodeWithSelector(InvalidPayload.selector, selector);
-            emit OperationResult(txId, sourceAddress, expectedAddress, false, rewrittenPayload);
-            return;
-        }
+        (string memory txId, address expectedAddress) = abi.decode(encodedArgs, (string, address));
+        bytes memory rewrittenPayload = payload;
+        patchFirstString(rewrittenPayload, bytes(sourceAddress));
 
         // Call the function and emit an event describing the result.
         (bool success, bytes memory result) = address(this).call(rewrittenPayload);
