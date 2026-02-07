@@ -6,7 +6,7 @@ import { Ownable } from '@openzeppelin/contracts/access/Ownable.sol';
 import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
 import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
 import { ImmutableOwnable } from './ImmutableOwnable.sol';
-import { IRemoteAccountRouter, IPermit2, DepositPermit, DepositInstruction, RemoteAccountInstruction, UpdateOwnerInstruction } from './interfaces/IRemoteAccountRouter.sol';
+import { IRemoteAccountRouter, IPermit2, DepositPermit, ProvideRemoteAccountInstruction, RemoteAccountExecuteInstruction, UpdateOwnerInstruction } from './interfaces/IRemoteAccountRouter.sol';
 
 /**
  * @title RemoteAccountAxelarRouter
@@ -104,24 +104,26 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
 
         bytes memory rewrittenPayload;
 
-        if (selector == IRemoteAccountRouter.processRemoteAccountInstruction.selector) {
-            RemoteAccountInstruction memory instruction;
+        if (selector == IRemoteAccountRouter.processRemoteAccountExecuteInstruction.selector) {
+            RemoteAccountExecuteInstruction memory instruction;
             (txId, expectedAddress, instruction) = abi.decode(
                 encodedArgs,
-                (string, address, RemoteAccountInstruction)
+                (string, address, RemoteAccountExecuteInstruction)
             );
             rewrittenPayload = abi.encodeCall(
-                IRemoteAccountRouter.processRemoteAccountInstruction,
+                IRemoteAccountRouter.processRemoteAccountExecuteInstruction,
                 (sourceAddress, expectedAddress, instruction)
             );
-        } else if (selector == IRemoteAccountRouter.processDepositInstruction.selector) {
-            DepositInstruction memory instruction;
+        } else if (
+            selector == IRemoteAccountRouter.processProvideRemoteAccountInstruction.selector
+        ) {
+            ProvideRemoteAccountInstruction memory instruction;
             (txId, expectedAddress, instruction) = abi.decode(
                 encodedArgs,
-                (string, address, DepositInstruction)
+                (string, address, ProvideRemoteAccountInstruction)
             );
             rewrittenPayload = abi.encodeCall(
-                IRemoteAccountRouter.processDepositInstruction,
+                IRemoteAccountRouter.processProvideRemoteAccountInstruction,
                 (sourceAddress, expectedAddress, instruction)
             );
         } else if (selector == IRemoteAccountRouter.processUpdateOwnerInstruction.selector) {
@@ -145,21 +147,21 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
     }
 
     /**
-     * @notice Process a deposit instruction, making sure the target account is provisioned
+     * @notice Process a provision instruction, optionally processing a deposit permit
      * @dev This is an external function which can only be called by this contract
      *      Used to create a call stack that can be reverted atomically
      *      Only the factory's principal can invoke this operation to ensure only the
      *      controller can redeem signed permits.
      *      The depositPermit in the instruction is optional to allow the controller to
-     *      use the factory's public provide mechanism.
+     *      use the factory's public provide mechanism without fund transfer.
      * @param sourceAddress Must be the principal account address of the factory
      * @param factoryAddress The address of the factory
-     * @param instruction The decoded DepositInstruction
+     * @param instruction The decoded ProvideRemoteAccountInstruction
      */
-    function processDepositInstruction(
+    function processProvideRemoteAccountInstruction(
         string calldata sourceAddress,
         address factoryAddress,
-        DepositInstruction calldata instruction
+        ProvideRemoteAccountInstruction calldata instruction
     ) external override {
         require(msg.sender == address(this));
 
@@ -179,7 +181,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
         // Transfer first to avoid expensive creation if deposit fails (e.g. insufficient funds,
         // expired permit).
         // The subsequent provide call will revert this deposit if the expectedAccountAddress
-        // does not derive from the designated principal account.
+        // does not match the address derived from the designated principal account.
         if (instruction.depositPermit.length > 0) {
             // Verify that the instruction is well formed
             require(instruction.depositPermit.length == 1);
@@ -215,12 +217,12 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
      *      Used to create a call stack that can be reverted atomically
      * @param sourceAddress The principal account address of the remote account
      * @param expectedAccountAddress The expected account address corresponding to the source address
-     * @param instruction The decoded RemoteAccountInstruction
+     * @param instruction The decoded RemoteAccountExecuteInstruction
      */
-    function processRemoteAccountInstruction(
+    function processRemoteAccountExecuteInstruction(
         string calldata sourceAddress,
         address expectedAccountAddress,
-        RemoteAccountInstruction calldata instruction
+        RemoteAccountExecuteInstruction calldata instruction
     ) external override {
         require(msg.sender == address(this));
 

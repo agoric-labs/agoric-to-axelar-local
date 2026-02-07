@@ -147,7 +147,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: accountAddress,
-            instructionType: 'RemoteAccount',
+            instructionType: 'RemoteAccountExecute',
             instruction: {
                 multiCalls,
             },
@@ -225,7 +225,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: accountAddress,
-            instructionType: 'RemoteAccount',
+            instructionType: 'RemoteAccountExecute',
             instruction: {
                 multiCalls,
             },
@@ -282,7 +282,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: accountAddress,
-            instructionType: 'RemoteAccount',
+            instructionType: 'RemoteAccountExecute',
             instruction: {
                 multiCalls,
             },
@@ -348,7 +348,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: accountAddress,
-            instructionType: 'RemoteAccount',
+            instructionType: 'RemoteAccountExecute',
             instruction: {
                 multiCalls,
             },
@@ -475,7 +475,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload2 = encodeRouterPayload({
             id: txId2,
             expectedAccountAddress: accountAddress,
-            instructionType: 'RemoteAccount',
+            instructionType: 'RemoteAccountExecute',
             instruction: {
                 multiCalls: multiCalls2,
             },
@@ -515,7 +515,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload3 = encodeRouterPayload({
             id: txId3,
             expectedAccountAddress: accountAddress,
-            instructionType: 'RemoteAccount',
+            instructionType: 'RemoteAccountExecute',
             instruction: {
                 multiCalls: multiCalls2, // same setValue(999) call
             },
@@ -614,7 +614,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload2 = encodeRouterPayload({
             id: txId2,
             expectedAccountAddress: newAccountAddress,
-            instructionType: 'RemoteAccount',
+            instructionType: 'RemoteAccountExecute',
             instruction: {
                 multiCalls: [],
             },
@@ -656,7 +656,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload3 = encodeRouterPayload({
             id: txId3,
             expectedAccountAddress: anotherAccountAddress,
-            instructionType: 'RemoteAccount',
+            instructionType: 'RemoteAccountExecute',
             instruction: {
                 multiCalls: [],
             },
@@ -724,9 +724,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: factory.target as `0x${string}`,
+            // @ts-expect-error - removed
             instructionType: 'ProvideForRouter',
             instruction: {
                 principalAccount: newPortfolioLCA,
+                // @ts-expect-error - removed
                 router: targetRouter.target as `0x${string}`,
                 expectedAccountAddress: newAccountAddress,
             },
@@ -787,7 +789,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload2 = encodeRouterPayload({
             id: txId2,
             expectedAccountAddress: newAccountAddress,
-            instructionType: 'RemoteAccount',
+            instructionType: 'RemoteAccountExecute',
             instruction: {
                 multiCalls: multiCalls2,
             },
@@ -821,7 +823,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const payload3 = encodeRouterPayload({
             id: txId3,
             expectedAccountAddress: newAccountAddress,
-            instructionType: 'RemoteAccount',
+            instructionType: 'RemoteAccountExecute',
             instruction: {
                 multiCalls: multiCalls2,
             },

@@ -126,7 +126,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: factory.target as `0x${string}`,
-            instructionType: 'Deposit',
+            instructionType: 'ProvideRemoteAccount',
             instruction: {
                 depositPermit,
                 principalAccount: portfolioLCA,
@@ -202,7 +202,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: factory.target as `0x${string}`,
-            instructionType: 'Deposit',
+            instructionType: 'ProvideRemoteAccount',
             instruction: {
                 depositPermit,
                 principalAccount: portfolioLCA,
@@ -271,7 +271,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: factory.target as `0x${string}`,
-            instructionType: 'Deposit',
+            instructionType: 'ProvideRemoteAccount',
             instruction: {
                 depositPermit,
                 principalAccount: portfolioLCA,
@@ -329,7 +329,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         const setupPayload = encodeRouterPayload({
             id: 'tx4',
             expectedAccountAddress: wrongAccountAddress,
-            instructionType: 'RemoteAccount',
+            instructionType: 'RemoteAccountExecute',
             instruction: {
                 multiCalls: [],
             },
@@ -372,7 +372,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: factory.target as `0x${string}`,
-            instructionType: 'Deposit',
+            instructionType: 'ProvideRemoteAccount',
             instruction: {
                 depositPermit,
                 principalAccount: portfolioLCA,
@@ -445,7 +445,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         const payload = encodeRouterPayload({
             id: txId,
             expectedAccountAddress: factory.target as `0x${string}`,
-            instructionType: 'Deposit',
+            instructionType: 'ProvideRemoteAccount',
             instruction: {
                 depositPermit,
                 principalAccount: portfolioLCA,
