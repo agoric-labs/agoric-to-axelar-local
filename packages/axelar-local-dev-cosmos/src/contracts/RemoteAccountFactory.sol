@@ -10,16 +10,16 @@ import { RemoteAccount } from './RemoteAccount.sol';
  * @title RemoteAccountFactory
  * @notice A CREATE2 factory for deploying RemoteAccount contracts
  * @dev The RemoteAccountFactory is a non-replaceable contract deploying
-        RemoteAccount contracts at predictable addresses on behalf of a portfolio
-        manager contract designated as principal.
-        The factory is an ownable and the owner is a router contract identifying
-        the address of its messages source as a "principal account".
-        The factory can be invoked publicly to manually create a RemoteAccount
-        configured with the factory's current owner as the new account's owner.
-        The current factory owner can also create a RemoteAccount for an 
-        arbitrary owner.
-        The principal account string relayed by the owner uniquely identifies
-        a RemoteAccount through CREATE2 address derivation.
+ *      RemoteAccount contracts at predictable addresses on behalf of an
+ *      external principal (such as a portfolio manager).
+ *      The factory is an ownable and the owner is a router contract identifying
+ *      the address of its messages source as a "principal account".
+ *      The factory can be invoked publicly to manually create a RemoteAccount
+ *      configured with the factory's current owner as the new account's owner.
+ *      The current factory owner can also create a RemoteAccount for an
+ *      arbitrary owner.
+ *      The principal account string relayed by the owner uniquely identifies
+ *      a RemoteAccount through CREATE2 address derivation.
  */
 contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     // Store the principal details of this factory purely for reference
