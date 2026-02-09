@@ -46,7 +46,7 @@ const getNonceForChain = async (
 };
 
 const CHAINS = {
-  mainnet: ["avax", "arb", "base", "eth", "opt", "pol"],
+  mainnet: ["avax", "arb", "base", "eth", "opt"],
   testnet: [
     "eth-sepolia",
     "fuji",
@@ -60,7 +60,11 @@ const ALL_CHAINS = [...CHAINS.mainnet, ...CHAINS.testnet];
 
 interface DeployOptions {
   chains?: string[]; // Specific chains to deploy to
-  contract: "factory" | "depositFactory"; // Contract type
+  contract:
+    | "factory"
+    | "depositFactory"
+    | "remoteAccountFactory"
+    | "portfolioRouter"; // Contract type
   ownerType?: "ymax0" | "ymax1"; // Owner type (for depositFactory)
   parallel?: boolean; // Run deployments in parallel
   continueOnError?: boolean; // Continue even if one deployment fails
@@ -392,9 +396,14 @@ const parseArgs = (): DeployOptions => {
       case "--contract":
       case "-c":
         const contractType = args[++i];
-        if (contractType !== "factory" && contractType !== "depositFactory") {
+        if (
+          contractType !== "factory" &&
+          contractType !== "depositFactory" &&
+          contractType !== "remoteAccountFactory" &&
+          contractType !== "portfolioRouter"
+        ) {
           throw new Error(
-            'Contract must be either "factory" or "depositFactory"',
+            'Contract must be "factory", "depositFactory", "remoteAccountFactory", or "portfolioRouter"',
           );
         }
         options.contract = contractType;
@@ -459,8 +468,8 @@ const printHelp = () => {
 Usage: ts-node deploy-all-chains.ts [options]
 
 Options:
-  -c, --contract <type>        Contract type: "factory" or "depositFactory" (default: factory)
-  -o, --owner-type <type>      Owner type: "ymax0" or "ymax1" (only for depositFactory)
+  -c, --contract <type>        Contract type: "factory", "depositFactory", "remoteAccountFactory", or "portfolioRouter" (default: factory)
+  -o, --owner-type <type>      Owner type: "ymax0" or "ymax1" (for depositFactory and remoteAccountFactory)
   --chains <chain1,chain2>     Comma-separated list of specific chains to deploy to
   --mainnet                    Deploy to all mainnet chains only
   --testnet                    Deploy to all testnet chains only
@@ -474,6 +483,14 @@ Supported Chains:
   Testnet: ${CHAINS.testnet.join(", ")}
 
 Note: Nonces are automatically checked and synchronized if they differ across chains.
+
+Environment Variables (for portfolioRouter):
+  REMOTE_ACCOUNT_FACTORY       Required: Address of the deployed RemoteAccountFactory contract
+  OWNER_AUTHORITY              Required: Address authorized to designate router replacement
+
+IMPORTANT: After deploying both RemoteAccountFactory and PortfolioRouter,
+           you must transfer factory ownership to the router:
+           factory.transferOwnership(portfolioRouterAddress)
 
 Examples:
   # Deploy factory to all chains sequentially
@@ -490,6 +507,12 @@ Examples:
 
   # Deploy depositFactory with ymax1 owner to all chains, stop on first error
   yarn deploy:all -c depositFactory -o ymax1 --stop-on-error
+
+  # Deploy remoteAccountFactory to testnets
+  yarn deploy:all -c remoteAccountFactory --testnet
+
+  # Deploy RemoteAccountAxelarRouter
+  REMOTE_ACCOUNT_FACTORY=0x... OWNER_AUTHORITY=0x... yarn deploy:all -c portfolioRouter --testnet
 `);
 };
 
