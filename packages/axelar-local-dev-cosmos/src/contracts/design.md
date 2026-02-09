@@ -123,13 +123,14 @@ graph TB
         START@{shape: start}
         _execute["_execute<br/>override AxelarExecutable"]
         VALIDATE@{shape: text, label: "Axelar inbound validation"}
-        DECODE{decode and select}
+        DECODE{decode and dispatch}
         processProvideRemoteAccountInstruction["processProvideRemoteAccountInstruction<br>override IRemoteAccountRouter"]
         processProvideRemoteAccountInstruction_self@{shape: comment, label: "require self-call"}
         processRemoteAccountExecuteInstruction["processRemoteAccountExecuteInstruction<br>override IRemoteAccountRouter"]
         processRemoteAccountExecuteInstruction_self@{shape: comment, label: "require self-call"}
         processUpdateOwnerInstruction["processUpdateOwnerInstruction<br>override IRemoteAccountRouter"]
         processUpdateOwnerInstruction_self@{shape: comment, label: "require self-call"}
+        ISFACTORY{for factory}
         DEP@{shape: text, label: "Permit2 Integration"}
         PROV@{shape: text, label: "account creation/<br>verification"}
         MULTI@{shape: text, label: "account use"}
@@ -171,9 +172,12 @@ graph TB
     PROV -->|call provide| factory
     MULTI --> |call executeCalls| RAn
     processUpdateOwnerInstruction --> processUpdateOwnerInstruction_self
+    processUpdateOwnerInstruction --> ISFACTORY
+    ISFACTORY -->|"[2] call provide"| factory
+    ISFACTORY -->|"[3] call transferOwnership"| RAn
+    ISFACTORY -->|"[2] verify principal"| factory
+    ISFACTORY -->|"[3] call transferOwnership"| factory
     processUpdateOwnerInstruction -->|"[1] checks"| successor
-    processUpdateOwnerInstruction -->|"[2] call provide"| factory
-    processUpdateOwnerInstruction -->|"[3] call transferOwnership"| RAn
     setSuccessor -->|updates| successor
     setSuccessor -->|modifier| onlyOwner
     onlyOwner -->|checks| owner
@@ -339,7 +343,7 @@ graph TB
 ```
 
 **Key Components**:
-- **provide**: Public method requiring caller is current factory owner
+- **provide**: Public method requiring new account owner is current factory owner.
 - **provideForOwner**: Owner-only method to create or verify accounts for an arbitrary owner
 - **_provideForOwner**: Core CREATE2 logic with deterministic address generation
 - **verifyFactoryPrincipalAccount**: Validates the factory principal account string
@@ -403,18 +407,21 @@ sequenceDiagram
         else processUpdateOwnerInstruction
             PR->>PR: verify newOwner is successor
 
-            Note over PR,RA: provide account
-            PR->>RAF: provide(sourceAddress, address(this), expectedAddress)
-            alt if exists
-                RAF->>RA: owner()
-                RAF->>RAF: verify match
+            Note over PR,RA: provide account / verify principal, then transfer
+            alt expectedAddress == factory
+                PR->>RAF: verifyFactoryPrincipalAccount(sourceAddress)
+                PR->>RAF: transferOwnership(newOwner)
             else
-                RAF->>RA: CREATE2
-                RAF->>RA: transferOwnership(router)
+                PR->>RAF: provide(sourceAddress, address(this), expectedAddress)
+                alt if exists
+                    RAF->>RA: owner()
+                    RAF->>RAF: verify match
+                else
+                    RAF->>RA: CREATE2
+                    RAF->>RA: transferOwnership(router)
+                end
+                PR->>RA: transferOwnership(newOwner)
             end
-
-            Note over PR,RA: transfer to new router
-            PR->>RA: transferOwnership(newOwner)
         end
     option [success]
         PR->>PR: emit OperationResult(id, true, '')
@@ -435,7 +442,7 @@ sequenceDiagram
          2. If calls for RemoteAccount exist, RemoteAccountAxelarRouter forwards them and RemoteAccount executes them
      * For `processUpdateOwnerInstruction`:
          1. RemoteAccountAxelarRouter verifies that the new owner identifies its successor
-         2. RemoteAccountAxelarRouter provides account (creating if necessary)
+         2. RemoteAccountAxelarRouter provides account (creating if necessary), or verifies the factory principal
          3. RemoteAccountAxelarRouter transfers account ownership
 4. RemoteAccountAxelarRouter emits an event describing success or failure
 
