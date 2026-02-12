@@ -21,7 +21,7 @@ source "$SCRIPT_DIR/network-config.sh"
 if [[ $# -lt 3 ]]; then
     echo "Usage: $0 <network> <wallet_address> <owner>"
     echo "Supported networks:"
-    echo "  Mainnets: avax, arb, opt, pol"
+    echo "  Mainnets: avax, arb, base, eth, opt"
     echo "  Testnets: eth-sepolia, fuji, base-sepolia, opt-sepolia, arb-sepolia"
     echo ""
     echo "Example:"
@@ -46,4 +46,4 @@ npx hardhat verify --network "$network" \
     "$GATEWAY" \
     "$GAS_SERVICE" \
     "$owner" \
-    --contract "src/contracts/Factory.sol:Wallet"
+    --contract "src/contracts/Wallet.sol:Wallet"
