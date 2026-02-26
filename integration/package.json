@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "smoke-vault-deposit": "vite-node agoric/smokeVaultDeposit.ts",
     "make-acc": "makeAccount=true node scripts/make-account.mjs",
     "get-addr": "node scripts/make-account.mjs",
     "setup": "node scripts/setup-gmp.mjs",
