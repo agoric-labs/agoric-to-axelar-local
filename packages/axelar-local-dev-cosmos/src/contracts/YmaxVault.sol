@@ -9,6 +9,15 @@ interface IERC20Like {
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
 }
 
+/**
+ * @title YmaxVault
+ * @notice Minimal ERC-4626-like vault for the spike with externally reported
+ * managed-assets accounting.
+ * @dev Accounting invariant: totalAssets = local token balance + managedAssets.
+ * `managedAssets` is updated by trusted reports routed through the factory.
+ * If reporting is wrong or malicious, share pricing and redemption fairness can
+ * be impacted.
+ */
 contract YmaxVault {
     IERC20Like public immutable asset;
     address public immutable factory;
@@ -46,6 +55,16 @@ contract YmaxVault {
     error InvalidReportTime();
     error InsufficientLocalLiquidity();
 
+    /**
+     * @param asset_ Underlying asset token (USDC in spike flows).
+     * @param name_ Share token name.
+     * @param symbol_ Share token symbol.
+     * @param ownerPortfolioAccount_ Destination for excess local liquidity.
+     * @param localLiquidityFloorAssets_ Absolute local-liquidity floor.
+     * @param localLiquidityPctBps_ Target local-liquidity percentage in bps.
+     * @param rebalanceIfOffByPctBps_ Hysteresis band in bps for excess transfer.
+     * @param maxReportAge_ Maximum acceptable report age for sync redeem.
+     */
     constructor(
         address asset_,
         string memory name_,
@@ -76,10 +95,12 @@ contract YmaxVault {
         lastReportAt = block.timestamp;
     }
 
+    /// @notice Return total assets from local balance plus reported managed assets.
     function totalAssets() public view returns (uint256) {
         return asset.balanceOf(address(this)) + managedAssets;
     }
 
+    /// @notice Convert asset amount to share amount using current vault state.
     function convertToShares(uint256 assets) public view returns (uint256 shares) {
         uint256 supply = totalSupply;
         if (supply == 0) {
@@ -88,6 +109,7 @@ contract YmaxVault {
         return (assets * supply) / totalAssets();
     }
 
+    /// @notice Estimate assets returned for a share redemption.
     function previewRedeem(uint256 shares) public view returns (uint256 assets) {
         uint256 supply = totalSupply;
         if (supply == 0) {
@@ -96,17 +118,20 @@ contract YmaxVault {
         return (shares * totalAssets()) / supply;
     }
 
+    /// @notice Approve spender for share token allowance.
     function approve(address spender, uint256 amount) external returns (bool) {
         allowance[msg.sender][spender] = amount;
         emit Approval(msg.sender, spender, amount);
         return true;
     }
 
+    /// @notice Transfer vault shares.
     function transfer(address to, uint256 amount) external returns (bool) {
         _transfer(msg.sender, to, amount);
         return true;
     }
 
+    /// @notice Transfer shares using allowance.
     function transferFrom(address from, address to, uint256 amount) external returns (bool) {
         uint256 allowed = allowance[from][msg.sender];
         if (allowed != type(uint256).max) {
@@ -116,6 +141,12 @@ contract YmaxVault {
         return true;
     }
 
+    /**
+     * @notice Deposit assets, mint shares, and transfer excess liquidity to the
+     * owner portfolio account per policy.
+     * @param assets Amount of underlying asset to deposit.
+     * @param receiver Recipient of minted shares.
+     */
     function deposit(uint256 assets, address receiver) external returns (uint256 shares) {
         require(receiver != address(0), "receiver is zero");
         require(assets > 0, "zero assets");
@@ -135,6 +166,13 @@ contract YmaxVault {
         _transferExcessToPortfolioAccount();
     }
 
+    /**
+     * @notice Redeem shares for local liquidity if report freshness and local
+     * liquidity checks pass.
+     * @param shares Shares to burn.
+     * @param receiver Recipient of underlying assets.
+     * @param owner Share owner whose balance is burned.
+     */
     function redeem(uint256 shares, address receiver, address owner) external returns (uint256 assets) {
         require(receiver != address(0), "receiver is zero");
         require(owner != address(0), "owner is zero");
@@ -163,6 +201,14 @@ contract YmaxVault {
         emit Withdraw(msg.sender, receiver, owner, assets, shares);
     }
 
+    /**
+     * @notice Update externally managed-assets accounting.
+     * @dev Callable only by factory, which itself restricts the caller to
+     * `assetReporter`. Uses absolute values with monotonic `reportId`.
+     * @param newManagedAssets Absolute managed-assets value.
+     * @param asOf Reporter timestamp; must be non-decreasing.
+     * @param reportId Monotonic identifier for replay protection.
+     */
     function reportManagedAssets(uint256 newManagedAssets, uint256 asOf, bytes32 reportId) external {
         if (msg.sender != factory) {
             revert OnlyFactory();

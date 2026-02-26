@@ -1,6 +1,10 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
+/**
+ * Arrow references in these tests map to:
+ * agoric-sdk/packages/portfolio-contract/docs-design/vault-deposit-flow.mmd
+ */
 describe("YmaxVault + YmaxVaultFactory", () => {
   const MAX_REPORT_AGE = 8 * 60 * 60; // 8h
   const FLOOR = 50n;
@@ -66,9 +70,23 @@ describe("YmaxVault + YmaxVaultFactory", () => {
 
   it("deposit mints shares, transfers excess to owner portfolio account, and preserves totalAssets invariant", async () => {
     const { tim, p75, usdc, vault } = await deployFixture();
+    const vaultAddress = await vault.getAddress();
 
-    await usdc.connect(tim).approve(await vault.getAddress(), 250n);
-    await vault.connect(tim).deposit(250n, tim.address);
+    // Deposit flow arrow: wallet -->> usdc: approve(0xVAU1, 250USDC)
+    await usdc.connect(tim).approve(vaultAddress, 250n);
+
+    // Deposit flow arrows:
+    // wallet -->> vault: deposit(250USDC, 0xTIM)
+    // vault -->> usdc: transferFrom(0xTIM, 0xVAU1, 250USDC)
+    // vault -->> usdc: transfer(0xP751, excessUSDC)
+    // vault -->> ui: emit Deposit(0xTIM, 0xTIM, 250USDC, 250CVSH)
+    await expect(vault.connect(tim).deposit(250n, tim.address))
+      .to.emit(vault, "Deposit")
+      .withArgs(tim.address, tim.address, 250n, 250n)
+      .and.to.emit(usdc, "Transfer")
+      .withArgs(tim.address, vaultAddress, 250n)
+      .and.to.emit(usdc, "Transfer")
+      .withArgs(vaultAddress, p75.address, 200n);
 
     // target = max(50, 20% of 250 = 50), local=250 => transfer excess 200
     expect(await usdc.balanceOf(await vault.getAddress())).to.equal(50n);
@@ -89,17 +107,19 @@ describe("YmaxVault + YmaxVaultFactory", () => {
     const latestBlock = await ethers.provider.getBlock("latest");
     const asOf = BigInt(latestBlock!.timestamp);
 
-    // vault rejects direct call from reporter (only factory)
+    // Reporting flow arrow: reporter must not call vault directly.
     await expect(
       vault.connect(reporter).reportManagedAssets(123n, asOf, reportId1),
     ).to.be.revertedWithCustomError(vault, "OnlyFactory");
 
-    // factory rejects non-reporter
+    // Reporting flow arrow: only asset reporter may call factory.reportManagedAssets(...)
     await expect(
       factory.connect(other).reportManagedAssets(await vault.getAddress(), 123n, asOf, reportId1),
     ).to.be.revertedWithCustomError(factory, "NotAssetReporter");
 
-    // reporter path succeeds
+    // Reporting flow arrows:
+    // reporter ->> factory: reportManagedAssets(...)
+    // factory ->> vault: reportManagedAssets(...)
     await expect(
       factory
         .connect(reporter)
@@ -121,9 +141,11 @@ describe("YmaxVault + YmaxVaultFactory", () => {
   it("gates sync redeem on local liquidity and report freshness (8h)", async () => {
     const { tim, receiver, reporter, usdc, factory, vault } = await deployFixture();
 
+    // Reuses deposit flow arrows (approve + deposit + transferFrom + excess transfer).
     await usdc.connect(tim).approve(await vault.getAddress(), 250n);
     await vault.connect(tim).deposit(250n, tim.address);
 
+    // Withdraw flow arrow: wallet -->> vault: redeem(shares, receiver, owner)
     // Small redeem succeeds while fresh and locally liquid
     await expect(
       vault.connect(tim).redeem(10n, receiver.address, tim.address),
