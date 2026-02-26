@@ -29,12 +29,17 @@ struct UpdateOwnerInstruction {
 
 interface IRemoteAccountRouter {
     event OperationResult(
-        string indexed id,
-        string indexed sourceAddress,
+        string indexed txId,
+        string indexed sourceAddressIndex,
+        string sourceAddress,
         address indexed allegedRemoteAccount,
+        bytes4 instructionSelector,
         bool success,
         bytes reason
     );
+
+    error SubcallOutOfGas();
+    error InvalidInstructionSelector(bytes4 selector);
 
     function factory() external view returns (IRemoteAccountFactory);
 
