@@ -518,7 +518,7 @@ const makeReceiptHelper = ({
 
     const getOperationResult = () => {
         const event = getResultFromLogs(logs());
-        expect(event!.args.id.hash).to.equal(keccak256(toBytes(txId)));
+        expect(event!.args.txId.hash).to.equal(keccak256(toBytes(txId)));
         return event;
     };
     const expectOperationSuccess = () => {

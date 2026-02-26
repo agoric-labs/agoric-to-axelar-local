@@ -86,19 +86,14 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
         await expect(receipt).to.be.revertedWithCustomError(router, 'InvalidSourceChain');
     });
 
-    it('should emit failure event when selector is invalid but txId/address decode', async () => {
+    it('should revert when selector is invalid but txId/address decode', async () => {
         const invalidSelector = '0xdeadbeef' as const;
         const txId = padTxId('tx-invalid-selector', portfolioLCA);
         const encodedArgs = abiCoder.encode(['string', 'address'], [txId, expectedAccountAddress]);
         const payload = (invalidSelector + encodedArgs.slice(2)) as `0x${string}`;
 
         const receipt = await route(portfolioLCA).execRaw({ payload, txId });
-        receipt.expectTxSuccess();
-        const event = receipt.expectOperationFailure();
-
-        expect(event.args.allegedRemoteAccount).to.equal(expectedAccountAddress);
-        expect(event.args.sourceAddress.hash).to.equal(keccak256(toBytes(portfolioLCA)));
-        expect(event.args.reason).to.be.equal('0x');
+        receipt.expectTxReverted();
     });
 
     it('should revert when payload cannot be decoded', async () => {
@@ -146,4 +141,6 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
         });
         receipt.expectTxReverted();
     });
+
+    it.skip('should revert when processing the instruction runs out of gas');
 });

@@ -114,6 +114,49 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
     }
 
     /**
+     * @notice Validate that the provided selector is a known process instruction selector
+     * @dev Reverts if the selector does not match any of the supported instruction selectors.
+     *      The checks are arranged in decreasing order of expected frequency.
+     * @param selector The instruction selector to validate
+     */
+    function checkInstructionSelector(bytes4 selector) internal pure {
+        if (
+            selector != RemoteAccountAxelarRouter.processRemoteAccountExecuteInstruction.selector &&
+            selector != RemoteAccountAxelarRouter.processProvideRemoteAccountInstruction.selector &&
+            selector != RemoteAccountAxelarRouter.processUpdateOwnerInstruction.selector
+        ) {
+            revert InvalidInstructionSelector(selector);
+        }
+    }
+
+    /**
+     * @notice Calls the instruction processor function after patching the source address inside the encoded call data
+     * @dev The call will fail if the encoded call is not well formed (e.g.
+     *      invalid instruction selector or first argument is not a string /
+     *      bytes of the same length as the source address).
+     *      The function returns the success status and result of the call,
+     *      and reverts if an out of gas situation is detected.
+     * @param encodedCall The encoded call data to process
+     * @param sourceAddress The source address to patch into the encoded call data
+     */
+    function processInstruction(
+        bytes calldata encodedCall,
+        string calldata sourceAddress
+    ) internal returns (bool success, bytes memory result) {
+        bytes memory rewrittenCall = encodedCall;
+        patchFirstString(rewrittenCall, bytes(sourceAddress));
+
+        uint256 gasBefore = gasleft();
+        (success, result) = address(this).call(rewrittenCall);
+        uint256 gasAfter = gasleft();
+
+        if (!success && result.length == 0 && gasAfter <= (gasBefore / 64)) {
+            // The call likely ran out of gas.
+            revert SubcallOutOfGas();
+        }
+    }
+
+    /**
      * @notice Internal handler for Axelar GMP messages
      * @dev Validates source chain, then decodes the payload and processes it
      *      The source address is validated against the payload data by each processor.
@@ -151,16 +194,30 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
         // relevant to RemoteAccountFactory and also included in the emitted
         // OperationResult event.
 
+        bytes4 selector = bytes4(payload[:4]);
         bytes calldata encodedArgs = payload[4:];
 
-        (string memory txId, address expectedAddress) = abi.decode(encodedArgs, (string, address));
-        bytes memory rewrittenPayload = payload;
-        patchFirstString(rewrittenPayload, bytes(sourceAddress));
+        // Validate the selector before decoding and dispatching to a non existent processor function.
+        checkInstructionSelector(selector);
 
-        // Call the function and emit an event describing the result.
-        (bool success, bytes memory result) = address(this).call(rewrittenPayload);
-        // Note that this is a transport-level event applicable to any input.
-        emit OperationResult(txId, sourceAddress, expectedAddress, success, result);
+        // Decode the common part of the arguments in the encoded call data.
+        // This also serves as a validation that the payload is well formed.
+        (string memory txId, address expectedAddress) = abi.decode(encodedArgs, (string, address));
+
+        // Call the process function then emit an event describing the result.
+        // This reverts if an out of gas situation is detected so relayers can resubmit with more gas.
+        (bool success, bytes memory result) = processInstruction(payload, sourceAddress);
+
+        // Note that this is a transport-level event applicable to any instruction.
+        emit OperationResult(
+            txId,
+            sourceAddress,
+            sourceAddress,
+            expectedAddress,
+            selector,
+            success,
+            result
+        );
     }
 
     /**
