@@ -10,7 +10,9 @@ struct ContractCall {
 interface IRemoteAccount {
     event Received(address indexed sender, uint256 amount);
 
-    error ContractCallFailed(uint256 index, bytes reason);
+    event ContractCallSuccess(address indexed target, bytes4 selector, uint224 callIndex);
+
+    error ContractCallFailed(address target, bytes4 selector, uint224 callIndex, bytes reason);
 
     function executeCalls(ContractCall[] calldata calls) external payable;
 }
