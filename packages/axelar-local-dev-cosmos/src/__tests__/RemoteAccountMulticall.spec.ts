@@ -1,11 +1,26 @@
 import AxelarGasService from '@axelar-network/axelar-cgp-solidity/artifacts/contracts/gas-service/AxelarGasService.sol/AxelarGasService.json';
 import { expect } from 'chai';
-import { Contract } from 'ethers';
+import { Contract, Interface, keccak256, toUtf8Bytes } from 'ethers';
 import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { Abi } from 'viem';
-import { computeRemoteAccountAddress, ContractCall, makeEvmContract, routed } from './lib/utils';
+import {
+    computeRemoteAccountAddress,
+    ContractCall,
+    makeEvmContract,
+    ParsedLog,
+    routed,
+} from './lib/utils';
+
+const getContractCallSuccessEvents = async (receipt: {
+    parseLogs: (iface: Interface) => ParsedLog[];
+}) => {
+    const RemoteAccount = await ethers.getContractFactory('RemoteAccount');
+    return receipt
+        .parseLogs(RemoteAccount.interface)
+        .filter((e) => e.name === 'ContractCallSuccess');
+};
 
 /**
  * Tests for RemoteAccount multicall functionality via RemoteAccountAxelarRouter.
@@ -132,7 +147,24 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const multiCalls: ContractCall[] = [multicallContract.setValue(42n)];
 
         const receipt = await route(portfolioLCA).doRemoteAccountExecute({ multiCalls });
-        receipt.expectOperationSuccess();
+        const operationResult = receipt.expectOperationSuccess();
+        expect(operationResult.args.sourceAddress).to.equal(portfolioLCA);
+        expect(operationResult.args.sourceAddressIndex.hash).to.equal(
+            keccak256(toUtf8Bytes(portfolioLCA)),
+        );
+        expect(operationResult.args.allegedRemoteAccount).to.equal(
+            await route(portfolioLCA).getRemoteAccountAddress(),
+        );
+
+        expect(operationResult.args.instructionSelector).to.equal(
+            router.interface.getFunction('processRemoteAccountExecuteInstruction')!.selector,
+        );
+
+        const successEvents = await getContractCallSuccessEvents(receipt);
+        expect(successEvents).to.have.a.lengthOf(1);
+        expect(successEvents[0].args.target).to.equal(multiCalls[0].target);
+        expect(successEvents[0].args.selector).to.equal(multiCalls[0].data.slice(0, 10));
+
         expect(await multicallTarget.getValue()).to.equal(42n);
     });
 
@@ -144,6 +176,14 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
 
         const receipt = await route(portfolioLCA).doRemoteAccountExecute({ multiCalls });
         receipt.expectOperationSuccess();
+
+        const successEvents = await getContractCallSuccessEvents(receipt);
+        expect(successEvents).to.have.a.lengthOf(2);
+        expect(successEvents[0].args.target).to.equal(multiCalls[0].target);
+        expect(successEvents[0].args.selector).to.equal(multiCalls[0].data.slice(0, 10));
+        expect(successEvents[1].args.target).to.equal(multiCalls[1].target);
+        expect(successEvents[1].args.selector).to.equal(multiCalls[1].data.slice(0, 10));
+
         expect(await multicallTarget.getValue()).to.equal(105n);
     });
 
