@@ -31,16 +31,17 @@ contract RemoteAccount is Ownable, IRemoteAccount {
         if (msg.value > 0) {
             emit Received(msg.sender, msg.value);
         }
-        uint256 len = calls.length;
-        for (uint256 i = 0; i < len; ) {
+        uint224 len = uint224(calls.length);
+        for (uint224 i = 0; i < len; ) {
             (bool success, bytes memory reason) = calls[i].target.call{ value: calls[i].value }(
                 calls[i].data
             );
 
             if (!success) {
-                revert ContractCallFailed(i, reason);
+                revert ContractCallFailed(calls[i].target, bytes4(calls[i].data[:4]), i, reason);
             }
 
+            emit ContractCallSuccess(calls[i].target, bytes4(calls[i].data[:4]), i);
             unchecked {
                 ++i;
             }
