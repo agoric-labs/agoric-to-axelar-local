@@ -194,5 +194,23 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
         receipt.expectOperationSuccess();
     });
 
+    it('should emit an operation error if the instruction is malformed', async () => {
+        const fragment = router.interface.getFunction('processRemoteAccountExecuteInstruction')!;
+        const selector = fragment.selector as `0x${string}`;
+        const txId = padTxId('tx-malformed-instruction', portfolioLCA);
+        const encodedArgs = abiCoder.encode(
+            ['string', 'address', 'uint256'],
+            [txId, expectedAccountAddress, 42n],
+        );
+
+        const payload = (selector + encodedArgs.slice(2)) as `0x${string}`;
+
+        const receipt = await route(portfolioLCA).execRaw({
+            payload,
+            txId,
+        });
+        receipt.expectOperationFailure();
+    });
+
     it.skip('should revert when processing the instruction runs out of gas');
 });
