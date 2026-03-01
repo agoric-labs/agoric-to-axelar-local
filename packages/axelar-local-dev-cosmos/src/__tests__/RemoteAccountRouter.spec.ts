@@ -4,8 +4,8 @@ import { Contract, ParamType } from 'ethers';
 import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
-import { keccak256, toBytes } from 'viem';
-import { encodeRouterPayload, padTxId, routed } from './lib/utils';
+import { gmpRouterContract, padTxId } from '../utils/router';
+import { routed } from './lib/utils';
 
 describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
     let owner: HardhatEthersSigner;
@@ -119,14 +119,13 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
 
     it('should revert when payload valid but txId is too short', async () => {
         const txId = padTxId('tx-id-too-short', portfolioLCA).slice(0, -1);
-        const payload = encodeRouterPayload({
-            id: txId,
+        const payload = gmpRouterContract.processRemoteAccountExecuteInstruction(
+            txId,
             expectedAccountAddress,
-            instructionType: 'RemoteAccountExecute',
-            instruction: {
+            {
                 multiCalls: [],
             },
-        });
+        );
 
         const receipt = await route(portfolioLCA).execRaw({
             payload,
@@ -137,14 +136,13 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
 
     it('should revert when payload valid but txId is too long', async () => {
         const txId = padTxId('tx-id-too-long', portfolioLCA) + '\0';
-        const payload = encodeRouterPayload({
-            id: txId,
+        const payload = gmpRouterContract.processRemoteAccountExecuteInstruction(
+            txId,
             expectedAccountAddress,
-            instructionType: 'RemoteAccountExecute',
-            instruction: {
+            {
                 multiCalls: [],
             },
-        });
+        );
 
         const receipt = await route(portfolioLCA).execRaw({
             payload,
