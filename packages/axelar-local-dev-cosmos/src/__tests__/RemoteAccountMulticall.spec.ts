@@ -5,13 +5,10 @@ import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { Abi } from 'viem';
-import {
-    computeRemoteAccountAddress,
-    ContractCall,
-    makeEvmContract,
-    ParsedLog,
-    routed,
-} from './lib/utils';
+import { makeEvmContract } from '../utils/evm-facade';
+import { contractWithTargetAndValue } from '../utils/router';
+import type { ContractCall } from '../interfaces/router';
+import { computeRemoteAccountAddress, ParsedLog, routed } from './lib/utils';
 
 const getContractCallSuccessEvents = async (receipt: {
     parseLogs: (iface: Interface) => ParsedLog[];
@@ -36,7 +33,8 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
     let factory: Contract, router: Contract, permit2Mock: Contract;
     let multicallTarget: Contract;
     let accountAddress: `0x${string}`;
-    let multicallContract: ReturnType<typeof makeEvmContract>;
+    type BaseMulticallContract = ReturnType<typeof makeEvmContract<typeof multicallAbi>>;
+    let multicallContract: ReturnType<typeof contractWithTargetAndValue<BaseMulticallContract>>;
 
     const abiCoder = new ethers.AbiCoder();
 
@@ -125,8 +123,8 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         // Deploy Multicall target for tests
         const MulticallFactory = await ethers.getContractFactory('Multicall');
         multicallTarget = await MulticallFactory.deploy();
-        multicallContract = makeEvmContract(
-            multicallAbi,
+        multicallContract = contractWithTargetAndValue(
+            makeEvmContract(multicallAbi),
             multicallTarget.target.toString() as `0x${string}`,
         );
 

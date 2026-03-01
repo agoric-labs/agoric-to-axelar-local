@@ -4,7 +4,8 @@ import { Contract } from 'ethers';
 import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
-import { computeRemoteAccountAddress, DepositPermit, routed } from './lib/utils';
+import { computeRemoteAccountAddress, routed } from './lib/utils';
+import type { DepositPermit } from '../interfaces/router.ts';
 
 /**
  * Tests for RemoteAccount deposit functionality via RemoteAccountAxelarRouter.
