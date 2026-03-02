@@ -210,7 +210,7 @@ const nextTxId = () => {
 };
 
 export type ParsedLog = { name: string; args: Record<string, any> };
-const parseLogs = (
+export const parseLogs = (
     receipt: TransactionReceipt | null,
     contractInterface: Interface,
 ): ParsedLog[] => {
@@ -226,7 +226,8 @@ const parseLogs = (
             .filter(Boolean) as ParsedLog[]) ?? []
     );
 };
-const getResultFromLogs = (logs: ParsedLog[]) => logs.find((e) => e.name === 'OperationResult');
+export const getResultFromLogs = (logs: ParsedLog[]) =>
+    logs.find((e) => e.name === 'OperationResult');
 
 const executeResult = Symbol();
 

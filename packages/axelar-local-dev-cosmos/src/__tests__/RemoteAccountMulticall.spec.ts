@@ -190,7 +190,30 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
 
         const receipt = await route(portfolioLCA).doRemoteAccountExecute({ multiCalls });
         const errorEvent = receipt.expectOperationFailure();
-        expect(errorEvent.args.reason).to.not.equal('0x');
+        const RemoteAccount = await ethers.getContractFactory('RemoteAccount');
+        const decoded = RemoteAccount.interface.parseError(errorEvent.args.reason);
+        expect(decoded?.name).to.equal('ContractCallFailed');
+    });
+
+    it('should revert all calls when second call in batch fails', async () => {
+        // Set a known value first
+        const setupCalls: ContractCall[] = [multicallContract.setValue(500n)];
+        (
+            await route(portfolioLCA).doRemoteAccountExecute({ multiCalls: setupCalls })
+        ).expectOperationSuccess();
+        expect(await multicallTarget.getValue()).to.equal(500n);
+
+        // Batch: first call sets value to 999, second call reverts
+        const multiCalls: ContractCall[] = [
+            multicallContract.setValue(999n),
+            multicallContract.alwaysReverts(),
+        ];
+
+        const receipt = await route(portfolioLCA).doRemoteAccountExecute({ multiCalls });
+        receipt.expectOperationFailure();
+
+        // Value should still be 500 — the first call's setValue(999) was rolled back
+        expect(await multicallTarget.getValue()).to.equal(500n);
     });
 
     it('should reject multicall with wrong controller', async () => {
@@ -221,10 +244,10 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         await newRouter.waitForDeployment();
 
         // Old router owner pre-designates the successor
-        await router.setSuccessor(newRouter.target);
+        await router.getFunction('setSuccessor')(newRouter.target);
 
         // Verify successor was set
-        expect(await router.successor()).to.equal(newRouter.target);
+        expect(await router.getFunction('successor')()).to.equal(newRouter.target);
 
         // Verify RemoteAccount is still owned by old router before transfer
         const remoteAccount = await ethers.getContractAt('RemoteAccount', accountAddress);
@@ -279,7 +302,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         ).expectOperationSuccess();
 
         // Old router owner pre-designates its successor
-        await router.setSuccessor(newRouter.target);
+        await router.getFunction('setSuccessor')(newRouter.target);
 
         // Verify factory is currently owned by old router
         expect(await factory.owner()).to.equal(router.target);
@@ -335,68 +358,73 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         expect(await tmpAccount.owner()).to.equal(newRouter.target);
     });
 
-    it.skip('should create account for different router via factory.provideForRouter multicall', async () => {
-        // Get current factory owner (may have changed from previous tests)
-        const factoryOwnerAddress = await factory.owner();
-        const factoryOwnerRouter = await ethers.getContractAt(
-            'RemoteAccountAxelarRouter',
-            factoryOwnerAddress,
-        );
-
-        // Deploy a target router that will own the new account
+    it('should reject UpdateOwner when no successor is designated', async () => {
+        // Deploy a fresh router with no successor set
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
-        const targetRouter = await RouterContract.deploy(
+        const freshRouter = await RouterContract.deploy(
             axelarGatewayMock.target,
             sourceChain,
             factory.target,
             permit2Mock.target,
             owner.address,
         );
-        await targetRouter.waitForDeployment();
+        await freshRouter.waitForDeployment();
 
-        // router will call the factory's provideForRouter
-        // Must be executed by the router that currently owns the factory
-        const factoryOwnerRoute = routed(factoryOwnerRouter, routeConfig);
+        // Get current factory owner and set freshRouter as its successor
+        const currentFactoryOwner = await factory.owner();
+        const currentRouter = await ethers.getContractAt(
+            'RemoteAccountAxelarRouter',
+            currentFactoryOwner,
+        );
+        await currentRouter.getFunction('setSuccessor')(freshRouter.target);
 
-        // Compute address for the new account
-        const newPortfolioLCA = 'agoric1provideforrouter123456789abcdef';
-        const newAccountAddress =
-            await factoryOwnerRoute(newPortfolioLCA).getRemoteAccountAddress();
+        // Transfer factory ownership to freshRouter
+        const currentOwnerRoute = routed(currentRouter, routeConfig);
+        (
+            await currentOwnerRoute(portfolioContractAccount).doUpdateOwner({
+                newOwner: freshRouter.target as `0x${string}`,
+            })
+        ).expectOperationSuccess();
 
-        const receipt = await factoryOwnerRoute(portfolioContractAccount)
-            // @ts-expect-error - removed
-            .doProvideForRouter({
-                principalAccount: newPortfolioLCA,
-                router: targetRouter.target as `0x${string}`,
-                expectedAccountAddress: newAccountAddress,
-            });
-        receipt.expectOperationSuccess();
+        // freshRouter now owns the factory but has no successor set (default: address(0))
+        expect(await factory.owner()).to.equal(freshRouter.target);
+        expect(await freshRouter.getFunction('successor')()).to.equal(ethers.ZeroAddress);
 
-        // Verify account was created and is owned by targetRouter
-        const newAccount = await ethers.getContractAt('RemoteAccount', newAccountAddress);
-        expect(await newAccount.owner()).to.equal(targetRouter.target);
-
-        // Verify factory ownership unchanged
-        expect(await factory.owner()).to.equal(factoryOwnerAddress);
-
-        // Verify targetRouter can execute multicalls on the new account
-        const multiCalls2: ContractCall[] = [multicallContract.setValue(777n)];
-
-        const targetRoute = routed(targetRouter, routeConfig);
-
-        const receipt2 = await targetRoute(newPortfolioLCA).doRemoteAccountExecute({
-            multiCalls: multiCalls2,
+        // Try to UpdateOwner with address(0) as newOwner — should fail
+        const freshRoute = routed(freshRouter, routeConfig);
+        const receipt = await freshRoute(portfolioContractAccount).doUpdateOwner({
+            newOwner: ethers.ZeroAddress as `0x${string}`,
         });
-        receipt2.expectOperationSuccess();
-        expect(await multicallTarget.getValue()).to.equal(777n);
+        const decodedError = receipt.parseOperationError(router.interface);
+        expect(decodedError?.name).to.equal('OwnableInvalidOwner');
+    });
 
-        // Verify factory owner router cannot execute multicalls on the new account (owned by targetRouter)
+    it('should reject UpdateOwner when newOwner does not match successor', async () => {
+        // Get current factory owner
+        const currentFactoryOwner = await factory.owner();
+        const currentRouter = await ethers.getContractAt(
+            'RemoteAccountAxelarRouter',
+            currentFactoryOwner,
+        );
 
-        const receipt3 = await factoryOwnerRoute(newPortfolioLCA).doRemoteAccountExecute({
-            multiCalls: multiCalls2,
+        // Set a successor
+        const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
+        const designatedSuccessor = await RouterContract.deploy(
+            axelarGatewayMock.target,
+            sourceChain,
+            factory.target,
+            permit2Mock.target,
+            owner.address,
+        );
+        await designatedSuccessor.waitForDeployment();
+        await currentRouter.getFunction('setSuccessor')(designatedSuccessor.target);
+
+        // Try to transfer to a DIFFERENT address (not the successor)
+        const currentRoute = routed(currentRouter, routeConfig);
+        const receipt = await currentRoute(portfolioContractAccount).doUpdateOwner({
+            newOwner: addr1.address as `0x${string}`,
         });
-        receipt3.expectOperationFailure();
-        const decodedError = receipt3.parseOperationError(factory.interface);
-        expect(decodedError?.name).to.equal('InvalidAccountAtAddress');
+        const decodedError = receipt.parseOperationError(router.interface);
+        expect(decodedError?.name).to.equal('OwnableInvalidOwner');
     });
 });

@@ -178,7 +178,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
                 addr1.address, // attacker tries to use themselves as router
                 expectedAddress,
             ),
-        ).to.be.reverted; // The revert type depends on why the "existing account check" fails
+        ).to.be.revertedWithCustomError(factory, 'InvalidAccountAtAddress');
     });
 
     it('should refuse creating an account for the factory principal', async () => {

@@ -163,7 +163,8 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
             expectedAccountAddress: accountAddress,
         });
         const errorEvent = receipt.expectOperationFailure();
-        expect(errorEvent.args.reason).to.not.equal('0x');
+        const decoded = permit2Mock.interface.parseError(errorEvent.args.reason);
+        expect(decoded?.name).to.equal('SignatureExpired');
     });
 
     it('should succeed deposit-only to existing valid RemoteAccount', async () => {
@@ -237,6 +238,75 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         expect(decodedError?.name).to.equal('AddressMismatch');
         expect(decodedError?.args.expected).to.equal(wrongAccountAddress);
         expect(decodedError?.args.actual).to.equal(accountAddress);
+    });
+
+    it('should reject when multiple deposit permits are provided', async () => {
+        const depositPermit: DepositPermit[] = [
+            {
+                owner: owner.address as `0x${string}`,
+                permit: {
+                    permitted: {
+                        token: testToken.target.toString() as `0x${string}`,
+                        amount: ethers.parseEther('10'),
+                    },
+                    nonce: 10n,
+                    deadline: BigInt(Math.floor(Date.now() / 1000) + 3600),
+                },
+                witness: ethers.ZeroHash as `0x${string}`,
+                witnessTypeString: 'Deposit(address account)',
+                signature: ('0x' + '00'.repeat(65)) as `0x${string}`,
+            },
+            {
+                owner: owner.address as `0x${string}`,
+                permit: {
+                    permitted: {
+                        token: testToken.target.toString() as `0x${string}`,
+                        amount: ethers.parseEther('5'),
+                    },
+                    nonce: 11n,
+                    deadline: BigInt(Math.floor(Date.now() / 1000) + 3600),
+                },
+                witness: ethers.ZeroHash as `0x${string}`,
+                witnessTypeString: 'Deposit(address account)',
+                signature: ('0x' + '00'.repeat(65)) as `0x${string}`,
+            },
+        ];
+
+        const receipt = await route(portfolioContractAccount).doProvideRemoteAccount({
+            depositPermit,
+            principalAccount: portfolioLCA,
+            expectedAccountAddress: accountAddress,
+        });
+        receipt.expectOperationFailure();
+    });
+
+    it('should reject deposit with reused nonce', async () => {
+        // Nonce 0 was already used in the first test
+        const depositPermit: DepositPermit[] = [
+            {
+                owner: owner.address as `0x${string}`,
+                permit: {
+                    permitted: {
+                        token: testToken.target.toString() as `0x${string}`,
+                        amount: ethers.parseEther('10'),
+                    },
+                    nonce: 0n,
+                    deadline: BigInt(Math.floor(Date.now() / 1000) + 3600),
+                },
+                witness: ethers.ZeroHash as `0x${string}`,
+                witnessTypeString: 'Deposit(address account)',
+                signature: ('0x' + '00'.repeat(65)) as `0x${string}`,
+            },
+        ];
+
+        const receipt = await route(portfolioContractAccount).doProvideRemoteAccount({
+            depositPermit,
+            principalAccount: portfolioLCA,
+            expectedAccountAddress: accountAddress,
+        });
+        const errorEvent = receipt.expectOperationFailure();
+        const decoded = permit2Mock.interface.parseError(errorEvent.args.reason);
+        expect(decoded?.name).to.equal('InvalidNonce');
     });
 
     it('should reject deposit from source other than factory principal', async () => {
