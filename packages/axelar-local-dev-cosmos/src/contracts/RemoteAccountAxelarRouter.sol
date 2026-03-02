@@ -150,9 +150,35 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
         (success, result) = address(this).call(rewrittenCall);
         uint256 gasAfter = gasleft();
 
-        if (!success && result.length == 0 && gasAfter <= (gasBefore / 64)) {
-            // The call likely ran out of gas.
-            revert SubcallOutOfGas();
+        // Heuristic: If we lost more than 85% of the gas AND got no return data,
+        // it is very unlikely for this to be a manual revert().
+        // Legitimate manual reverts without reason usually happen early during
+        // decoding or validation.
+        // Conversely, a relayer not providing sufficient gas would have to hit a
+        // call nested 10 or more levels deep for the tx to not revert, which is
+        // similarly unlikely.
+        if (!success && gasAfter <= (gasBefore / 7)) {
+            if (result.length == 0) {
+                // The call likely ran out of gas without RemoteAccount interception
+                revert SubcallOutOfGas();
+            }
+
+            if (bytes4(result) == IRemoteAccount.ContractCallFailed.selector) {
+                // Prepend 28 bytes of zeros to 'complete' the custom error selector into a 32-byte word.
+                // This allows abi.decode to treat the selector as the first argument.
+                bytes memory paddedData = abi.encodePacked(new bytes(28), result);
+
+                // Now we decode including the error selector as the first argument.
+                (, , , , bytes memory reason) = abi.decode(
+                    paddedData,
+                    (bytes4, address, bytes4, uint224, bytes)
+                );
+
+                if (reason.length == 0) {
+                    // The call made by RemoteAccount likely ran out of gas
+                    revert SubcallOutOfGas();
+                }
+            }
         }
     }
 

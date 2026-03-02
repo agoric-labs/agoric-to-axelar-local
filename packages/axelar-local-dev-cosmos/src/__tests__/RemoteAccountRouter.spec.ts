@@ -229,7 +229,7 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
         receipt.expectOperationFailure();
     });
 
-    it('should report instruction failure when self-call runs out of gas', async () => {
+    it('should revert with SubcallOutOfGas when nested subcall runs out of gas', async () => {
         const lca = 'agoric1oogtest12345678901234567890abcde';
 
         // Step 1: Create the account so factory.provide is cheap (verify-only)
@@ -268,9 +268,7 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
             },
         }).doRemoteAccountExecute({ multiCalls: heavyCalls });
 
-        const event = receipt.expectOperationFailure();
-        // Empty reason indicates OOG (no structured error from the self-call)
-        expect(event.args.reason).to.equal('0x');
+        expect(receipt).to.be.revertedWithCustomError(router, 'SubcallOutOfGas');
     });
 
     it('should revert with SubcallOutOfGas when self-call OOGs before nested calls', async () => {
