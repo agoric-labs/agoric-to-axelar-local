@@ -7,15 +7,7 @@ import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { Abi } from 'viem';
 import { gmpRouterContract, padTxId, contractWithTargetAndValue } from '../utils/router';
 import { makeEvmContract } from '../utils/evm-facade';
-import {
-    approveMessage,
-    computeRemoteAccountAddress,
-    getCommandId,
-    getPayloadHash,
-    getResultFromLogs,
-    parseLogs,
-    routed,
-} from './lib/utils';
+import { routed } from './lib/utils';
 import type { ContractCall } from '../interfaces/router';
 
 describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
@@ -239,8 +231,6 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
 
     it('should report instruction failure when self-call runs out of gas', async () => {
         const lca = 'agoric1oogtest12345678901234567890abcde';
-        const factoryAddress = (await router.factory()).toString();
-        const oogAccountAddress = await computeRemoteAccountAddress(factoryAddress, lca);
 
         // Step 1: Create the account so factory.provide is cheap (verify-only)
         const setupReceipt = await route(lca).doRemoteAccountExecute({ multiCalls: [] });
@@ -257,51 +247,34 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
             mc.setValue(BigInt(i)),
         );
 
-        const txId = padTxId('tx123', lca);
-        const payload = gmpRouterContract.processRemoteAccountExecuteInstruction(
-            txId,
-            oogAccountAddress,
-            { multiCalls: heavyCalls },
-        );
+        const receipt = await route(lca, {
+            async doExecute(commandId, sourceChain, sourceAddress, payload) {
+                // Estimate the gas needed for a successful execution of the heavy multicall
+                const gasEstimate = await this.execute.estimateGas(
+                    commandId,
+                    sourceChain,
+                    sourceAddress,
+                    payload,
+                );
 
-        const commandId = getCommandId();
-        const payloadHash = getPayloadHash(payload);
-        await approveMessage({
-            commandId,
-            from: sourceChain,
-            sourceAddress: lca,
-            targetAddress: router.target,
-            payload: payloadHash,
-            owner,
-            AxelarGateway: axelarGatewayMock,
-            abiCoder,
-        });
+                // Provide 55% of the estimate — the outer _execute has enough gas to complete,
+                // but the self-call's forwarded 63/64ths is insufficient for the 100 SSTORE calls.
+                // The self-call OOGs and returns empty revert data. The router emits
+                // OperationResult with success=false so observers can detect the failure.
+                // Note: The SubcallOutOfGas heuristic does not fire here
+                return this.execute(commandId, sourceChain, sourceAddress, payload, {
+                    gasLimit: (gasEstimate * 55n) / 100n,
+                });
+            },
+        }).doRemoteAccountExecute({ multiCalls: heavyCalls });
 
-        // Estimate the gas needed for a successful execution of the heavy multicall
-        const gasEstimate = await router.execute.estimateGas(commandId, sourceChain, lca, payload);
-
-        // Provide 55% of the estimate — the outer _execute has enough gas to complete,
-        // but the self-call's forwarded 63/64ths is insufficient for the 100 SSTORE calls.
-        // The self-call OOGs and returns empty revert data. The router emits
-        // OperationResult with success=false so observers can detect the failure.
-        // Note: The SubcallOutOfGas heuristic does not fire here
-        const tx = await router.execute(commandId, sourceChain, lca, payload, {
-            gasLimit: (gasEstimate * 55n) / 100n,
-        });
-        const receipt = await tx.wait();
-        expect(receipt.status).to.equal(1);
-
-        const opResult = getResultFromLogs(parseLogs(receipt, router.interface));
-        expect(opResult, 'OperationResult event not found').to.not.equal(undefined);
-        expect(opResult!.args.success).to.equal(false);
+        const event = receipt.expectOperationFailure();
         // Empty reason indicates OOG (no structured error from the self-call)
-        expect(opResult!.args.reason).to.equal('0x');
+        expect(event.args.reason).to.equal('0x');
     });
 
     it('should revert with SubcallOutOfGas when self-call OOGs before nested calls', async () => {
         const lca = 'agoric1subcallooghard12345678901234abcde';
-        const factoryAddress = (await router.factory()).toString();
-        const oogAccountAddress = await computeRemoteAccountAddress(factoryAddress, lca);
 
         // Step 1: Pre-create the account so factory.provide follows the cheap
         // verify path on subsequent calls.
@@ -321,44 +294,29 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
             mc.setValue(BigInt(i)),
         );
 
-        const txId = padTxId('tx555', lca);
-        const payload = gmpRouterContract.processRemoteAccountExecuteInstruction(
-            txId,
-            oogAccountAddress,
-            { multiCalls: heavyCalls },
-        );
+        const receipt = await route(lca, {
+            async doExecute(commandId, sourceChain, sourceAddress, payload) {
+                // Estimate the gas needed for a successful execution of the heavy multicall
+                const gasEstimate = await this.execute.estimateGas(
+                    commandId,
+                    sourceChain,
+                    sourceAddress,
+                    payload,
+                );
 
-        const commandId = getCommandId();
-        const payloadHash = getPayloadHash(payload);
-        await approveMessage({
-            commandId,
-            from: sourceChain,
-            sourceAddress: lca,
-            targetAddress: router.target,
-            payload: payloadHash,
-            owner,
-            AxelarGateway: axelarGatewayMock,
-            abiCoder,
-        });
+                // Provide ~43% of the gas needed for success.
+                // The outer _execute frame retains enough gas for the heuristic check,
+                // but the 63/64ths forwarded to the self-call is insufficient for
+                // ABI validation of the 500-element array. The self-call OOGs
+                // (empty return data, all forwarded gas consumed), triggering
+                // the SubcallOutOfGas heuristic.
+                return this.execute(commandId, sourceChain, sourceAddress, payload, {
+                    gasLimit: (gasEstimate * 43n) / 100n,
+                });
+            },
+        }).doRemoteAccountExecute({ multiCalls: heavyCalls });
 
-        // Step 3: Provide ~43% of the gas needed for success.
-        // The outer _execute frame retains enough gas for the heuristic check,
-        // but the 63/64ths forwarded to the self-call is insufficient for
-        // ABI validation of the 500-element array. The self-call OOGs
-        // (empty return data, all forwarded gas consumed), triggering
-        // the SubcallOutOfGas heuristic.
-        const gasEstimate = await router.execute.estimateGas(
-            commandId,
-            sourceChain,
-            lca,
-            payload,
-        );
-
-        await expect(
-            router.execute(commandId, sourceChain, lca, payload, {
-                gasLimit: (gasEstimate * 43n) / 100n,
-            }),
-        ).to.be.revertedWithCustomError(router, 'SubcallOutOfGas');
+        expect(receipt).to.be.revertedWithCustomError(router, 'SubcallOutOfGas');
     });
 
     it('should reject direct external call to processRemoteAccountExecuteInstruction', async () => {

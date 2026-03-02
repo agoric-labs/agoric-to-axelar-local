@@ -1,7 +1,14 @@
-import { encodeFunctionData, keccak256, toBytes, encodeAbiParameters, stringToHex } from 'viem';
+import {
+    encodeFunctionData,
+    keccak256,
+    toBytes,
+    encodeAbiParameters,
+    stringToHex,
+    ContractFunctionArgs,
+} from 'viem';
 import { expect, use as chaiUse } from 'chai';
 import { ethers, network } from 'hardhat';
-import { Contract, Interface, TransactionReceipt } from 'ethers';
+import { Contract, Interface, TransactionReceipt, TransactionResponse } from 'ethers';
 
 import {
     remoteAccountAxelarRouterABI,
@@ -210,7 +217,7 @@ const nextTxId = () => {
 };
 
 export type ParsedLog = { name: string; args: Record<string, any> };
-export const parseLogs = (
+const parseLogs = (
     receipt: TransactionReceipt | null,
     contractInterface: Interface,
 ): ParsedLog[] => {
@@ -226,8 +233,7 @@ export const parseLogs = (
             .filter(Boolean) as ParsedLog[]) ?? []
     );
 };
-export const getResultFromLogs = (logs: ParsedLog[]) =>
-    logs.find((e) => e.name === 'OperationResult');
+const getResultFromLogs = (logs: ParsedLog[]) => logs.find((e) => e.name === 'OperationResult');
 
 const executeResult = Symbol();
 
@@ -345,6 +351,14 @@ export const routed = (
             sourceAddress?: string;
             expectedAccountAddress?: `0x${string}`;
             sourceChain?: string;
+            doExecute?: (
+                this: Contract,
+                ...args: ContractFunctionArgs<
+                    typeof remoteAccountAxelarRouterABI,
+                    'nonpayable',
+                    'execute'
+                >
+            ) => Promise<TransactionResponse>;
         } = {},
     ) => {
         const getRemoteAccountAddress = async () => {
@@ -376,16 +390,17 @@ export const routed = (
                 abiCoder,
             });
 
-            let receipt;
+            let receipt: TransactionReceipt | null = null;
             let error;
-            const result = router.execute(
+            const result = (overrides.doExecute ?? router.execute).call(
+                router,
                 commandId,
                 resolvedSourceChain,
                 resolvedSourceAddress,
                 payload,
             );
             try {
-                const tx = await result;
+                const tx: TransactionResponse = await result;
                 receipt = await tx.wait();
             } catch (err) {
                 error = err;
