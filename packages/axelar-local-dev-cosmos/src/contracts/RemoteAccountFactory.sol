@@ -68,29 +68,33 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     }
 
     /**
-     * @notice Compute the CREATE2 address for a RemoteAccount deployed by this factory
-     * @dev Return address(0) if the salt matches the factory's principal
-     * @param salt The salt generated from the principal for the RemoteAccount
+     * @notice Compute the address for a RemoteAccount deployed by this factory
+     * @dev Revert if called for this factory's principal account
+     * @param principalAccount The principal account string for the RemoteAccount
      * @return The deterministic address where the RemoteAccount is deployed
+     *         and the associated CREATE2 salt
      */
-    function _getRemoteAccountAddress(bytes32 salt) internal view returns (address) {
+    function _getRemoteAccountAddress(
+        string calldata principalAccount
+    ) internal view returns (address, bytes32) {
+        bytes32 salt = _getSalt(principalAccount);
         if (salt == _principalSalt) {
-            return address(0);
+            // XXX address(0) would also be an acceptable argument
+            revert InvalidAccountAtAddress(address(this));
         }
-        return Create2.computeAddress(salt, _remoteAccountBytecodeHash);
+        return (Create2.computeAddress(salt, _remoteAccountBytecodeHash), salt);
     }
 
     /**
-     * @notice Compute the CREATE2 address for a RemoteAccount deployed by this factory
-     * @dev Return address(0) if the principalAccount matches the factory's principal
-     * @param principalAccount The address of the principal for the RemoteAccount
-     * @return The deterministic address where the RemoteAccount is deployed
+     * @notice Compute the address for a RemoteAccount deployed by this factory
+     * @dev Revert if called for this factory's principal account
+     * @param principalAccount The principal account string for the RemoteAccount
+     * @return addr The deterministic address where the RemoteAccount is deployed
      */
     function getRemoteAccountAddress(
         string calldata principalAccount
-    ) public view override returns (address) {
-        bytes32 salt = _getSalt(principalAccount);
-        return _getRemoteAccountAddress(salt);
+    ) public view override returns (address addr) {
+        (addr, ) = _getRemoteAccountAddress(principalAccount);
     }
 
     /**
@@ -127,9 +131,7 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
         address expectedOwner,
         address expectedAccountAddress
     ) public view override {
-        bytes32 salt = _getSalt(principalAccount);
-
-        address actualAccountAddress = _getRemoteAccountAddress(salt);
+        (address actualAccountAddress, ) = _getRemoteAccountAddress(principalAccount);
         if (actualAccountAddress != expectedAccountAddress) {
             revert AddressMismatch(expectedAccountAddress, actualAccountAddress);
         }
@@ -148,21 +150,21 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
      *
      *      The expectedOwner parameter is critical for safety:
      *      - TOCTOU: Prevents time-of-check time-of-use races where the caller checks
-     *        owner() then calls provide(), but ownership changes in between. By validating
+     *        owner() then calls provideRemoteAccount(), but ownership changes in between. By validating
      *        expectedOwner matches current owner at execution, caller intent is preserved.
      *
-     *      - Router upgrades: When upgrading from router A to B, in-flight provide() calls
+     *      - Router upgrades: When upgrading from router A to B, in-flight provideRemoteAccount() calls
      *        meant for router A will fail rather than creating accounts owned by router B.
      *
      *      - Reorgs: During blockchain reorganizations, if a router ownership transfer and
-     *        provide() call get reordered, the check ensures provide() fails rather than
+     *        provideRemoteAccount() call get reordered, the check ensures provideRemoteAccount() fails rather than
      *        creating accounts with unexpected ownership.
      *
      * @param expectedOwner The expected address of the owner, must be current owner of the factory
      * @param expectedAddress The expected CREATE2 address (for verification)
      * @return true if the RemoteAccount was created, false if it was pre-existing
      */
-    function provide(
+    function provideRemoteAccount(
         string calldata principalAccount,
         address expectedOwner,
         address expectedAddress
@@ -174,7 +176,7 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
             verifyRemoteAccount(principalAccount, expectedOwner, expectedAddress);
             return false;
         }
-        return _provideForOwner(principalAccount, expectedOwner, expectedAddress);
+        return _provideRemoteAccountForOwner(principalAccount, expectedOwner, expectedAddress);
     }
 
     /**
@@ -182,20 +184,19 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
      * @dev Idempotent: calling multiple times with same params succeeds as
      *      long as the RemoteAccount's current owner matches the provided ownerAddress.
      *      This allows the owner router to provide an account with a specific
-     *      owner address. The owner is supposed to only call this on specific "control"
-     *      instructions sent by the manager which is the principal of
-     *      this factory to create remote accounts for alternative routers it may use.
+     *      owner address. The owner is expected to call this function only for
+     *      experimentation before committing to its own successor.
      * @param principalAccount The address of the principal for the RemoteAccount
      * @param ownerAddress The address to use as owner of the RemoteAccount
      * @param expectedAddress The expected CREATE2 address (for verification)
      * @return true if the RemoteAccount was created, false if it was pre-existing
      */
-    function provideForOwner(
+    function provideRemoteAccountForOwner(
         string calldata principalAccount,
         address ownerAddress,
         address expectedAddress
     ) external override onlyOwner returns (bool) {
-        return _provideForOwner(principalAccount, ownerAddress, expectedAddress);
+        return _provideRemoteAccountForOwner(principalAccount, ownerAddress, expectedAddress);
     }
 
     /**
@@ -210,16 +211,14 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
      * @param expectedAddress The expected CREATE2 address (for verification)
      * @return true if the RemoteAccount was created, false if it was pre-existing
      */
-    function _provideForOwner(
+    function _provideRemoteAccountForOwner(
         string calldata principalAccount,
         address ownerAddress,
         address expectedAddress
     ) internal returns (bool) {
         // Do not include the owner address to keep the remote account address independent
         // from its current owner setup.
-        bytes32 salt = _getSalt(principalAccount);
-
-        address accountAddress = _getRemoteAccountAddress(salt);
+        (address accountAddress, bytes32 salt) = _getRemoteAccountAddress(principalAccount);
 
         if (expectedAddress == address(0)) {
             revert InvalidAccountAtAddress(expectedAddress);

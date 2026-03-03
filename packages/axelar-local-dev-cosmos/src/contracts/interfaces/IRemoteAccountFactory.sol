@@ -29,13 +29,13 @@ interface IRemoteAccountFactory {
         address accountAddress
     ) external view;
 
-    function provide(
+    function provideRemoteAccount(
         string calldata principalAccount,
         address expectedOwner,
         address expectedAddress
     ) external returns (bool);
 
-    function provideForOwner(
+    function provideRemoteAccountForOwner(
         string calldata principalAccount,
         address owner,
         address expectedAddress

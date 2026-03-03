@@ -232,10 +232,10 @@ export const remoteAccountABI = [
 export const remoteAccountFactoryABI = [
     {
         type: 'function',
-        name: 'provide',
+        name: 'provideRemoteAccount',
         inputs: [
             { name: 'principalAccount', type: 'string' },
-            { name: 'expectedRouter', type: 'address' },
+            { name: 'expectedOwner', type: 'address' },
             { name: 'expectedAddress', type: 'address' },
         ],
         outputs: [{ name: '', type: 'bool' }],
@@ -243,10 +243,10 @@ export const remoteAccountFactoryABI = [
     },
     {
         type: 'function',
-        name: 'provideForRouter',
+        name: 'provideRemoteAccountForOwner',
         inputs: [
             { name: 'principalAccount', type: 'string' },
-            { name: 'router', type: 'address' },
+            { name: 'owner', type: 'address' },
             { name: 'expectedAddress', type: 'address' },
         ],
         outputs: [{ name: '', type: 'bool' }],

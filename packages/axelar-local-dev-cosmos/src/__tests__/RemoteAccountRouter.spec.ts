@@ -222,7 +222,7 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
     it('should revert with SubcallOutOfGas when nested subcall runs out of gas', async () => {
         const lca = 'agoric1oogtest12345678901234567890abcde';
 
-        // Step 1: Create the account so factory.provide is cheap (verify-only)
+        // Step 1: Create the account so factory.provideRemoteAccountis cheap (verify-only)
         const setupReceipt = await route(lca).doRemoteAccountExecute({ multiCalls: [] });
         setupReceipt.expectOperationSuccess();
 
@@ -264,7 +264,7 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
     it('should revert with SubcallOutOfGas when self-call OOGs before nested calls', async () => {
         const lca = 'agoric1subcallooghard12345678901234abcde';
 
-        // Step 1: Pre-create the account so factory.provide follows the cheap
+        // Step 1: Pre-create the account so factory.provideRemoteAccountfollows the cheap
         // verify path on subsequent calls.
         const setupReceipt = await route(lca).doRemoteAccountExecute({ multiCalls: [] });
         setupReceipt.expectOperationSuccess();

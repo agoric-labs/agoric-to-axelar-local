@@ -170,10 +170,10 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         // Compute the expected address
         const expectedAddress = await route(frontRunLCA).getRemoteAccountAddress();
 
-        // Attacker tries to front-run by calling factory.provide directly
+        // Attacker tries to front-run by calling factory.provideRemoteAccount directly
         // This should revert because factory only does a verify for calls not from its owner (router)
         await expect(
-            factory.provide(
+            factory.provideRemoteAccount(
                 frontRunLCA,
                 addr1.address, // attacker tries to use themselves as router
                 expectedAddress,
@@ -182,14 +182,24 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
     });
 
     it('should refuse creating an account for the factory principal', async () => {
-        // Attacker tries to front-run by calling factory.provide directly
+        // Attacker tries to front-run by calling factory.provideRemoteAccount directly
         // This should revert because factory only does a verify for calls not from its owner (router)
         await expect(
-            factory.provide(portfolioContractAccount, router.target, ethers.ZeroAddress),
+            factory.provideRemoteAccount(
+                portfolioContractAccount,
+                router.target,
+                ethers.ZeroAddress,
+            ),
         ).to.be.revertedWithCustomError(factory, 'InvalidAccountAtAddress');
     });
 
-    it.skip('should create account for different router via factory.provideForRouter', async () => {
+    it('should revert getRemoteAccountAddress for the factory principal', async () => {
+        await expect(
+            factory.getRemoteAccountAddress(portfolioContractAccount),
+        ).to.be.revertedWithCustomError(factory, 'InvalidAccountAtAddress');
+    });
+
+    it.skip('should create account for different router via factory.provideRemoteAccountForOwner', async () => {
         // Get current factory owner (may have changed from previous tests)
         const factoryOwnerAddress = await factory.owner();
         const factoryOwnerRouter = await ethers.getContractAt(
@@ -208,7 +218,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         );
         await targetRouter.waitForDeployment();
 
-        // router will call the factory's provideForRouter
+        // router will call the factory's provideRemoteAccountForOwner
         // Must be executed by the router that currently owns the factory
         const factoryOwnerRoute = routed(factoryOwnerRouter, routeConfig);
 

@@ -256,7 +256,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
      *      Only the factory's principal can invoke this operation to ensure only the
      *      controller can redeem signed permits.
      *      The depositPermit in the instruction is optional to allow the controller to
-     *      use the factory's public provide mechanism without fund transfer.
+     *      use the factory's public provideRemoteAccount mechanism without fund transfer.
      * @param sourceAddress Must be the principal account address of the factory
      * @param factoryAddress The address of the factory
      * @param instruction The decoded ProvideRemoteAccountInstruction
@@ -283,7 +283,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
 
         // Transfer first to avoid expensive creation if deposit fails (e.g. insufficient funds,
         // expired permit).
-        // The subsequent provide call will revert this deposit if the expectedAccountAddress
+        // The subsequent provideRemoteAccount call will revert this deposit if the expectedAccountAddress
         // does not match the address derived from the designated principal account.
         if (instruction.depositPermit.length > 0) {
             // Verify that the instruction is well formed
@@ -307,7 +307,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
             );
         }
 
-        factory.provide(
+        factory.provideRemoteAccount(
             instruction.principalAccount,
             address(this),
             instruction.expectedAccountAddress
@@ -330,7 +330,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
         require(msg.sender == address(this));
 
         // Provide or verify the remote account matches the source principal and its owner is this router
-        factory.provide(sourceAddress, address(this), expectedAccountAddress);
+        factory.provideRemoteAccount(sourceAddress, address(this), expectedAccountAddress);
 
         if (instruction.multiCalls.length > 0) {
             IRemoteAccount(expectedAccountAddress).executeCalls(instruction.multiCalls);
@@ -368,7 +368,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
         } else {
             // Provide or verify the remote account matches the source principal and owner
             // The factory does an owner check as part of this, even though transfer would also check it.
-            factory.provide(sourceAddress, address(this), expectedAccountAddress);
+            factory.provideRemoteAccount(sourceAddress, address(this), expectedAccountAddress);
         }
 
         Ownable(expectedAccountAddress).transferOwnership(newOwner);
