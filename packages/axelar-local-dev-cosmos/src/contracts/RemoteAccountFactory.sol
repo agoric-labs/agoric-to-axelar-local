@@ -9,20 +9,25 @@ import { RemoteAccount } from './RemoteAccount.sol';
 /**
  * @title RemoteAccountFactory
  * @notice A CREATE2 factory for deploying RemoteAccount contracts
- * @dev The RemoteAccountFactory is a non-replaceable contract deploying
- *      RemoteAccount contracts at predictable addresses on behalf of an
- *      external principal (such as a portfolio manager).
- *      The factory is an ownable and the owner is a router contract identifying
- *      the address of its messages source as a "principal account".
- *      The factory can be invoked publicly to manually create a RemoteAccount
- *      configured with the factory's current owner as the new account's owner.
- *      The current factory owner can also create a RemoteAccount for an
- *      arbitrary owner.
- *      The principal account string relayed by the owner uniquely identifies
- *      a RemoteAccount through CREATE2 address derivation.
+ * @dev RemoteAccountFactory is a non-replaceable contract for deploying
+ *      RemoteAccount contracts on behalf of an immutable factory principal
+ *      account string (identifying e.g. a portfolio manager) at predictable
+ *      addresses.
+ *      This factory is ownable, and at any point in time is expected to be
+ *      owned by the active representative of that factory principal (such as an
+ *      IRemoteAccountRouter).
+ *      This factory can be invoked publicly to create a RemoteAccount for a
+ *      principal account string, initialized with an owner matching the current
+ *      owner of this factory.
+ *      This factory can also be invoked by its current owner to create such a
+ *      RemoteAccount with an arbitrary owner.
+ *      Each RemoteAccount created by this factory is uniquely identified by its
+ *      principal account string via CREATE2 address derivation
+ *      (see https://eips.ethereum.org/EIPS/eip-1014).
  */
 contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     // Store the principal details of this factory purely for reference
+    // Immutable, but cannot be declaratively marked as such because they are strings
     string public factoryPrincipalCaip2;
     string public factoryPrincipalAccount;
 
@@ -98,16 +103,12 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
      * @param owner The expected address of the account's current owner
      */
     function _verifyRemoteAccountOwner(address accountAddress, address owner) internal view {
-        if (accountAddress == address(0)) {
-            revert UnauthorizedOwner(owner, accountAddress);
-        } else {
-            try RemoteAccount(payable(accountAddress)).owner() returns (address existingOwner) {
-                if (existingOwner != owner) {
-                    revert UnauthorizedOwner(owner, accountAddress);
-                }
-            } catch {
+        try RemoteAccount(payable(accountAddress)).owner() returns (address existingOwner) {
+            if (existingOwner != owner) {
                 revert UnauthorizedOwner(owner, accountAddress);
             }
+        } catch {
+            revert UnauthorizedOwner(owner, accountAddress);
         }
     }
 
@@ -180,7 +181,7 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
      * @notice Provide a RemoteAccount - creates if new, verifies if exists
      * @dev Idempotent: calling multiple times with same params succeeds as
      *      long as the RemoteAccount's current owner matches the provided ownerAddress.
-     *      This allows the owner router to provide and account with a specific
+     *      This allows the owner router to provide an account with a specific
      *      owner address. The owner is supposed to only call this on specific "control"
      *      instructions sent by the manager which is the principal of
      *      this factory to create remote accounts for alternative routers it may use.
@@ -233,9 +234,9 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
             address newAccountAddress = address(newAccount);
             assert(newAccountAddress == accountAddress);
 
-            // Immediately transfer ownership to owner as an initialization step
-            // not using constructor args so that remote account address only depends
-            // on principal account through salt, and not on transferable owner.
+            // Immediately transfer ownership to our owner as an initialization
+            // step (we can't specify the correct owner in constructor arguments
+            // because that would affect the resulting RemoteAccount address).
             newAccount.transferOwnership(ownerAddress);
 
             emit RemoteAccountCreated(newAccountAddress, principalAccount, ownerAddress);

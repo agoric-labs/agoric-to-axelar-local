@@ -8,11 +8,11 @@ import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
  * @title RemoteAccount
  * @notice A wallet contract representing a principal account, controlled
  *         through a replaceable owner (such as an IRemoteAccountRouter).
- * @dev An Ownable for address-based, transferable ownership by the owner router.
+ * @dev An Ownable for address-based, transferable ownership.
  *      This contract does not track its principal directly but instead relies
  *      on RemoteAccountFactory to deploy it at a predictable CREATE2 address
- *      derived from the principal. The owner is responsible for validating the remote
- *      account's address against the expected principal on each call.
+ *      derived from the principal. The owner is responsible for validating the
+ *      remote account's address against the acting principal on each call.
  *      This design keeps RemoteAccount as simple as possible while still
  *      supporting migration paths in which the original owner is replaced with
  *      a new contract.
@@ -23,8 +23,8 @@ contract RemoteAccount is Ownable, IRemoteAccount {
     /**
      * @notice Execute a batch of calls on behalf of the principal
      * @dev The owner is the only authorized caller, and is expected to
-     *      target this RemoteAccount after deriving its address from the
-     *      principal using the factory that created this RemoteAccount.
+     *      target this RemoteAccount after using the RemoteAccountFactory that
+     *      created it to re-derive its address from the acting principal.
      * @param calls Array of contract calls to execute
      */
     function executeCalls(ContractCall[] calldata calls) external payable override onlyOwner {

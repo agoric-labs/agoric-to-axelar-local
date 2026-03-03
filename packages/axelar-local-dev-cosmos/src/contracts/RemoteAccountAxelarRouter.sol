@@ -15,11 +15,14 @@ import { IRemoteAccountRouter, IPermit2, DepositPermit, ProvideRemoteAccountInst
  *      Each RemoteAccount and the factory is owned by this router, enabling future migration
  *      by deploying a new router and transferring ownership.
  *
- *      Migration to a new router is done in 2 steps:
- *      - owner of the current router designates a successor
- *      - each principal of contracts owned by this router (RemoteAccount and Factory)
- *        sends an UpdateOwner instruction to the current router asking to update their
- *        owner to that recorded successor.
+ *      Migration to a new router is done in 3 steps:
+ *      1. the owner of this router calls `setSuccessor`
+ *      2. the principal account of the associated RemoteAccountFactory sends
+ *         this router an UpdateOwner instruction specifying as new owner the
+ *         successor designated in step 1
+ *      3. the principal account of each RemoteAccount owned by this router
+ *         sends this router an UpdateOwner instruction like the one from step 2
+ *
  *      We use an immutable owner for the router, changing owner requires designating a
  *      successor router with a different owner. This way a leak of owner credentials
  *      does not grant exclusive access to the router's successor mechanism, maintaining
@@ -184,7 +187,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
 
     /**
      * @notice Internal handler for Axelar GMP messages
-     * @dev Validates source chain, then decodes the payload and processes it
+     * @dev Validates source chain, then decodes and processes the payload
      *      The source address is validated against the payload data by each processor.
      * @param sourceChain The source chain (must match configured axelarSourceChain)
      * @param sourceAddress The source address
@@ -312,7 +315,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
     }
 
     /**
-     * @notice Process the remote account instruction provide -> multicall
+     * @notice Process an execute instruction by sending calls to a remote account
      * @dev This is an external function which can only be called by this contract
      *      Used to create a call stack that can be reverted atomically
      * @param sourceAddress The principal account address of the remote account
@@ -352,17 +355,15 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
 
         address newOwner = instruction.newOwner;
 
-        if (newOwner != successor) {
+        if (newOwner == address(0) || newOwner != successor) {
             revert Ownable.OwnableInvalidOwner(newOwner);
         }
 
-        if (newOwner == address(0)) {
-            revert Ownable.OwnableInvalidOwner(address(0));
-        }
-
         if (expectedAccountAddress == address(factory)) {
-            // Verify the factory's principal matches the expected source address
-            // No need to check the factory's current owner as the transfer will fail if we're not the owner
+            // Before transferring the factory, verify that this call comes from
+            // its principal account
+            // No need to check the factory's current owner as the transfer will
+            // fail if that's not us
             factory.verifyFactoryPrincipalAccount(sourceAddress);
         } else {
             // Provide or verify the remote account matches the source principal and owner
@@ -373,6 +374,11 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
         Ownable(expectedAccountAddress).transferOwnership(newOwner);
     }
 
+    /**
+     * @notice Initialize or replace the successor of this router
+     * @dev Can only be called by the contract owner
+     * @param newSuccessor The address designated as the successor router.
+     */
     function setSuccessor(address newSuccessor) external onlyOwner {
         successor = newSuccessor;
     }

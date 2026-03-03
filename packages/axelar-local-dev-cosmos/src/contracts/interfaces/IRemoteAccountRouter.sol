@@ -13,6 +13,11 @@ struct DepositPermit {
     bytes signature;
 }
 
+/**
+ * @notice Instructions for ensuring existence of a RemoteAccount of a principal
+ *         account, optionally including a single DepositPermit for pulling in
+ *         funds to it
+ */
 struct ProvideRemoteAccountInstruction {
     DepositPermit[] depositPermit;
     string principalAccount;
