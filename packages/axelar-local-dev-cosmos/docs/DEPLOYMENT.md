@@ -33,10 +33,13 @@ This guide covers deploying `RemoteAccountFactory` and `RemoteAccountAxelarRoute
 
 ## Supported Networks
 
-| Type    | Networks                                                            |
-| ------- | ------------------------------------------------------------------- |
-| Mainnet | `avax`, `arb`, `base`, `eth`, `opt`                                 |
-| Testnet | `eth-sepolia`, `fuji`, `base-sepolia`, `opt-sepolia`, `arb-sepolia` |
+| EVM Chain | Mainnet | Testnet        |
+| --------- | ------- | -------------- |
+| Arbitrum  | `arb`   | `arb-sepolia`  |
+| Avalanche | `avax`  | `fuji`         |
+| Base      | `base`  | `base-sepolia` |
+| Ethereum  | `eth`   | `eth-sepolia`  |
+| Optimism  | `opt`   | `opt-sepolia`  |
 
 ## Deployment Order
 

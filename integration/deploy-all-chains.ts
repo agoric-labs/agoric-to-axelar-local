@@ -46,7 +46,7 @@ const getNonceForChain = async (
 };
 
 const CHAINS = {
-  mainnet: ["avax", "arb", "base", "eth", "opt"],
+  mainnet: ["arb", "avax", "base", "eth", "opt"],
   testnet: [
     "eth-sepolia",
     "fuji",
@@ -57,14 +57,14 @@ const CHAINS = {
 };
 
 const ALL_CHAINS = [...CHAINS.mainnet, ...CHAINS.testnet];
-
+export type ContractType =
+  | "factory"
+  | "depositFactory"
+  | "remoteAccountFactory"
+  | "portfolioRouter";
 interface DeployOptions {
   chains?: string[]; // Specific chains to deploy to
-  contract:
-    | "factory"
-    | "depositFactory"
-    | "remoteAccountFactory"
-    | "portfolioRouter"; // Contract type
+  contract: ContractType; // Contract type
   ownerType?: "ymax0" | "ymax1"; // Owner type (for depositFactory)
   parallel?: boolean; // Run deployments in parallel
   continueOnError?: boolean; // Continue even if one deployment fails
@@ -396,17 +396,19 @@ const parseArgs = (): DeployOptions => {
       case "--contract":
       case "-c":
         const contractType = args[++i];
-        if (
-          contractType !== "factory" &&
-          contractType !== "depositFactory" &&
-          contractType !== "remoteAccountFactory" &&
-          contractType !== "portfolioRouter"
-        ) {
+        const contractTypes = [
+          "factory",
+          "depositFactory",
+          "remoteAccountFactory",
+          "portfolioRouter",
+        ];
+
+        if (!contractTypes.includes(contractType)) {
           throw new Error(
-            'Contract must be "factory", "depositFactory", "remoteAccountFactory", or "portfolioRouter"',
+            `Contract must be one of: ${JSON.stringify(contractTypes)}`,
           );
         }
-        options.contract = contractType;
+        options.contract = contractType as ContractType;
         break;
 
       case "--owner-type":
@@ -487,10 +489,6 @@ Note: Nonces are automatically checked and synchronized if they differ across ch
 Environment Variables (for portfolioRouter):
   REMOTE_ACCOUNT_FACTORY       Required: Address of the deployed RemoteAccountFactory contract
   OWNER_AUTHORITY              Required: Address authorized to designate router replacement
-
-IMPORTANT: After deploying both RemoteAccountFactory and PortfolioRouter,
-           you must transfer factory ownership to the router:
-           factory.transferOwnership(portfolioRouterAddress)
 
 Examples:
   # Deploy factory to all chains sequentially

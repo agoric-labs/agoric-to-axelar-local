@@ -1,5 +1,11 @@
 #!/bin/bash
 
+YMAX0_MAINNET="agoric1wl2529tfdlfvure7mw6zteam02prgaz88p0jru4tlzuxdawrdyys6jlmnq"
+YMAX1_MAINNET="agoric13ecz27mm2ug5kv96jyal2k6z8874mxzs4m4yuet36s4nqdl0ey6qr09p74"
+
+YMAX0_TESTNET="agoric18ek5td2h397cmejnlndes50k84ywx82kau7aff80t74fcxmjnzqstjclj0"
+YMAX1_TESTNET="agoric1ps63986jnululzkmg7h3nhs5at6vkatcgsjy9ttgztykuaepwpxsrw2sus"
+
 # Get the directory of the script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/network-config.sh"
@@ -14,7 +20,7 @@ if [[ $# -lt 2 ]]; then
     echo "                   Used for remoteAccountFactory and depositFactory"
     echo ""
     echo "Supported networks:"
-    echo "  Mainnets: avax, arb, base, eth, opt"
+    echo "  Mainnets: arb, avax, base, eth, opt"
     echo "  Testnets: eth-sepolia, fuji, base-sepolia, opt-sepolia, arb-sepolia"
     echo ""
     echo "Examples:"
@@ -48,14 +54,6 @@ delete_deployments_folder() {
 }
 
 get_network_config "$network"
-
-# Validate contract parameter
-if [[ "$contract" != "factory" && "$contract" != "depositFactory" && "$contract" != "remoteAccountFactory" && "$contract" != "portfolioRouter" ]]; then
-    echo "Error: Invalid contract type '$contract'"
-    echo "Valid options: 'factory', 'depositFactory', 'remoteAccountFactory', or 'portfolioRouter'"
-    exit 1
-fi
-
 delete_deployments_folder "ignition/deployments"
 
 # Deploy based on contract type
@@ -86,22 +84,22 @@ case "$contract" in
         fi
 
         # Set owner address based on network type and owner type
-        case $network in
-            avax|arb|base|eth|opt)
+        case "$network" in
+            arb|avax|base|eth|opt)
                 # Mainnet
-                if [[ "$owner_type" == "ymax0" ]]; then
-                    OWNER_ADDRESS="agoric1wl2529tfdlfvure7mw6zteam02prgaz88p0jru4tlzuxdawrdyys6jlmnq" # https://vstorage.agoric.net/?path=published.ymax0&endpoint=https%3A%2F%2Fmain-a.rpc.agoric.net%3A443&height=undefined
-                else
-                    OWNER_ADDRESS="agoric13ecz27mm2ug5kv96jyal2k6z8874mxzs4m4yuet36s4nqdl0ey6qr09p74" # https://vstorage.agoric.net/?path=published.ymax1&endpoint=https%3A%2F%2Fmain-a.rpc.agoric.net%3A443&height=undefined
-                fi
+                PRINCIPAL_CAIP2="cosmos:agoric-3"
+                case "$owner_type" in
+                    ymax0) PRINCIPAL_ACCOUNT="$YMAX0_MAINNET" ;;
+                    ymax1) PRINCIPAL_ACCOUNT="$YMAX1_MAINNET" ;;
+                esac
                 ;;
             *)
                 # Testnet
-                if [[ "$owner_type" == "ymax0" ]]; then
-                    OWNER_ADDRESS="agoric18ek5td2h397cmejnlndes50k84ywx82kau7aff80t74fcxmjnzqstjclj0" # https://vstorage.agoric.net/?path=published.ymax0&endpoint=https%3A%2F%2Fdevnet.rpc.agoric.net%3A443&height=undefined
-                else
-                    OWNER_ADDRESS="agoric1ps63986jnululzkmg7h3nhs5at6vkatcgsjy9ttgztykuaepwpxsrw2sus" # https://vstorage.agoric.net/?path=published.ymax1&endpoint=https%3A%2F%2Fdevnet.rpc.agoric.net%3A443&height=undefined
-                fi
+                PRINCIPAL_CAIP2="cosmos:agoricdev-25"
+                case "$owner_type" in
+                    ymax0) PRINCIPAL_ACCOUNT="$YMAX0_TESTNET" ;;
+                    ymax1) PRINCIPAL_ACCOUNT="$YMAX1_TESTNET" ;;
+                esac
                 ;;
         esac
 
@@ -110,12 +108,14 @@ case "$contract" in
         echo "Deploying DepositFactory (with Permit2 support)..."
         echo "========================================="
         echo "Using owner type: $owner_type"
-        echo "Using owner address: $OWNER_ADDRESS"
+        echo "Using Principal CAIP2: $PRINCIPAL_CAIP2"
+        echo "Using Principal Account: $PRINCIPAL_ACCOUNT"
+
         GATEWAY_CONTRACT="$GATEWAY" \
             GAS_SERVICE_CONTRACT="$GAS_SERVICE" \
             PERMIT2_CONTRACT="$PERMIT2" \
             FACTORY_CONTRACT="$FACTORY" \
-            OWNER_ADDRESS="$OWNER_ADDRESS" \
+            OWNER_ADDRESS="$PRINCIPAL_ACCOUNT" \
             npx hardhat ignition deploy "./ignition/modules/deployDepositFactory.ts" --network "$network" --verify
         ;;
 
@@ -128,25 +128,23 @@ case "$contract" in
         fi
 
         # Set PRINCIPAL_CAIP2 based on network type
-        case $network in
-            avax|arb|base|eth|opt)
-                # Mainnet
-                PRINCIPAL_CAIP2="cosmos:agoric-3"
-                if [[ "$owner_type" == "ymax0" ]]; then
-                    PRINCIPAL_ACCOUNT="agoric1wl2529tfdlfvure7mw6zteam02prgaz88p0jru4tlzuxdawrdyys6jlmnq"
-                else
-                    PRINCIPAL_ACCOUNT="agoric13ecz27mm2ug5kv96jyal2k6z8874mxzs4m4yuet36s4nqdl0ey6qr09p74"
-                fi
-                ;;
-            *)
-                # Testnet
-                PRINCIPAL_CAIP2="cosmos:agoricdev-25"
-                if [[ "$owner_type" == "ymax0" ]]; then
-                    PRINCIPAL_ACCOUNT="agoric18ek5td2h397cmejnlndes50k84ywx82kau7aff80t74fcxmjnzqstjclj0"
-                else
-                    PRINCIPAL_ACCOUNT="agoric1ps63986jnululzkmg7h3nhs5at6vkatcgsjy9ttgztykuaepwpxsrw2sus"
-                fi
-                ;;
+        case "$network" in
+            arb|avax|base|eth|opt)
+            # Mainnet
+            PRINCIPAL_CAIP2="cosmos:agoric-3"
+            case "$owner_type" in
+                ymax0) PRINCIPAL_ACCOUNT="$YMAX0_MAINNET" ;;
+                ymax1) PRINCIPAL_ACCOUNT="$YMAX1_MAINNET" ;;
+            esac
+            ;;
+        *)
+            # Testnet
+            PRINCIPAL_CAIP2="cosmos:agoricdev-25"
+            case "$owner_type" in
+                ymax0) PRINCIPAL_ACCOUNT="$YMAX0_TESTNET" ;;
+                ymax1) PRINCIPAL_ACCOUNT="$YMAX1_TESTNET" ;;
+            esac
+            ;;
         esac
 
         echo ""
@@ -162,31 +160,9 @@ case "$contract" in
         ;;
 
     portfolioRouter)
-        if [ -z "$REMOTE_ACCOUNT_FACTORY" ]; then
-            echo "Error: REMOTE_ACCOUNT_FACTORY environment variable is not set"
-            echo "Please set REMOTE_ACCOUNT_FACTORY=0x... before deploying RemoteAccountAxelarRouter"
-            echo "Example: REMOTE_ACCOUNT_FACTORY=0x1234...abcd $0 $network portfolioRouter"
-            exit 1
-        fi
-
-        if [ -z "$OWNER_AUTHORITY" ]; then
-            echo "Error: OWNER_AUTHORITY environment variable is not set"
-            echo "Please set OWNER_AUTHORITY=0x... (address authorized to designate router replacement)"
-            echo "Example: OWNER_AUTHORITY=0x1234...abcd REMOTE_ACCOUNT_FACTORY=0x... $0 $network portfolioRouter"
-            exit 1
-        fi
-
-        # Set Axelar source chain based on network type
-        case $network in
-            avax|arb|base|eth|opt)
-                # Mainnet
-                AXELAR_SOURCE_CHAIN="agoric"
-                ;;
-            *)
-                # Testnet
-                AXELAR_SOURCE_CHAIN="agoric"
-                ;;
-        esac
+        # Axelar source chain can vary by $network, but all mainnet and testnet
+        # networks currently share the same value.
+        AXELAR_SOURCE_CHAIN="agoric"
 
         echo ""
         echo "========================================="
@@ -195,12 +171,19 @@ case "$contract" in
         echo "Using RemoteAccountFactory: $REMOTE_ACCOUNT_FACTORY"
         echo "Using Axelar Source Chain: $AXELAR_SOURCE_CHAIN"
         echo "Using Owner Authority: $OWNER_AUTHORITY"
+
+
         GATEWAY_CONTRACT="$GATEWAY" \
             AXELAR_SOURCE_CHAIN="$AXELAR_SOURCE_CHAIN" \
             FACTORY_CONTRACT="$REMOTE_ACCOUNT_FACTORY" \
             PERMIT2_CONTRACT="$PERMIT2" \
             OWNER_AUTHORITY="$OWNER_AUTHORITY" \
             npx hardhat ignition deploy "./ignition/modules/deployPortfolioRouter.ts" --network "$network" --verify
+        ;;
+    *)
+        echo "Error: Invalid contract type '$contract'"
+        echo "Valid options: 'factory', 'depositFactory', 'remoteAccountFactory', or 'portfolioRouter'"
+        exit 1
         ;;
 esac
 
