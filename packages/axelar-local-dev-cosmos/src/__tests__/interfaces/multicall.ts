@@ -22,4 +22,11 @@ export const multicallAbi = [
         outputs: [],
         stateMutability: 'nonpayable',
     },
+    {
+        name: 'burnGas',
+        type: 'function',
+        inputs: [{ name: 'n', type: 'uint256' }],
+        outputs: [],
+        stateMutability: 'nonpayable',
+    },
 ] as const satisfies Abi;

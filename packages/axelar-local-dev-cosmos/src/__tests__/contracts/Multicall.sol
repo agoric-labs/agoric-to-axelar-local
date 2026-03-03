@@ -22,6 +22,14 @@ contract Multicall {
     }
     // Intended only for use in testing.
     function alwaysReverts() public pure {
-        revert("Multicall: intentional revert");
+        revert('Multicall: intentional revert');
+    }
+
+    // Intended only for use in testing.
+    // Burns gas by performing n storage writes.
+    function burnGas(uint256 n) public {
+        for (uint256 i = 0; i < n; i++) {
+            value = i;
+        }
     }
 }

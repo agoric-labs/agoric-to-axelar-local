@@ -261,6 +261,48 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
         expect(receipt).to.be.revertedWithCustomError(router, 'SubcallOutOfGas');
     });
 
+    it('should revert with SubcallOutOfGas when a single nested call OOGs inside the target contract', async () => {
+        const lca = 'agoric1nestedoog1234567890abcdefghijklmn';
+
+        // Step 1: Pre-create the account so factory.provideRemoteAccount is cheap (verify-only)
+        const setupReceipt = await route(lca).doRemoteAccountExecute({ multiCalls: [] });
+        setupReceipt.expectOperationSuccess();
+
+        // Step 2: Build a single multicall to burnGas — a storage-write loop that
+        // is expensive inside the target contract.
+        // RemoteAccount.executeCalls only iterates once, so the OOG must happen
+        // inside the Multicall.burnGas call itself, not in RemoteAccount's loop.
+        const mc = contractWithTargetAndValue(
+            makeEvmContract(multicallAbi),
+            multicallTarget.target.toString() as `0x${string}`,
+        );
+        const heavyCalls: ContractCall[] = [mc.burnGas(500n)];
+
+        const receipt = await route(lca, {
+            async doExecute(commandId, sourceChain, sourceAddress, payload) {
+                const gasEstimate = await this.execute.estimateGas(
+                    commandId,
+                    sourceChain,
+                    sourceAddress,
+                    payload,
+                );
+
+                // Provide 55% of the estimate. The router and RemoteAccount frames
+                // have enough gas to run, but the single burnGas(500) call inside
+                // the target contract exhausts the remaining forwarded gas.
+                // RemoteAccount catches the failed call and reverts with
+                // ContractCallFailed(target, selector, 0, reason=""), which the
+                // router's OOG heuristic detects (Branch 2: ContractCallFailed
+                // with empty reason).
+                return this.execute(commandId, sourceChain, sourceAddress, payload, {
+                    gasLimit: (gasEstimate * 55n) / 100n,
+                });
+            },
+        }).doRemoteAccountExecute({ multiCalls: heavyCalls });
+
+        expect(receipt).to.be.revertedWithCustomError(router, 'SubcallOutOfGas');
+    });
+
     it('should revert with SubcallOutOfGas when self-call OOGs before nested calls', async () => {
         const lca = 'agoric1subcallooghard12345678901234abcde';
 
