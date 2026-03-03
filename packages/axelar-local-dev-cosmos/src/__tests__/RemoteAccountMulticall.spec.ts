@@ -4,11 +4,11 @@ import { Contract, Interface, keccak256, toUtf8Bytes } from 'ethers';
 import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
-import { Abi } from 'viem';
 import { makeEvmContract } from '../utils/evm-facade';
 import { contractWithTargetAndValue } from '../utils/router';
 import type { ContractCall } from '../interfaces/router';
 import { computeRemoteAccountAddress, ParsedLog, routed } from './lib/utils';
+import { multicallAbi } from './interfaces/multicall';
 
 const getContractCallSuccessEvents = async (receipt: {
     parseLogs: (iface: Interface) => ParsedLog[];
@@ -42,30 +42,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
     const portfolioContractCaip2 = 'cosmos:agoric-3';
     const portfolioContractAccount = 'agoric1routerlca123456789abcdefghijklmnopqrs';
     const portfolioLCA = 'agoric1multicall123456789abcdefghijklmno';
-
-    const multicallAbi = [
-        {
-            name: 'setValue',
-            type: 'function',
-            inputs: [{ name: '_value', type: 'uint256' }],
-            outputs: [],
-            stateMutability: 'nonpayable',
-        },
-        {
-            name: 'addToValue',
-            type: 'function',
-            inputs: [{ name: '_amount', type: 'uint256' }],
-            outputs: [],
-            stateMutability: 'nonpayable',
-        },
-        {
-            name: 'alwaysReverts',
-            type: 'function',
-            inputs: [],
-            outputs: [],
-            stateMutability: 'nonpayable',
-        },
-    ] as const satisfies Abi;
 
     let route: ReturnType<typeof routed>;
     let routeConfig: Parameters<typeof routed>[1];

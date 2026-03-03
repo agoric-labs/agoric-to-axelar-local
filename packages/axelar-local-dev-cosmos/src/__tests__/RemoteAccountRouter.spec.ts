@@ -4,27 +4,17 @@ import { Contract, ParamType } from 'ethers';
 import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
-import { Abi } from 'viem';
 import { gmpRouterContract, padTxId, contractWithTargetAndValue } from '../utils/router';
 import { makeEvmContract } from '../utils/evm-facade';
 import { routed } from './lib/utils';
 import type { ContractCall } from '../interfaces/router';
+import { multicallAbi } from './interfaces/multicall';
 
 describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
     let owner: HardhatEthersSigner, addr1: HardhatEthersSigner;
     let axelarGatewayMock: Contract;
     let factory: Contract, router: Contract, permit2Mock: Contract;
     let multicallTarget: Contract;
-
-    const multicallAbi = [
-        {
-            name: 'setValue',
-            type: 'function',
-            inputs: [{ name: '_value', type: 'uint256' }],
-            outputs: [],
-            stateMutability: 'nonpayable',
-        },
-    ] as const satisfies Abi;
 
     const abiCoder = new ethers.AbiCoder();
 
