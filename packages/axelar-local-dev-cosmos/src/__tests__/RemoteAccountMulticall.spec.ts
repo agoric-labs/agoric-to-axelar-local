@@ -204,6 +204,38 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         expect(await multicallTarget.getValue()).to.equal(500n);
     });
 
+    it('should respect explicit gasLimit on a call', async () => {
+        // Use burnGas(10) with a generous gasLimit — should succeed
+        const multiCalls: ContractCall[] = [
+            multicallContract.burnGas.with({ gasLimit: BigInt(500_000) })(10n),
+        ];
+
+        const receipt = await route(portfolioLCA).doRemoteAccountExecute({ multiCalls });
+        receipt.expectOperationSuccess();
+
+        const successEvents = await getContractCallSuccessEvents(receipt);
+        expect(successEvents).to.have.a.lengthOf(1);
+        expect(successEvents[0].args.gasUsed).to.be.gt(0);
+        // gasUsed should be well under the 500k limit for just 10 iterations
+        expect(successEvents[0].args.gasUsed).to.be.lt(500_000);
+    });
+
+    it('should fail when gasLimit is too low for the call', async () => {
+        // Use burnGas(100) with a very tight gasLimit — should OOG inside the call
+        const multiCalls: ContractCall[] = [
+            multicallContract.burnGas.with({ gasLimit: BigInt(1_000) })(100n),
+        ];
+
+        const receipt = await route(portfolioLCA).doRemoteAccountExecute({ multiCalls });
+        const errorEvent = receipt.expectOperationFailure();
+        const RemoteAccount = await ethers.getContractFactory('RemoteAccount');
+        const decoded = RemoteAccount.interface.parseError(errorEvent.args.reason);
+        expect(decoded?.name).to.equal('ContractCallFailed');
+        expect(decoded?.args.callIndex).to.equal(0);
+        // Empty reason because the subcall ran out of gas
+        expect(decoded?.args.reason).to.equal('0x');
+    });
+
     it('should reject multicall with wrong controller', async () => {
         const wrongPortfolioLCA = 'agoric1wrongcontroller123456789abcdefgh';
 
