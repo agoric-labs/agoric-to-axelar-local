@@ -380,6 +380,8 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
      * @param newSuccessor The address designated as the successor router.
      */
     function setSuccessor(address newSuccessor) external onlyOwner {
+        address previousSuccessor = successor;
         successor = newSuccessor;
+        emit SuccessorSet(previousSuccessor, newSuccessor);
     }
 }

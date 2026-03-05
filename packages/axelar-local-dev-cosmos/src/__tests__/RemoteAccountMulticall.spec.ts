@@ -311,7 +311,10 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         await newRouter.waitForDeployment();
 
         // Old router owner pre-designates the successor
-        await router.getFunction('setSuccessor')(newRouter.target);
+        const previousSuccessor = await router.getFunction('successor')();
+        await expect(router.getFunction('setSuccessor')(newRouter.target))
+            .to.emit(router, 'SuccessorSet')
+            .withArgs(previousSuccessor, newRouter.target);
 
         // Verify successor was set
         expect(await router.getFunction('successor')()).to.equal(newRouter.target);

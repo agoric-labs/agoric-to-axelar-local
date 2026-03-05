@@ -43,6 +43,8 @@ interface IRemoteAccountRouter {
         bytes reason
     );
 
+    event SuccessorSet(address indexed previousSuccessor, address indexed newSuccessor);
+
     error SubcallOutOfGas();
     error InvalidInstructionSelector(bytes4 selector);
 
