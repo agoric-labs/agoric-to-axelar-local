@@ -382,7 +382,12 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
 
     /**
      * @notice Initialize or replace the successor of this router
-     * @dev Can only be called by the contract owner
+     * @dev Can only be called by the contract owner.
+     *      The new successor may be the zero address to allow reverting to a
+     *      state where no successor is set.
+     *      Any contracts whose ownership has already been transferred to a
+     *      previously designated successor will need to arrange any further
+     *      ownership updates through their new owner.
      * @param newSuccessor The address designated as the successor router.
      */
     function setSuccessor(address newSuccessor) external onlyOwner {
