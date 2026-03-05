@@ -31,20 +31,42 @@ contract RemoteAccount is Ownable, IRemoteAccount {
         if (msg.value > 0) {
             emit Received(msg.sender, msg.value);
         }
-        uint224 len = uint224(calls.length);
-        for (uint224 i = 0; i < len; ) {
-            (bool success, bytes memory reason) = calls[i].target.call{ value: calls[i].value }(
-                calls[i].data
-            );
+        uint256 len = calls.length;
+        for (uint256 i = 0; i < len; ) {
+            ContractCall calldata callItem = calls[i];
+            bytes calldata data = callItem.data;
+            address target = callItem.target;
 
-            if (!success) {
-                revert ContractCallFailed(calls[i].target, bytes4(calls[i].data[:4]), i, reason);
+            bool success;
+            // Capture success, but don't allocate memory for 'reason' unless we catch a revert
+            (success, ) = target.call{ value: callItem.value }(data);
+
+            bytes4 selector;
+            if (data.length >= 4) {
+                selector = bytes4(data);
             }
 
-            emit ContractCallSuccess(calls[i].target, bytes4(calls[i].data[:4]), i);
+            uint224 index = uint224(i);
+
+            if (!success) {
+                revert ContractCallFailed(target, selector, index, _getRevertReason());
+            }
+
+            emit ContractCallSuccess(target, selector, index);
             unchecked {
                 ++i;
             }
+        }
+    }
+
+    function _getRevertReason() internal pure returns (bytes memory reason) {
+        uint256 size;
+        assembly {
+            size := returndatasize()
+        }
+        reason = new bytes(size);
+        assembly {
+            returndatacopy(add(reason, 0x20), 0, size)
         }
     }
 

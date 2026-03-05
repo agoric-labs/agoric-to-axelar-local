@@ -6,8 +6,11 @@ pragma solidity ^0.8.20;
  *         specified value to transfer.
  */
 struct ContractCall {
+    /// @dev the contract address receiving the call
     address target;
+    /// @dev the encoded call data
     bytes data;
+    /// @dev any `value` to forward to a payable call target
     uint256 value;
 }
 

@@ -169,6 +169,12 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const RemoteAccount = await ethers.getContractFactory('RemoteAccount');
         const decoded = RemoteAccount.interface.parseError(errorEvent.args.reason);
         expect(decoded?.name).to.equal('ContractCallFailed');
+        expect(decoded?.args.target).to.equal(multiCalls[0].target);
+        expect(decoded?.args.selector).to.equal(multiCalls[0].data.slice(0, 10));
+        expect(decoded?.args.callIndex).to.equal(0);
+        const error = new Error('Synthetic call failure');
+        Object.assign(error, { data: decoded?.args.reason });
+        await expect(Promise.reject(error)).to.be.revertedWith('Multicall: intentional revert');
     });
 
     it('should revert all calls when second call in batch fails', async () => {
