@@ -58,6 +58,9 @@ contract RemoteAccount is Ownable, IRemoteAccount {
                 revert ContractCallFailed(target, selector, index, _getRevertReason());
             }
 
+            // The gas used calculation is not exact as it includes some loop
+            // overhead and the cost of emitting the event in the previous iteration.
+            // This is considered acceptable for our use case.
             uint256 gasAfter = gasleft();
             uint64 gasUsed = uint64(gasInitial - gasAfter);
             gasInitial = gasAfter;
