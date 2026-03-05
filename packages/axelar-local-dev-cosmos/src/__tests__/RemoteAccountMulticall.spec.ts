@@ -138,6 +138,8 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         expect(successEvents).to.have.a.lengthOf(1);
         expect(successEvents[0].args.target).to.equal(multiCalls[0].target);
         expect(successEvents[0].args.selector).to.equal(multiCalls[0].data.slice(0, 10));
+        expect(successEvents[0].args.callIndex).to.equal(0);
+        expect(successEvents[0].args.gasUsed).to.be.gt(2000);
 
         expect(await multicallTarget.getValue()).to.equal(42n);
     });
@@ -155,8 +157,12 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         expect(successEvents).to.have.a.lengthOf(2);
         expect(successEvents[0].args.target).to.equal(multiCalls[0].target);
         expect(successEvents[0].args.selector).to.equal(multiCalls[0].data.slice(0, 10));
+        expect(successEvents[0].args.callIndex).to.equal(0);
+        expect(successEvents[0].args.gasUsed).to.be.gt(2000);
         expect(successEvents[1].args.target).to.equal(multiCalls[1].target);
         expect(successEvents[1].args.selector).to.equal(multiCalls[1].data.slice(0, 10));
+        expect(successEvents[1].args.callIndex).to.equal(1);
+        expect(successEvents[1].args.gasUsed).to.be.gt(2000);
 
         expect(await multicallTarget.getValue()).to.equal(105n);
     });

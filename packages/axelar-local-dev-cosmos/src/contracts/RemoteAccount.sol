@@ -32,6 +32,7 @@ contract RemoteAccount is Ownable, IRemoteAccount {
             emit Received(msg.sender, msg.value);
         }
         uint256 len = calls.length;
+        uint256 gasInitial = gasleft();
         for (uint256 i = 0; i < len; ) {
             ContractCall calldata callItem = calls[i];
             bytes calldata data = callItem.data;
@@ -51,13 +52,17 @@ contract RemoteAccount is Ownable, IRemoteAccount {
                 selector = bytes4(data);
             }
 
-            uint224 index = uint224(i);
+            uint32 index = uint32(i);
 
             if (!success) {
                 revert ContractCallFailed(target, selector, index, _getRevertReason());
             }
 
-            emit ContractCallSuccess(target, selector, index);
+            uint256 gasAfter = gasleft();
+            uint64 gasUsed = uint64(gasInitial - gasAfter);
+            gasInitial = gasAfter;
+
+            emit ContractCallSuccess(target, selector, index, gasUsed);
             unchecked {
                 ++i;
             }
