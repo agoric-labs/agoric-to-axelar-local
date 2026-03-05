@@ -32,6 +32,9 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
     IRemoteAccountFactory public immutable override factory;
     IPermit2 public immutable override permit2;
 
+    // Immutable, but cannot be declaratively marked as such because this is a string
+    // Only used for validation error messages. The router is seldom deployed
+    // so the cost of storing this string is accepted.
     string private axelarSourceChain;
     bytes32 private immutable axelarSourceChainHash;
 
