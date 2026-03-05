@@ -6,6 +6,7 @@ contract Multicall {
 
     event ValueSet(uint256 newValue);
     event ValueAdded(uint256 addedValue, uint256 newTotal);
+    event TokenDeposited(address indexed sender, uint256 amount);
 
     function setValue(uint256 _value) public {
         value = _value;
@@ -31,5 +32,17 @@ contract Multicall {
         for (uint256 i = 0; i < n; i++) {
             value = i;
         }
+    }
+
+    // Intended only for use in testing.
+    // Accepts ETH via a payable method call.
+    function depositToken() external payable {
+        emit TokenDeposited(msg.sender, msg.value);
+    }
+
+    // Intended only for use in testing.
+    // Accepts ETH sent without calldata.
+    receive() external payable {
+        emit TokenDeposited(msg.sender, msg.value);
     }
 }

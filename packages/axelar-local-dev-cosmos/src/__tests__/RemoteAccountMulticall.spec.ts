@@ -4,8 +4,9 @@ import { Contract, Interface, keccak256, toUtf8Bytes } from 'ethers';
 import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
-import { makeEvmContract } from '../utils/evm-facade';
+import { AbiSend, makeEvmContract } from '../utils/evm-facade';
 import { contractWithCallMetadata } from '../utils/router';
+import type { AbiExtendedContractMethod } from '../utils/router';
 import type { ContractCall } from '../interfaces/router';
 import { computeRemoteAccountAddress, ParsedLog, routed } from './lib/utils';
 import { multicallAbi } from './interfaces/multicall';
@@ -234,6 +235,52 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         expect(decoded?.args.callIndex).to.equal(0);
         // Empty reason because the subcall ran out of gas
         expect(decoded?.args.reason).to.equal('0x');
+    });
+
+    it('should send value to a payable method', async () => {
+        const sendAmount = ethers.parseEther('1');
+
+        // Fund the RemoteAccount so it has ETH to send
+        await owner.sendTransaction({ to: accountAddress, value: sendAmount });
+        expect(await ethers.provider.getBalance(accountAddress)).to.equal(sendAmount);
+
+        const multiCalls: ContractCall[] = [
+            multicallContract.depositToken.with({ value: sendAmount })(),
+        ];
+
+        const receipt = await route(portfolioLCA).doRemoteAccountExecute({ multiCalls });
+        receipt.expectOperationSuccess();
+
+        const successEvents = await getContractCallSuccessEvents(receipt);
+        expect(successEvents).to.have.a.lengthOf(1);
+
+        // ETH moved from RemoteAccount to Multicall target
+        expect(await ethers.provider.getBalance(accountAddress)).to.equal(0n);
+        expect(await ethers.provider.getBalance(multicallTarget.target)).to.equal(sendAmount);
+    });
+
+    it('should send value to a contract receive function', async () => {
+        const sendAmount = ethers.parseEther('0.5');
+        const targetBalanceBefore = await ethers.provider.getBalance(multicallTarget.target);
+
+        // Fund the RemoteAccount
+        await owner.sendTransaction({ to: accountAddress, value: sendAmount });
+
+        const send = multicallContract[AbiSend] as AbiExtendedContractMethod<[]>;
+        const multiCalls: ContractCall[] = [send.with({ value: sendAmount })()];
+
+        const receipt = await route(portfolioLCA).doRemoteAccountExecute({ multiCalls });
+        receipt.expectOperationSuccess();
+
+        const successEvents = await getContractCallSuccessEvents(receipt);
+        expect(successEvents).to.have.a.lengthOf(1);
+        // selector should be 0x00000000 for empty calldata
+        expect(successEvents[0].args.selector).to.equal('0x00000000');
+
+        expect(await ethers.provider.getBalance(accountAddress)).to.equal(0n);
+        expect(await ethers.provider.getBalance(multicallTarget.target)).to.equal(
+            targetBalanceBefore + sendAmount,
+        );
     });
 
     it('should reject multicall with wrong controller', async () => {

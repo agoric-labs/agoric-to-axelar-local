@@ -51,28 +51,19 @@ export const contractWithCallMetadata = <T extends AbiContract<Abi, Hex>>(
     contract: T,
     target: Address,
 ): AbiExtendedContract<AbiFromContract<T>> => {
-    const wrapped = Object.fromEntries(
-        Object.entries(contract as AbiContract<Abi, Hex>).map(([fnName, fn]) => {
-            const obj: {
-                [K in typeof fnName]: AbiExtendedContractMethod<readonly unknown[]>['with'];
-            } = {
-                [fnName]:
-                    ({ value = BigInt(0), gasLimit = BigInt(0) }) =>
-                    (...args: readonly unknown[]) => ({
-                        target,
-                        data: fn(...args),
-                        value,
-                        gasLimit,
-                    }),
-            };
-            const extFn: AbiExtendedContractMethod<readonly unknown[]> = Object.assign(
-                obj[fnName]({}),
-                { with: obj[fnName] },
-            );
-
-            return [fnName, extFn] as const;
-        }),
-    );
+    const wrapped: Record<string | symbol, AbiExtendedContractMethod<readonly unknown[]>> = {};
+    for (const fnName of Reflect.ownKeys(contract as AbiContract<Abi, Hex>)) {
+        const fn = (contract as any)[fnName] as (...args: readonly unknown[]) => Hex;
+        const withMetadata: AbiExtendedContractMethod<readonly unknown[]>['with'] =
+            ({ value = BigInt(0), gasLimit = BigInt(0) }) =>
+            (...args: readonly unknown[]) => ({
+                target,
+                data: fn(...args),
+                value,
+                gasLimit,
+            });
+        wrapped[fnName] = Object.assign(withMetadata({}), { with: withMetadata });
+    }
 
     return wrapped as AbiExtendedContract<AbiFromContract<T>>;
 };

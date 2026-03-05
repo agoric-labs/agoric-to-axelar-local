@@ -29,4 +29,15 @@ export const multicallAbi = [
         outputs: [],
         stateMutability: 'nonpayable',
     },
+    {
+        name: 'depositToken',
+        type: 'function',
+        inputs: [],
+        outputs: [],
+        stateMutability: 'payable',
+    },
+    {
+        type: 'receive',
+        stateMutability: 'payable',
+    },
 ] as const satisfies Abi;
