@@ -33,11 +33,11 @@ interface IRemoteAccountFactory {
         string calldata principalAccount,
         address expectedOwner,
         address expectedAddress
-    ) external returns (bool);
+    ) external returns (bool created);
 
     function provideRemoteAccountForOwner(
         string calldata principalAccount,
         address owner,
         address expectedAddress
-    ) external returns (bool);
+    ) external returns (bool created);
 }

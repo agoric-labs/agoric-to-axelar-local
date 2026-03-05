@@ -160,9 +160,10 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
      *        provideRemoteAccount() call get reordered, the check ensures provideRemoteAccount() fails rather than
      *        creating accounts with unexpected ownership.
      *
+     * @param principalAccount The principal account string for the RemoteAccount
      * @param expectedOwner The expected address of the owner, must be current owner of the factory
      * @param expectedAddress The expected CREATE2 address (for verification)
-     * @return true if the RemoteAccount was created, false if it was pre-existing
+     * @return created true if the RemoteAccount was created, false if it was pre-existing
      */
     function provideRemoteAccount(
         string calldata principalAccount,
@@ -186,16 +187,16 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
      *      This allows the owner router to provide an account with a specific
      *      owner address. The owner is expected to call this function only for
      *      experimentation before committing to its own successor.
-     * @param principalAccount The address of the principal for the RemoteAccount
+     * @param principalAccount The principal account string for the RemoteAccount
      * @param ownerAddress The address to use as owner of the RemoteAccount
      * @param expectedAddress The expected CREATE2 address (for verification)
-     * @return true if the RemoteAccount was created, false if it was pre-existing
+     * @return created true if the RemoteAccount was created, false if it was pre-existing
      */
     function provideRemoteAccountForOwner(
         string calldata principalAccount,
         address ownerAddress,
         address expectedAddress
-    ) external override onlyOwner returns (bool) {
+    ) external override onlyOwner returns (bool created) {
         return _provideRemoteAccountForOwner(principalAccount, ownerAddress, expectedAddress);
     }
 
@@ -206,16 +207,16 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
      *      This must not be exposed publicly without controls as an arbitrary
      *      owner address may prevent the portfolio manager from reaching the
      *      RemoteAccount if it does not have access to that router owner.
-     * @param principalAccount The address of the principal for the RemoteAccount
+     * @param principalAccount The principal account string for the RemoteAccount
      * @param ownerAddress The address to use as owner of the RemoteAccount
      * @param expectedAddress The expected CREATE2 address (for verification)
-     * @return true if the RemoteAccount was created, false if it was pre-existing
+     * @return created true if the RemoteAccount was created, false if it was pre-existing
      */
     function _provideRemoteAccountForOwner(
         string calldata principalAccount,
         address ownerAddress,
         address expectedAddress
-    ) internal returns (bool) {
+    ) internal returns (bool created) {
         // Do not include the owner address to keep the remote account address independent
         // from its current owner setup.
         (address accountAddress, bytes32 salt) = _getRemoteAccountAddress(principalAccount);
