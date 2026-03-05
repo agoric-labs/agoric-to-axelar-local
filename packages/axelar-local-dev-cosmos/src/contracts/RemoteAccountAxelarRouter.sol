@@ -97,8 +97,14 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
             // Base + Offset (Relative to Base)
             let lengthWordPos := add(argsBase, stringOffset)
 
-            // 5. Safety: Ensure lengthWordPos is still within the targetPayload bounds
-            if gt(add(stringOffset, 0x20), payloadTotalLen) {
+            // 5. Safety: Ensure the payload buffer contains the length word (0x20)
+            //    and the full string data (sourceString.length) past stringOffset.
+            //    stringOffset is relative to argsBase (byte 4 of the payload),
+            //    while payloadTotalLen counts from byte 0, so we add 4 to bridge
+            //    that difference: 4 + stringOffset + 0x20 + sourceString.length.
+            //    Since sourceString.length == existingLen is verified in step 6,
+            //    this also prevents calldatacopy from writing past the buffer.
+            if gt(add(add(stringOffset, 0x24), sourceString.length), payloadTotalLen) {
                 revert(0, 0)
             }
 
