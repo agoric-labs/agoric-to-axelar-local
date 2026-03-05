@@ -36,10 +36,15 @@ contract RemoteAccount is Ownable, IRemoteAccount {
             ContractCall calldata callItem = calls[i];
             bytes calldata data = callItem.data;
             address target = callItem.target;
+            uint256 gasLimit = callItem.gasLimit;
 
             bool success;
             // Capture success, but don't allocate memory for 'reason' unless we catch a revert
-            (success, ) = target.call{ value: callItem.value }(data);
+            if (gasLimit == 0) {
+                (success, ) = target.call{ value: callItem.value }(data);
+            } else {
+                (success, ) = target.call{ value: callItem.value, gas: gasLimit }(data);
+            }
 
             bytes4 selector;
             if (data.length >= 4) {

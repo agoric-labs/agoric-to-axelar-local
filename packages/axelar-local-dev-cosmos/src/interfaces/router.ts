@@ -11,7 +11,8 @@ import type { Abi, AbiParameter, AbiParameterToPrimitiveType } from 'viem';
 export const contractCallComponents = [
     { name: 'target', type: 'address' },
     { name: 'data', type: 'bytes' },
-    { name: 'value', type: 'uint256' },
+    { name: 'value', type: 'uint192' },
+    { name: 'gasLimit', type: 'uint64' },
 ] as const satisfies AbiParameter[];
 
 export type ContractCall = AbiParameterToPrimitiveType<{

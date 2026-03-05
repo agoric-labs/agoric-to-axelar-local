@@ -31,7 +31,9 @@ export const predictRemoteAccountAddress = ({
 export type AbiExtendedContractMethod<TArgs extends readonly unknown[]> = {
     (...args: TArgs): ContractCall;
 
-    with(metadata: Partial<Pick<ContractCall, 'value'>>): (...args: TArgs) => ContractCall;
+    with(
+        metadata: Partial<Pick<ContractCall, 'value' | 'gasLimit'>>,
+    ): (...args: TArgs) => ContractCall;
 };
 
 export type AbiExtendedContract<TAbi extends Abi> = {
@@ -55,11 +57,12 @@ export const contractWithCallMetadata = <T extends AbiContract<Abi, Hex>>(
                 [K in typeof fnName]: AbiExtendedContractMethod<readonly unknown[]>['with'];
             } = {
                 [fnName]:
-                    ({ value = BigInt(0) }) =>
+                    ({ value = BigInt(0), gasLimit = BigInt(0) }) =>
                     (...args: readonly unknown[]) => ({
                         target,
                         data: fn(...args),
                         value,
+                        gasLimit,
                     }),
             };
             const extFn: AbiExtendedContractMethod<readonly unknown[]> = Object.assign(
