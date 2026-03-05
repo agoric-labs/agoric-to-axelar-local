@@ -200,44 +200,80 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
     });
 
     it('should create account for a different owner via provideRemoteAccountForOwner', async () => {
+        // Get current factory owner (may have changed from previous tests)
+        const factoryOwnerAddress = await factory.owner();
+        const factoryOwnerRouter = await ethers.getContractAt(
+            'RemoteAccountAxelarRouter',
+            factoryOwnerAddress,
+        );
+
+        // Deploy a target router that will own the new account
+        const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
+        const targetRouter = await RouterContract.deploy(
+            axelarGatewayMock.target,
+            sourceChain,
+            factory.target,
+            permit2Mock.target,
+            owner.address,
+        );
+        await targetRouter.waitForDeployment();
+
+        // router will call the factory's provideRemoteAccountForOwner
+        // Must be executed by the router that currently owns the factory
+        const factoryOwnerRoute = routed(factoryOwnerRouter, routeConfig);
+
+        // Compute address for the new account
         const newPortfolioLCA = 'agoric1provideforowner123456789abcdef';
         const newAccountAddress = await factory.getRemoteAccountAddress(newPortfolioLCA);
 
         // Impersonate the router (factory owner) to call provideRemoteAccountForOwner directly
-        await helpers.impersonateAccount(router.target.toString());
-        await helpers.setBalance(router.target.toString(), ethers.parseEther('1'));
-        const routerSigner = await ethers.getSigner(router.target.toString());
+        await helpers.impersonateAccount(factoryOwnerAddress);
+        await helpers.setBalance(factoryOwnerAddress, ethers.parseEther('1'));
+        const routerSigner = await ethers.getSigner(factoryOwnerAddress);
 
         // Create account owned by addr1 instead of the router
         await expect(
             factory.connect(routerSigner).getFunction('provideRemoteAccountForOwner')(
                 newPortfolioLCA,
-                addr1.address,
+                targetRouter.target,
                 newAccountAddress,
             ),
         )
             .to.emit(factory, 'RemoteAccountCreated')
-            .withArgs(newAccountAddress, newPortfolioLCA, addr1.address);
+            .withArgs(newAccountAddress, newPortfolioLCA, targetRouter.target.toString());
 
-        await helpers.stopImpersonatingAccount(router.target.toString());
+        await helpers.stopImpersonatingAccount(factoryOwnerAddress);
 
-        // Verify account was created and owned by addr1
+        // Verify account was created and is owned by targetRouter
         const newAccount = await ethers.getContractAt('RemoteAccount', newAccountAddress);
-        expect(await newAccount.owner()).to.equal(addr1.address);
+        expect(await newAccount.owner()).to.equal(targetRouter.target);
 
         // Verify idempotent: calling again with same owner succeeds (returns false)
-        await helpers.impersonateAccount(router.target.toString());
-        const routerSigner2 = await ethers.getSigner(router.target.toString());
+        await helpers.impersonateAccount(factoryOwnerAddress);
+        const routerSigner2 = await ethers.getSigner(factoryOwnerAddress);
         await factory.connect(routerSigner2).getFunction('provideRemoteAccountForOwner')(
             newPortfolioLCA,
-            addr1.address,
+            targetRouter.target,
             newAccountAddress,
         );
-        await helpers.stopImpersonatingAccount(router.target.toString());
+        await helpers.stopImpersonatingAccount(factoryOwnerAddress);
 
-        // Verify router cannot use the account (it's owned by addr1)
-        const receipt = await route(newPortfolioLCA).doRemoteAccountExecute({ multiCalls: [] });
-        const decodedError = receipt.parseOperationError(factory.interface);
+        // Verify factory ownership unchanged
+        expect(await factory.owner()).to.equal(factoryOwnerAddress);
+
+        // Verify targetRouter can execute instructions on the new account
+        const targetRoute = routed(targetRouter, routeConfig);
+
+        const receipt2 = await targetRoute(newPortfolioLCA).doRemoteAccountExecute({
+            multiCalls: [],
+        });
+        receipt2.expectOperationSuccess();
+
+        // Verify factory owner router cannot execute instructions on the new account (owned by targetRouter)
+        const receipt3 = await factoryOwnerRoute(newPortfolioLCA).doRemoteAccountExecute({
+            multiCalls: [],
+        });
+        const decodedError = receipt3.parseOperationError(factory.interface);
         expect(decodedError?.name).to.equal('UnauthorizedOwner');
     });
 
