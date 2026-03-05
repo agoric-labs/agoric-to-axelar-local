@@ -166,6 +166,12 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
         // Conversely, a relayer not providing sufficient gas would have to hit a
         // call nested 10 or more levels deep for the tx to not revert, which is
         // similarly unlikely.
+        // We err on the side of caution by reverting the transaction for some
+        // manual reverts, which allows relayers to potentially retry with more
+        // gas. At worse we would spend more in relay fees for reattempting, or
+        // take more time to make a failed tx decision in the resolver, both of
+        // which are better than quickly treating it as a failed operation,
+        // requiring the end-user to take action and sign a new intent.
         if (!success && gasAfter <= (gasBefore / 7)) {
             if (result.length == 0) {
                 // The call likely ran out of gas without RemoteAccount interception
