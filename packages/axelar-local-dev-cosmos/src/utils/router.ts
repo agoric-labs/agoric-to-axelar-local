@@ -1,6 +1,6 @@
-import type { Abi, Address, Hex } from 'viem';
+import type { Abi, AbiStateMutability, Address, ContractFunctionName, Hex } from 'viem';
 import { getCreate2Address, stringToBytes, hexToBytes, keccak256 } from 'viem';
-import type { AbiContract } from './evm-facade.ts';
+import type { AbiContract, AbiContractArgs, AbiSend, AbiTagged } from './evm-facade.ts';
 import type { ContractCall } from '../interfaces/router.ts';
 
 import { remoteAccountAxelarRouterABI } from '../interfaces/router';
@@ -28,21 +28,50 @@ export const predictRemoteAccountAddress = ({
     return out;
 };
 
-// XXX: extend this helper to support contract.fn.withValue(123n)(...args) or
-// similar to support providing explicit value, possibly only for payable methods.
-export const contractWithTargetAndValue = <T extends AbiContract<Abi, Hex>>(
+export type AbiExtendedContractMethod<TArgs extends readonly unknown[]> = {
+    (...args: TArgs): ContractCall;
+
+    with(metadata: Partial<Pick<ContractCall, 'value'>>): (...args: TArgs) => ContractCall;
+};
+
+export type AbiExtendedContract<TAbi extends Abi> = {
+    [Name in ContractFunctionName<TAbi, AbiStateMutability>]: AbiExtendedContractMethod<
+        AbiContractArgs<TAbi, Name>
+    >;
+} & (Extract<TAbi[number], { type: 'receive' }> extends never
+    ? {}
+    : { [AbiSend]: AbiExtendedContractMethod<[]> });
+
+type AbiFromContract<T> =
+    T extends AbiTagged<infer U> ? U : T extends AbiContract<infer U, Hex> ? U : never;
+
+export const contractWithCallMetadata = <T extends AbiContract<Abi, Hex>>(
     contract: T,
     target: Address,
-): T extends AbiContract<infer U, Hex> ? AbiContract<U, ContractCall> : never => {
+): AbiExtendedContract<AbiFromContract<T>> => {
     const wrapped = Object.fromEntries(
-        Object.entries(contract).map(([fnName, fn]) => [
-            fnName,
-            (...args: unknown[]) =>
-                ({ target, data: fn(...args), value: BigInt(0) }) satisfies ContractCall,
-        ]),
+        Object.entries(contract as AbiContract<Abi, Hex>).map(([fnName, fn]) => {
+            const obj: {
+                [K in typeof fnName]: AbiExtendedContractMethod<readonly unknown[]>['with'];
+            } = {
+                [fnName]:
+                    ({ value = BigInt(0) }) =>
+                    (...args: readonly unknown[]) => ({
+                        target,
+                        data: fn(...args),
+                        value,
+                    }),
+            };
+            const extFn: AbiExtendedContractMethod<readonly unknown[]> = Object.assign(
+                obj[fnName]({}),
+                { with: obj[fnName] },
+            );
+
+            return [fnName, extFn] as const;
+        }),
     );
 
-    return wrapped as any;
+    return wrapped as AbiExtendedContract<AbiFromContract<T>>;
 };
 
 export const gmpRouterContract = makeEvmContract(remoteAccountAxelarRouterABI);

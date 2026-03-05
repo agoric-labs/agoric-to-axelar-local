@@ -4,7 +4,7 @@ import { Contract, ParamType } from 'ethers';
 import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
-import { gmpRouterContract, padTxId, contractWithTargetAndValue } from '../utils/router';
+import { gmpRouterContract, padTxId, contractWithCallMetadata } from '../utils/router';
 import { makeEvmContract } from '../utils/evm-facade';
 import { routed } from './lib/utils';
 import type { ContractCall } from '../interfaces/router';
@@ -229,7 +229,7 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
         // Step 2: Build a heavy multicall — 100 SSTORE calls to a Multicall target.
         // This makes the self-call body expensive, ensuring it runs out of gas
         // when the transaction gas limit is constrained.
-        const mc = contractWithTargetAndValue(
+        const mc = contractWithCallMetadata(
             makeEvmContract(multicallAbi),
             multicallTarget.target.toString() as `0x${string}`,
         );
@@ -272,7 +272,7 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
         // is expensive inside the target contract.
         // RemoteAccount.executeCalls only iterates once, so the OOG must happen
         // inside the Multicall.burnGas call itself, not in RemoteAccount's loop.
-        const mc = contractWithTargetAndValue(
+        const mc = contractWithCallMetadata(
             makeEvmContract(multicallAbi),
             multicallTarget.target.toString() as `0x${string}`,
         );
@@ -316,7 +316,7 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
         // validates all dynamic offsets and lengths at function entry, BEFORE any
         // user code or external calls run. This shifts the gas bottleneck into
         // the self-call, enabling the SubcallOutOfGas heuristic to fire.
-        const mc = contractWithTargetAndValue(
+        const mc = contractWithCallMetadata(
             makeEvmContract(multicallAbi),
             multicallTarget.target.toString() as `0x${string}`,
         );

@@ -5,7 +5,7 @@ import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { makeEvmContract } from '../utils/evm-facade';
-import { contractWithTargetAndValue } from '../utils/router';
+import { contractWithCallMetadata } from '../utils/router';
 import type { ContractCall } from '../interfaces/router';
 import { computeRemoteAccountAddress, ParsedLog, routed } from './lib/utils';
 import { multicallAbi } from './interfaces/multicall';
@@ -34,7 +34,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
     let multicallTarget: Contract;
     let accountAddress: `0x${string}`;
     type BaseMulticallContract = ReturnType<typeof makeEvmContract<typeof multicallAbi>>;
-    let multicallContract: ReturnType<typeof contractWithTargetAndValue<BaseMulticallContract>>;
+    let multicallContract: ReturnType<typeof contractWithCallMetadata<BaseMulticallContract>>;
 
     const abiCoder = new ethers.AbiCoder();
 
@@ -99,7 +99,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         // Deploy Multicall target for tests
         const MulticallFactory = await ethers.getContractFactory('Multicall');
         multicallTarget = await MulticallFactory.deploy();
-        multicallContract = contractWithTargetAndValue(
+        multicallContract = contractWithCallMetadata(
             makeEvmContract(multicallAbi),
             multicallTarget.target.toString() as `0x${string}`,
         );
