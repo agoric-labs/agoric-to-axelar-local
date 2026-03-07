@@ -281,15 +281,17 @@ graph TB
         _getRemoteAccountAddress
 
         verifyRemoteAccount["verifyRemoteAccount<br>override IRemoteAccountFactory"]
+        _verifyRemoteAccountAddress
         _verifyRemoteAccountOwner
 
         provideRemoteAccount["provideRemoteAccount<br>override IRemoteAccountFactory"]
         provideRemoteAccountForOwner["provideRemoteAccountForOwner<br>override IRemoteAccountFactory"]
         SAME_OWNER{owner matches<br>expected owner?}
-        _provideForOwner
+        _createRemoteAccountForOwner
         ACCOUNT_EXISTS{account exists?}
-        MAKE_ACCOUNT@{shape: text, label: "create account"}
+        ACCOUNT_EXISTS_FOR_OWNER{"account exists?<br>(ForOwner)"}
 
+        CODE_EXISTS["checks code exists"]
         _getSalt[_getSalt<br>deterministic by principal account string]
         subgraph state
             factoryPrincipalCaip2@{shape: stored-data}
@@ -312,34 +314,47 @@ graph TB
     START --> getRemoteAccountAddress
     START --> transferOwnership
     START --> renounceOwnership
-    provideRemoteAccount --> SAME_OWNER
-    SAME_OWNER -.->|no: calls| verifyRemoteAccount
-    SAME_OWNER -.->|yes: calls| _provideForOwner
-    provideRemoteAccountForOwner --> _provideForOwner
-    verifyRemoteAccount -->|calls| _getSalt
-    verifyRemoteAccount -->|calls| _getRemoteAccountAddress
-    verifyRemoteAccount -->|calls| _verifyRemoteAccountOwner
-    _verifyRemoteAccountOwner -.->|"call owner()"| RAn
-    _provideForOwner -->|calls| _getSalt
-    _provideForOwner -->|calls| _getRemoteAccountAddress
-    _provideForOwner --> ACCOUNT_EXISTS
+    provideRemoteAccount --> _verifyRemoteAccountAddress
+    provideRemoteAccount --> CODE_EXISTS
+    provideRemoteAccount --> ACCOUNT_EXISTS
     ACCOUNT_EXISTS -.->|yes: calls| _verifyRemoteAccountOwner
-    ACCOUNT_EXISTS -.->|no| MAKE_ACCOUNT
-    MAKE_ACCOUNT -->|"[1] deterministically creates"| RAn
-    MAKE_ACCOUNT -->|"[2] emit"| RemoteAccountCreated
-    getRemoteAccountAddress -->|calls| _getSalt
+    ACCOUNT_EXISTS -.->|no| SAME_OWNER
+    SAME_OWNER -->|yes: calls| _createRemoteAccountForOwner
+
+    provideRemoteAccountForOwner -->|modifier| onlyOwner
+    provideRemoteAccountForOwner --> _verifyRemoteAccountAddress
+    provideRemoteAccountForOwner --> CODE_EXISTS
+    provideRemoteAccountForOwner --> ACCOUNT_EXISTS_FOR_OWNER
+    ACCOUNT_EXISTS_FOR_OWNER -.->|yes: calls| _verifyRemoteAccountOwner
+    ACCOUNT_EXISTS_FOR_OWNER -->|no: calls| _createRemoteAccountForOwner
+
+    verifyRemoteAccount -->|calls| _verifyRemoteAccountAddress
+    verifyRemoteAccount --> CODE_EXISTS
+    verifyRemoteAccount -->|calls| _verifyRemoteAccountOwner
+
+    _verifyRemoteAccountAddress -->|calls| _getRemoteAccountAddress
+    _getRemoteAccountAddress -->|calls| _getSalt
+
+    CODE_EXISTS -.-> RAn
+
+    _verifyRemoteAccountOwner -.->|"call owner()"| RAn
+    _createRemoteAccountForOwner -->|"CREATE2"| RAn
+    _createRemoteAccountForOwner -->|transferOwnership| RAn
+    _createRemoteAccountForOwner -->|"emit"| RemoteAccountCreated
+
     getRemoteAccountAddress -->|calls| _getRemoteAccountAddress
 
     %% state access
     _getRemoteAccountAddress -.->|reads| _principalSalt
     _getRemoteAccountAddress -.->|reads| _remoteAccountBytecodeHash
     _verifyRemoteAccountOwner -.->|checks| owner
-    SAME_OWNER -->|checks| owner
-    onlyOwner -->|checks| owner
+    SAME_OWNER -.->|checks| owner
+    onlyOwner -.->|checks| owner
     transferOwnership -->|updates| owner
     renounceOwnership -->|updates| owner
 
     style provideRemoteAccount fill:#ffe6e6
+    style provideRemoteAccountForOwner fill:#ffe6e6
     style verifyRemoteAccount fill:#ffe6e6
     style getRemoteAccountAddress fill:#ffe6e6
     style transferOwnership fill:#ffe6e6
@@ -350,9 +365,11 @@ graph TB
 
 - **provideRemoteAccount**: Public method requiring new account owner is current factory owner.
 - **provideRemoteAccountForOwner**: Owner-only method to create or verify accounts for an arbitrary owner
-- **\_provideForOwner**: Core CREATE2 logic with deterministic address generation
+- **verifyRemoteAccount**: Multi-layer verification of existing accounts (code, principal, owner)
 - **verifyFactoryPrincipalAccount**: Validates the factory principal account string
-- **Validation**: Multi-layer verification of existing accounts (code, principal, owner)
+- **\_verifyRemoteAccountAddress**: Enforces principal-to-address derivation before creation/verification.
+- **\_getRemoteAccountAddress**: Rejects the factory principal account (prevents treating factory as a remote account).
+- **\_createRemoteAccountForOwner**: Core CREATE2 deployment + immediate ownership transfer.
 
 ## Data Flow: Account creation and use
 

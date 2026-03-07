@@ -171,14 +171,14 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const expectedAddress = await route(frontRunLCA).getRemoteAccountAddress();
 
         // Attacker tries to front-run by calling factory.provideRemoteAccount directly
-        // This should revert because factory only does a verify for calls not from its owner (router)
+        // This should revert because the public method cannot be used with arbitrary owners
         await expect(
             factory.provideRemoteAccount(
                 frontRunLCA,
                 addr1.address, // attacker tries to use themselves as router
                 expectedAddress,
             ),
-        ).to.be.revertedWithCustomError(factory, 'InvalidAccountAtAddress');
+        ).to.be.revertedWithCustomError(factory, 'UnauthorizedOwner');
     });
 
     it('should refuse creating an account for the factory principal', async () => {

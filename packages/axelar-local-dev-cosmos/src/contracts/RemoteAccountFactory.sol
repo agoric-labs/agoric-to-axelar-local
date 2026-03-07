@@ -117,6 +117,27 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     }
 
     /**
+     * @notice Verify an address is the expected one for a remote account
+     *         created by this factory given its principal.
+     * @dev Does not perform any ownership or existence checks.
+     *      Reverts if the account address does not match the expected address derived from the principal,
+     *      or if the factory's principal is used.
+     * @param principalAccount The address of the principal for the RemoteAccount
+     * @param expectedAccountAddress The expected address to verify
+     * @return salt the CREATE2 salt used for the RemoteAccount address derivation
+     */
+    function _verifyRemoteAccountAddress(
+        string calldata principalAccount,
+        address expectedAccountAddress
+    ) public view returns (bytes32 salt) {
+        address actualAccountAddress;
+        (actualAccountAddress, salt) = _getRemoteAccountAddress(principalAccount);
+        if (actualAccountAddress != expectedAccountAddress) {
+            revert AddressMismatch(expectedAccountAddress, actualAccountAddress);
+        }
+    }
+
+    /**
      * @notice Verify an address is a remote account for a given principal and its owner matches
      * @dev Does not check the owner matches the factory's current owner to allow a non current owner
      *      to interact with remote accounts whose ownership needs to be updated.
@@ -131,16 +152,13 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
         address expectedOwner,
         address expectedAccountAddress
     ) public view override {
-        (address actualAccountAddress, ) = _getRemoteAccountAddress(principalAccount);
-        if (actualAccountAddress != expectedAccountAddress) {
-            revert AddressMismatch(expectedAccountAddress, actualAccountAddress);
+        _verifyRemoteAccountAddress(principalAccount, expectedAccountAddress);
+
+        if (expectedAccountAddress.code.length == 0) {
+            revert InvalidAccountAtAddress(expectedAccountAddress);
         }
 
-        if (actualAccountAddress.code.length == 0) {
-            revert InvalidAccountAtAddress(actualAccountAddress);
-        }
-
-        _verifyRemoteAccountOwner(actualAccountAddress, expectedOwner);
+        _verifyRemoteAccountOwner(expectedAccountAddress, expectedOwner);
     }
 
     /**
@@ -170,14 +188,20 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
         address expectedOwner,
         address expectedAddress
     ) external override returns (bool) {
-        if (owner() != expectedOwner) {
-            // If the factory is used to "provide" a remote account for a different owner,
-            // we can check whether that remote account already exists and is valid,
-            // but we cannot create a new one on behalf of another owner.
-            verifyRemoteAccount(principalAccount, expectedOwner, expectedAddress);
+        bytes32 salt = _verifyRemoteAccountAddress(principalAccount, expectedAddress);
+
+        if (expectedAddress.code.length != 0) {
+            _verifyRemoteAccountOwner(expectedAddress, expectedOwner);
             return false;
+        } else if (owner() == expectedOwner) {
+            _createRemoteAccountForOwner(principalAccount, salt, expectedOwner, expectedAddress);
+            return true;
+        } else {
+            // The public method cannot be used to provide a remote account for
+            // a different owner, to prevent potential denial of service where
+            // an attacker would create an inaccessible remote account.
+            revert UnauthorizedOwner(expectedOwner, expectedAddress);
         }
-        return _provideRemoteAccountForOwner(principalAccount, expectedOwner, expectedAddress);
     }
 
     /**
@@ -197,54 +221,45 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
         address ownerAddress,
         address expectedAddress
     ) external override onlyOwner returns (bool created) {
-        return _provideRemoteAccountForOwner(principalAccount, ownerAddress, expectedAddress);
+        bytes32 salt = _verifyRemoteAccountAddress(principalAccount, expectedAddress);
+
+        if (expectedAddress.code.length != 0) {
+            // If the account already exists, we can only verify its owner matches the requested one
+            _verifyRemoteAccountOwner(expectedAddress, ownerAddress);
+            return false;
+        } else {
+            _createRemoteAccountForOwner(principalAccount, salt, ownerAddress, expectedAddress);
+            return true;
+        }
     }
 
     /**
-     * @notice Provide a RemoteAccount - creates if new, verifies if exists
-     * @dev Idempotent: calling multiple times with same params succeeds as
-     *      long as the RemoteAccount's current owner matches the provided ownerAddress.
-     *      This must not be exposed publicly without controls as an arbitrary
-     *      owner address may prevent the portfolio manager from reaching the
-     *      RemoteAccount if it does not have access to that router owner.
+     * @notice Create a RemoteAccount - creates if new
+     * @dev This accepts any owner. The external function must control owner
+     *      address usage as it may prevent the portfolio manager from reaching
+     *      the RemoteAccount if it does not have access to that router owner.
      * @param principalAccount The principal account string for the RemoteAccount
+     * @param salt the CREATE2 salt for the remote account that has been derived
+     *        from the principal account
      * @param ownerAddress The address to use as owner of the RemoteAccount
      * @param expectedAddress The expected CREATE2 address (for verification)
-     * @return created true if the RemoteAccount was created, false if it was pre-existing
      */
-    function _provideRemoteAccountForOwner(
+    function _createRemoteAccountForOwner(
         string calldata principalAccount,
+        bytes32 salt,
         address ownerAddress,
         address expectedAddress
-    ) internal returns (bool created) {
+    ) internal {
         // Do not include the owner address to keep the remote account address independent
         // from its current owner setup.
-        (address accountAddress, bytes32 salt) = _getRemoteAccountAddress(principalAccount);
+        RemoteAccount newAccount = new RemoteAccount{ salt: salt }();
+        assert(address(newAccount) == expectedAddress);
 
-        if (expectedAddress == address(0)) {
-            revert InvalidAccountAtAddress(expectedAddress);
-        }
+        // Immediately transfer ownership to our owner as an initialization
+        // step (we can't specify the correct owner in constructor arguments
+        // because that would affect the resulting RemoteAccount address).
+        newAccount.transferOwnership(ownerAddress);
 
-        if (accountAddress != expectedAddress) {
-            revert AddressMismatch(expectedAddress, accountAddress);
-        }
-
-        if (accountAddress.code.length == 0) {
-            RemoteAccount newAccount = new RemoteAccount{ salt: salt }();
-            address newAccountAddress = address(newAccount);
-            assert(newAccountAddress == accountAddress);
-
-            // Immediately transfer ownership to our owner as an initialization
-            // step (we can't specify the correct owner in constructor arguments
-            // because that would affect the resulting RemoteAccount address).
-            newAccount.transferOwnership(ownerAddress);
-
-            emit RemoteAccountCreated(newAccountAddress, principalAccount, ownerAddress);
-
-            return true;
-        } else {
-            _verifyRemoteAccountOwner(accountAddress, ownerAddress);
-            return false;
-        }
+        emit RemoteAccountCreated(expectedAddress, principalAccount, ownerAddress);
     }
 }

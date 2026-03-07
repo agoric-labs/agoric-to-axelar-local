@@ -412,7 +412,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
             multiCalls: [],
         });
         const decodedError = receiptFailedCreate.parseOperationError(factory.interface);
-        expect(decodedError?.name).to.equal('InvalidAccountAtAddress');
+        expect(decodedError?.name).to.equal('UnauthorizedOwner');
 
         // Verify old router can update ownership of the accounts it still owns (tmpLCA) to the new router
         (
