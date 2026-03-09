@@ -291,6 +291,17 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         ).to.be.revertedWithCustomError(factory, 'OwnableUnauthorizedAccount');
     });
 
+    it('should reject factory creation if RemoteAccount implementation is not inert', async () => {
+        const RemoteAccountContract = await ethers.getContractFactory('RemoteAccount');
+        const impl = await RemoteAccountContract.deploy();
+        await impl.waitForDeployment();
+
+        const FactoryContract = await ethers.getContractFactory('RemoteAccountFactory');
+        await expect(
+            FactoryContract.deploy('foo', 'bar', impl.target),
+        ).to.be.revertedWithCustomError(FactoryContract, 'UnauthorizedOwner');
+    });
+
     it('should disallow initializing the RemoteAccount implementation contract', async () => {
         const implementationAddress = await factory.implementation();
         const account = await ethers.getContractAt('RemoteAccount', implementationAddress);

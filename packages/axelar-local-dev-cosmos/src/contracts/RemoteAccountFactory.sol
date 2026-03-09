@@ -8,13 +8,14 @@ import { RemoteAccount } from './RemoteAccount.sol';
 
 /**
  * @title RemoteAccountFactory
- * @notice A factory for deploying RemoteAccount EIP-1167 minimal proxy clones
+ * @notice A factory for deploying RemoteAccount contracts
  * @dev RemoteAccountFactory is a non-replaceable contract for deploying
- *      RemoteAccount clones on behalf of an immutable factory principal
+ *      RemoteAccount contracts on behalf of an immutable factory principal
  *      account string (identifying e.g. a portfolio manager) at predictable
  *      addresses.
- *      Each clone delegates all calls to a pre-deployed RemoteAccount
- *      implementation contract.
+ *      The factory uses the EIP-1167 minimal proxy pattern to deploy
+ *      the RemoteAccount contracts as "clones", which delegate all calls to a
+ *      pre-deployed RemoteAccount implementation contract.
  *      This factory is ownable, and at any point in time is expected to be
  *      owned by the active representative of that factory principal (such as an
  *      IRemoteAccountRouter).
@@ -42,18 +43,18 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
      * @param factoryPrincipalCaip2_ The caip2 of the principal for this RemoteAccountFactory
      * @param factoryPrincipalAccount_ The address of the principal for this RemoteAccountFactory
      * @param implementation_ The address of the pre-deployed RemoteAccount implementation contract.
-     *        This implementation should have its ownership renounced to ensure it is inert.
+     *        This implementation must have its ownership renounced to ensure it is inert.
      */
     constructor(
         string memory factoryPrincipalCaip2_,
         string memory factoryPrincipalAccount_,
         address implementation_
     ) Ownable(_msgSender()) {
-        require(implementation_.code.length > 0, 'Implementation must be a contract');
         factoryPrincipalCaip2 = factoryPrincipalCaip2_;
         factoryPrincipalAccount = factoryPrincipalAccount_;
-        _principalSalt = keccak256(bytes(factoryPrincipalAccount_));
+        _principalSalt = keccak256(bytes(factoryPrincipalAccount_)); // _getSalt(factoryPrincipalAccount_);
         implementation = implementation_;
+        _verifyRemoteAccountOwner(implementation_, address(0));
     }
 
     function _getSalt(string calldata principalAccount) internal pure returns (bytes32) {
@@ -76,10 +77,10 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     }
 
     /**
-     * @notice Compute the address for a RemoteAccount clone deployed by this factory
+     * @notice Compute the address for a RemoteAccount deployed by this factory
      * @dev Revert if called for this factory's principal account
      * @param principalAccount The principal account string for the RemoteAccount
-     * @return The deterministic address where the RemoteAccount clone is deployed
+     * @return The deterministic address where the RemoteAccount is deployed
      *         and the associated salt
      */
     function _getRemoteAccountAddress(
