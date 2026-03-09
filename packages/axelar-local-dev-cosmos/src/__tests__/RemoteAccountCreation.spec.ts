@@ -290,4 +290,46 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
             ),
         ).to.be.revertedWithCustomError(factory, 'OwnableUnauthorizedAccount');
     });
+
+    it('should disallow initializing the RemoteAccount implementation contract', async () => {
+        const implementationAddress = await factory.implementation();
+        const account = await ethers.getContractAt('RemoteAccount', implementationAddress);
+        expect(await account.owner()).to.equal(ethers.ZeroAddress);
+
+        // Try to call initialize on the implementation contract
+        await expect(account.initialize(addr1.address)).to.be.revertedWithCustomError(
+            account,
+            'InvalidInitialization',
+        );
+    });
+
+    it('should disallow re-initializing a clone', async () => {
+        const lca = 'agoric1reinitializetest123456789abcdefghij';
+        const receipt = await route(lca).doRemoteAccountExecute({ multiCalls: [] });
+        receipt.expectOperationSuccess();
+
+        const accountAddress = await factory.getRemoteAccountAddress(lca);
+        const account = await ethers.getContractAt('RemoteAccount', accountAddress);
+
+        // Try to call initialize again on the clone
+        await expect(account.initialize(addr1.address)).to.be.revertedWithCustomError(
+            account,
+            'InvalidInitialization',
+        );
+
+        // Renounce ownership by first updating ownership through the successor mechanism
+        await expect(router.setSuccessor(owner.address)).to.emit(router, 'SuccessorSet');
+        const updateReceipt = await route(lca).doUpdateOwner({
+            newOwner: owner.address as `0x${string}`,
+        });
+        updateReceipt.expectOperationSuccess();
+        await expect(account.renounceOwnership()).to.emit(account, 'OwnershipTransferred');
+        expect(await account.owner()).to.equal(ethers.ZeroAddress);
+
+        // Try to call initialize after ownership has been renounced
+        await expect(account.initialize(addr1.address)).to.be.revertedWithCustomError(
+            account,
+            'InvalidInitialization',
+        );
+    });
 });

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.20;
 
+import { Initializable } from '@openzeppelin/contracts/proxy/utils/Initializable.sol';
 import { Ownable } from '@openzeppelin/contracts/access/Ownable.sol';
 import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
 
@@ -17,19 +18,22 @@ import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
  *      supporting migration paths in which the original owner is replaced with
  *      a new contract.
  */
-contract RemoteAccount is Ownable, IRemoteAccount {
-    constructor() Ownable(_msgSender()) {}
+contract RemoteAccount is Ownable, Initializable, IRemoteAccount {
+    constructor() Ownable(_msgSender()) {
+        _disableInitializers();
+    }
 
     /**
      * @notice Initialize ownership for an EIP-1167 clone
      * @dev Clones do not run constructors, so _owner starts as address(0).
-     *      This function can only be called once — when owner is still unset.
-     *      The implementation contract itself is safe because its constructor
-     *      sets an owner, making this function uncallable on it.
+     *      We use the initializer modifier to ensure this function can only be
+     *      called once by contracts that weren't constructed. A factory
+     *      deploying this contract using proxies must call this function on
+     *      each clone after deploying it, to set the initial owner.
      * @param initialOwner The address to set as the owner of this clone
      */
-    function initialize(address initialOwner) external {
-        require(owner() == address(0), "Already initialized");
+    function initialize(address initialOwner) external initializer {
+        assert(owner() == address(0));
         _transferOwnership(initialOwner);
     }
 
