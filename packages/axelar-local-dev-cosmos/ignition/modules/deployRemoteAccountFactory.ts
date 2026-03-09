@@ -17,10 +17,22 @@ export default buildModule('RemoteAccountFactoryModule', (m) => {
     const principalCaip2 = m.getParameter('principalCaip2_', PRINCIPAL_CAIP2);
     const principalAccount = m.getParameter('principalAccount_', PRINCIPAL_ACCOUNT);
 
+    // Deploy the RemoteAccount implementation contract first
+    const RemoteAccountImplementation = m.contract('RemoteAccount', [], {
+        id: 'RemoteAccountImplementation',
+    });
+
+    // Renounce ownership on the implementation to make it inert
+    m.call(RemoteAccountImplementation, 'renounceOwnership', [], {
+        id: 'renounceImplementationOwnership',
+    });
+
+    // Deploy the factory with the implementation address
     const RemoteAccountFactory = m.contract('RemoteAccountFactory', [
         principalCaip2,
         principalAccount,
+        RemoteAccountImplementation,
     ]);
 
-    return { RemoteAccountFactory };
+    return { RemoteAccountImplementation, RemoteAccountFactory };
 });

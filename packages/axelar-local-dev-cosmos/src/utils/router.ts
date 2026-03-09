@@ -1,20 +1,33 @@
 import type { Abi, AbiStateMutability, Address, ContractFunctionName, Hex } from 'viem';
-import { getCreate2Address, stringToBytes, hexToBytes, keccak256 } from 'viem';
+import { getCreate2Address, stringToBytes, hexToBytes, keccak256, concat } from 'viem';
 import type { AbiContract, AbiContractArgs, AbiSend, AbiTagged } from './evm-facade.ts';
 import type { ContractCall } from '../interfaces/router.ts';
 
 import { remoteAccountAxelarRouterABI } from '../interfaces/router';
 import { makeEvmContract } from './evm-facade';
 
-export const toInitCodeHash = (bytecodeHash: Hex): Uint8Array => hexToBytes(bytecodeHash);
+/**
+ * Compute the EIP-1167 minimal proxy init code hash for a given implementation address.
+ * The init code is: 0x3d602d80600a3d3981f3363d3d373d3d3d363d73 ++ implementation ++ 5af43d82803e903d91602b57fd5bf3
+ */
+export const cloneInitCodeHash = (implementationAddress: Hex): Uint8Array =>
+    hexToBytes(
+        keccak256(
+            concat([
+                '0x3d602d80600a3d3981f3363d3d373d3d3d363d73',
+                implementationAddress,
+                '0x5af43d82803e903d91602b57fd5bf3',
+            ]),
+        ),
+    );
 
 export const predictRemoteAccountAddress = ({
     factoryAddress,
-    remoteAccountInitCodeHash,
+    implementationAddress,
     owner,
 }: {
     factoryAddress: Hex;
-    remoteAccountInitCodeHash: Uint8Array;
+    implementationAddress: Hex;
     owner: `${string}1${string}`;
 }): Hex => {
     if (!(owner.length > 0)) throw new Error('Invalid owner address');
@@ -23,7 +36,7 @@ export const predictRemoteAccountAddress = ({
     const out = getCreate2Address({
         from: factoryAddress,
         salt,
-        bytecodeHash: remoteAccountInitCodeHash,
+        bytecodeHash: cloneInitCodeHash(implementationAddress),
     });
     return out;
 };

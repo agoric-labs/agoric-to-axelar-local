@@ -5,7 +5,7 @@ import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import * as helpers from '@nomicfoundation/hardhat-network-helpers';
-import { routed } from './lib/utils';
+import { routed, deployRemoteAccountFactory } from './lib/utils';
 
 describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
     let owner: HardhatEthersSigner, addr1: HardhatEthersSigner;
@@ -53,10 +53,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const MockPermit2Factory = await ethers.getContractFactory('MockPermit2');
         permit2Mock = await MockPermit2Factory.deploy();
 
-        // Deploy RemoteAccountFactory
-        const FactoryContract = await ethers.getContractFactory('RemoteAccountFactory');
-        factory = await FactoryContract.deploy(portfolioContractCaip2, portfolioContractAccount);
-        await factory.waitForDeployment();
+        // Deploy RemoteAccount implementation + RemoteAccountFactory
+        factory = await deployRemoteAccountFactory(
+            portfolioContractCaip2,
+            portfolioContractAccount,
+        );
 
         // Deploy RemoteAccountAxelarRouter
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');

@@ -6,7 +6,7 @@ import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { gmpRouterContract, padTxId, contractWithCallMetadata } from '../utils/router';
 import { makeEvmContract } from '../utils/evm-facade';
-import { routed } from './lib/utils';
+import { routed, deployRemoteAccountFactory } from './lib/utils';
 import type { ContractCall } from '../interfaces/router';
 import { multicallAbi } from './interfaces/multicall';
 
@@ -53,9 +53,11 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
         const MockPermit2Factory = await ethers.getContractFactory('MockPermit2');
         permit2Mock = await MockPermit2Factory.deploy();
 
-        const FactoryContract = await ethers.getContractFactory('RemoteAccountFactory');
-        factory = await FactoryContract.deploy(portfolioContractCaip2, portfolioContractAccount);
-        await factory.waitForDeployment();
+        // Deploy RemoteAccount implementation + RemoteAccountFactory
+        factory = await deployRemoteAccountFactory(
+            portfolioContractCaip2,
+            portfolioContractAccount,
+        );
 
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         router = await RouterContract.deploy(

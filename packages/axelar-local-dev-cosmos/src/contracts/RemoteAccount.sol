@@ -21,6 +21,19 @@ contract RemoteAccount is Ownable, IRemoteAccount {
     constructor() Ownable(_msgSender()) {}
 
     /**
+     * @notice Initialize ownership for an EIP-1167 clone
+     * @dev Clones do not run constructors, so _owner starts as address(0).
+     *      This function can only be called once — when owner is still unset.
+     *      The implementation contract itself is safe because its constructor
+     *      sets an owner, making this function uncallable on it.
+     * @param initialOwner The address to set as the owner of this clone
+     */
+    function initialize(address initialOwner) external {
+        require(owner() == address(0), "Already initialized");
+        _transferOwnership(initialOwner);
+    }
+
+    /**
      * @notice Execute a batch of calls on behalf of the principal
      * @dev The owner is the only authorized caller, and is expected to
      *      target this RemoteAccount after using the RemoteAccountFactory that

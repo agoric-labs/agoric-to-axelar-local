@@ -20,28 +20,43 @@ import {
     gmpRouterContract,
     padTxId,
     predictRemoteAccountAddress,
-    toInitCodeHash,
 } from '../../utils/router';
 
 // ==================== RemoteAccount Helpers ====================
 
 /**
- * Compute CREATE2 address for RemoteAccount
+ * Deploy the RemoteAccount implementation and RemoteAccountFactory.
+ * The implementation's ownership is renounced to make it inert.
+ */
+export const deployRemoteAccountFactory = async (
+    principalCaip2: string,
+    principalAccount: string,
+) => {
+    const RemoteAccountContract = await ethers.getContractFactory('RemoteAccount');
+    const impl = await RemoteAccountContract.deploy();
+    await impl.waitForDeployment();
+    await impl.renounceOwnership();
+
+    const FactoryContract = await ethers.getContractFactory('RemoteAccountFactory');
+    const factory = await FactoryContract.deploy(principalCaip2, principalAccount, impl.target);
+    await factory.waitForDeployment();
+    return factory;
+};
+
+/**
+ * Compute deterministic address for a RemoteAccount EIP-1167 clone
  * Salt is keccak256(principalAccount)
  */
 export const computeRemoteAccountAddress = async (
     factoryAddress: string,
     principalAccount: string,
 ) => {
-    const RemoteAccountFactory = await ethers.getContractFactory('RemoteAccount');
-    // RemoteAccount constructor takes no arguments
-    const remoteAccountInitCodeHash = toInitCodeHash(
-        keccak256(RemoteAccountFactory.bytecode as `0x${string}`),
-    );
+    const factory = await ethers.getContractAt('RemoteAccountFactory', factoryAddress);
+    const implementationAddress = await factory.implementation();
 
     return predictRemoteAccountAddress({
         factoryAddress: factoryAddress as `0x${string}`,
-        remoteAccountInitCodeHash,
+        implementationAddress: implementationAddress as `0x${string}`,
         owner: principalAccount as `${string}1${string}`,
     });
 };

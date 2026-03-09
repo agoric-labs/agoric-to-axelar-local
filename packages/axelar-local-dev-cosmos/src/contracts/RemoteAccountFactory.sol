@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.20;
 
-import { Create2 } from '@openzeppelin/contracts/utils/Create2.sol';
+import { Clones } from '@openzeppelin/contracts/proxy/Clones.sol';
 import { Ownable } from '@openzeppelin/contracts/access/Ownable.sol';
 import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
 import { RemoteAccount } from './RemoteAccount.sol';
 
 /**
  * @title RemoteAccountFactory
- * @notice A CREATE2 factory for deploying RemoteAccount contracts
+ * @notice A factory for deploying RemoteAccount EIP-1167 minimal proxy clones
  * @dev RemoteAccountFactory is a non-replaceable contract for deploying
- *      RemoteAccount contracts on behalf of an immutable factory principal
+ *      RemoteAccount clones on behalf of an immutable factory principal
  *      account string (identifying e.g. a portfolio manager) at predictable
  *      addresses.
+ *      Each clone delegates all calls to a pre-deployed RemoteAccount
+ *      implementation contract.
  *      This factory is ownable, and at any point in time is expected to be
  *      owned by the active representative of that factory principal (such as an
  *      IRemoteAccountRouter).
@@ -22,8 +24,9 @@ import { RemoteAccount } from './RemoteAccount.sol';
  *      This factory can also be invoked by its current owner to create such a
  *      RemoteAccount with an arbitrary owner.
  *      Each RemoteAccount created by this factory is uniquely identified by its
- *      principal account string via CREATE2 address derivation
- *      (see https://eips.ethereum.org/EIPS/eip-1014).
+ *      principal account string via deterministic CREATE2 address derivation
+ *      of the EIP-1167 proxy bytecode
+ *      (see https://eips.ethereum.org/EIPS/eip-1167).
  */
 contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     // Store the principal details of this factory purely for reference
@@ -32,20 +35,25 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     string public factoryPrincipalAccount;
 
     bytes32 private immutable _principalSalt;
-    bytes32 private immutable _remoteAccountBytecodeHash;
+    /// @notice The pre-deployed RemoteAccount implementation that all clones delegate to
+    address public immutable implementation;
 
     /**
      * @param factoryPrincipalCaip2_ The caip2 of the principal for this RemoteAccountFactory
      * @param factoryPrincipalAccount_ The address of the principal for this RemoteAccountFactory
+     * @param implementation_ The address of the pre-deployed RemoteAccount implementation contract.
+     *        This implementation should have its ownership renounced to ensure it is inert.
      */
     constructor(
         string memory factoryPrincipalCaip2_,
-        string memory factoryPrincipalAccount_
+        string memory factoryPrincipalAccount_,
+        address implementation_
     ) Ownable(_msgSender()) {
+        require(implementation_.code.length > 0, 'Implementation must be a contract');
         factoryPrincipalCaip2 = factoryPrincipalCaip2_;
         factoryPrincipalAccount = factoryPrincipalAccount_;
-        _principalSalt = keccak256(bytes(factoryPrincipalAccount_)); // _getSalt(factoryPrincipalAccount_);
-        _remoteAccountBytecodeHash = keccak256(type(RemoteAccount).creationCode);
+        _principalSalt = keccak256(bytes(factoryPrincipalAccount_));
+        implementation = implementation_;
     }
 
     function _getSalt(string calldata principalAccount) internal pure returns (bytes32) {
@@ -68,11 +76,11 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     }
 
     /**
-     * @notice Compute the address for a RemoteAccount deployed by this factory
+     * @notice Compute the address for a RemoteAccount clone deployed by this factory
      * @dev Revert if called for this factory's principal account
      * @param principalAccount The principal account string for the RemoteAccount
-     * @return The deterministic address where the RemoteAccount is deployed
-     *         and the associated CREATE2 salt
+     * @return The deterministic address where the RemoteAccount clone is deployed
+     *         and the associated salt
      */
     function _getRemoteAccountAddress(
         string calldata principalAccount
@@ -82,7 +90,7 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
             // XXX address(0) would also be an acceptable argument
             revert InvalidAccountAtAddress(address(this));
         }
-        return (Create2.computeAddress(salt, _remoteAccountBytecodeHash), salt);
+        return (Clones.predictDeterministicAddress(implementation, salt), salt);
     }
 
     /**
@@ -252,14 +260,14 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     ) internal {
         // Do not include the owner address to keep the remote account address independent
         // from its current owner setup.
-        RemoteAccount newAccount = new RemoteAccount{ salt: salt }();
-        assert(address(newAccount) == expectedAddress);
+        address newAccountAddress = Clones.cloneDeterministic(implementation, salt);
+        assert(newAccountAddress == expectedAddress);
 
-        // Immediately transfer ownership to our owner as an initialization
-        // step (we can't specify the correct owner in constructor arguments
-        // because that would affect the resulting RemoteAccount address).
-        newAccount.transferOwnership(ownerAddress);
+        // Initialize ownership on the clone. Clones do not run
+        // constructors, so _owner starts as address(0). The initialize
+        // function can only be called once and sets the owner.
+        RemoteAccount(payable(newAccountAddress)).initialize(ownerAddress);
 
-        emit RemoteAccountCreated(expectedAddress, principalAccount, ownerAddress);
+        emit RemoteAccountCreated(newAccountAddress, principalAccount, ownerAddress);
     }
 }
