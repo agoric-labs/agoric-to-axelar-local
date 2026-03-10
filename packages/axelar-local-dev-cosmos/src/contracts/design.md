@@ -53,7 +53,8 @@ graph TB
 
     subgraph "Remote Account Router System"
         PR[RemoteAccountAxelarRouter]
-        RAF[RemoteAccountFactory<br/>CREATE2 Factory]
+        RAF[RemoteAccountFactory<br/>EIP-1167 Clone Factory]
+        IMP[RemoteAccount<br/>Implementation]
         RA1[RemoteAccount 1]
         RA2[RemoteAccount 2]
         RAn[RemoteAccount N]
@@ -73,16 +74,18 @@ graph TB
     RAF ==>|creates| RA1
     RAF ==>|creates| RA2
     RAF ==>|creates| RAn
+    RA1 -.->|delegates to| IMP
+    RA2 -.->|delegates to| IMP
+    RAn -.->|delegates to| IMP
     PR -->|"executeCalls |<br>transferOwnership"| RA1
     PR -->|"executeCalls |<br>transferOwnership"| RA2
     PR -->|"executeCalls |<br>transferOwnership"| RAn
     PR -.->|permitWitnessTransferFrom| P2
-    RA1 -->|call| PROTO
-    RA2 -->|call| PROTO
-    RAn -->|call| PROTO
+    IMP -->|call| PROTO
 
     style PR fill:#ffcccc
     style RAF fill:#ccffcc
+    style IMP fill:#cffcff
     style RA1 fill:#ccccff
     style RA2 fill:#ccccff
     style RAn fill:#ccccff
@@ -91,7 +94,8 @@ graph TB
 **Containers**:
 
 - **RemoteAccountAxelarRouter**: Entry point receiving messages from Axelar
-- **RemoteAccountFactory**: CREATE2 factory deploying RemoteAccount contracts at deterministic addresses
+- **RemoteAccountFactory**: EIP-1167 clone factory deploying deterministic proxy instances via `cloneDeterministic`
+- **RemoteAccount implementation**: Shared logic contract used by all clone instances
 - **RemoteAccount**: Individual wallet contracts acting on behalf of external principals (each one an Agoric local chain account [LCA]), executing DeFi operations
 
 ## C4 Level 3: Component Diagram - RemoteAccountAxelarRouter
@@ -208,10 +212,18 @@ graph TB
 
 ```mermaid
 graph TB
+    subgraph Initializable
+        _initialized
+        _disableInitializers
+        %% modifiers
+        initializer@{shape: odd}
+    end
     subgraph Ownable
+        _owner
         owner
         transferOwnership
         renounceOwnership
+        _transferOwnership
         %% modifiers
         onlyOwner@{shape: odd}
     end
@@ -221,6 +233,8 @@ graph TB
 
     subgraph RemoteAccount
         START@{shape: start}
+        CTOR[constructor]
+        initialize
         executeCalls
     end
 
@@ -228,36 +242,54 @@ graph TB
 
     %% inheritance
     RemoteAccount -.->|is| Ownable
+    RemoteAccount -.->|is| Initializable
     RemoteAccount -.->|is| IRemoteAccount
     executeCalls -.->|override| IRemoteAccount_executeCalls
 
     %% operation
+    START --> CTOR
+    START --> initialize
     START --> executeCalls
     START --> transferOwnership
     START --> renounceOwnership
+    START --> owner
+    CTOR -->|calls| _disableInitializers
+    initialize -->|modifier| initializer
+    initialize -->|calls| _transferOwnership
     executeCalls -->|modifier| onlyOwner
     executeCalls -.->|loops & calls| EXTERNAL
     transferOwnership -->|modifier| onlyOwner
+    transferOwnership -->|calls| _transferOwnership
     renounceOwnership -->|modifier| onlyOwner
+    renounceOwnership -->|calls| _transferOwnership
+    owner -->|reads| _owner
 
     %% state access
-    onlyOwner -->|checks| owner
-    transferOwnership -->|updates| owner
-    renounceOwnership -->|updates| owner
+    onlyOwner -->|checks| _owner
+    _transferOwnership -->|updates| _owner
+    initializer -->|checks and updates| _initialized
+    _disableInitializers -->|updates| _initialized
 
+    style owner fill:#ffe6e6
     style executeCalls fill:#ffe6e6
+    style initialize fill:#ffe6e6
     style transferOwnership fill:#ffe6e6
     style renounceOwnership fill:#ffe6e6
 ```
 
 **Key Components**:
 
+- **initialize**: One-time ownership initialization for clone instances
 - **executeCalls**: Validates owner, then atomically executes array of contract calls
 
 ## C4 Level 3: Component Diagram - RemoteAccountFactory
 
 ```mermaid
 graph TB
+    subgraph Clones
+        cloneDeterministic
+        predictDeterministicAddress
+    end
     subgraph Ownable
         owner
         transferOwnership
@@ -297,7 +329,7 @@ graph TB
             factoryPrincipalCaip2@{shape: stored-data}
             factoryPrincipalAccount@{shape: stored-data}
             _principalSalt@{shape: stored-data}
-            _remoteAccountBytecodeHash@{shape: stored-data}
+            implementation@{shape: stored-data}
         end
     end
 
@@ -334,19 +366,21 @@ graph TB
 
     _verifyRemoteAccountAddress -->|calls| _getRemoteAccountAddress
     _getRemoteAccountAddress -->|calls| _getSalt
+    _getRemoteAccountAddress -->|calls| predictDeterministicAddress
 
     CODE_EXISTS -.-> RAn
 
     _verifyRemoteAccountOwner -.->|"call owner()"| RAn
-    _createRemoteAccountForOwner -->|"CREATE2"| RAn
-    _createRemoteAccountForOwner -->|transferOwnership| RAn
+    _createRemoteAccountForOwner -->|calls| cloneDeterministic
+    cloneDeterministic -->|"CREATE2"| RAn
+    _createRemoteAccountForOwner -->|initialize| RAn
     _createRemoteAccountForOwner -->|"emit"| RemoteAccountCreated
 
     getRemoteAccountAddress -->|calls| _getRemoteAccountAddress
 
     %% state access
     _getRemoteAccountAddress -.->|reads| _principalSalt
-    _getRemoteAccountAddress -.->|reads| _remoteAccountBytecodeHash
+    _getRemoteAccountAddress -.->|reads| implementation
     _verifyRemoteAccountOwner -.->|checks| owner
     SAME_OWNER -.->|checks| owner
     onlyOwner -.->|checks| owner
@@ -369,7 +403,7 @@ graph TB
 - **verifyFactoryPrincipalAccount**: Validates the factory principal account string
 - **\_verifyRemoteAccountAddress**: Enforces principal-to-address derivation before creation/verification.
 - **\_getRemoteAccountAddress**: Rejects the factory principal account (prevents treating factory as a remote account).
-- **\_createRemoteAccountForOwner**: Core CREATE2 deployment + immediate ownership transfer.
+- **\_createRemoteAccountForOwner**: Core deterministic clone deployment + ownership initialization.
 
 ## Data Flow: Account creation and use
 
@@ -403,8 +437,8 @@ sequenceDiagram
                 RAF->>RA: owner()
                 RAF->>RAF: verify match
             else
-                RAF->>RA: CREATE2
-                RAF->>RA: transferOwnership(router)
+                RAF->>RA: cloneDeterministic
+                RAF->>RA: initialize(router)
             end
         else processRemoteAccountExecuteInstruction
             Note over PR,RA: provide account
@@ -413,8 +447,8 @@ sequenceDiagram
                 RAF->>RA: owner()
                 RAF->>RAF: verify match
             else
-                RAF->>RA: CREATE2
-                RAF->>RA: transferOwnership(router)
+                RAF->>RA: cloneDeterministic
+                RAF->>RA: initialize(router)
             end
 
             Note over PR,RA: make calls
@@ -440,8 +474,8 @@ sequenceDiagram
                     RAF->>RA: owner()
                     RAF->>RAF: verify match
                 else
-                    RAF->>RA: CREATE2
-                    RAF->>RA: transferOwnership(router)
+                    RAF->>RA: cloneDeterministic
+                    RAF->>RA: initialize(router)
                 end
                 PR->>RA: transferOwnership(newOwner)
             end
@@ -533,10 +567,13 @@ sequenceDiagram
     participant ROUTER1 as RemoteAccountAxelarRouter<br>v1
     participant ROUTER2 as RemoteAccountAxelarRouter<br>v2
     participant ROUTERn as RemoteAccountAxelarRouter<br>v3
+    participant IMP as RemoteAccount<br>implementation
     participant RAF as RemoteAccountFactory
     participant RA as RemoteAccount
 
     Note over PM,RA: Initial deployment
+    EVM_DEPLOYER->>IMP: deploy
+    EVM_DEPLOYER->>IMP: renounceOwnership
     EVM_DEPLOYER->>RAF: deploy
     EVM_DEPLOYER->>ROUTER1: deploy
     EVM_DEPLOYER->>RAF: transferOwnership to router
