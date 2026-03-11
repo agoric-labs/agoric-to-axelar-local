@@ -19,15 +19,11 @@ import { RemoteAccount } from './RemoteAccount.sol';
  *      This factory is ownable, and at any point in time is expected to be
  *      owned by the active representative of that factory principal (such as an
  *      IRemoteAccountRouter).
- *      This factory can be invoked publicly to create a RemoteAccount for a
- *      principal account string, initialized with an owner matching the current
- *      owner of this factory.
- *      This factory can also be invoked by its current owner to create such a
- *      RemoteAccount with an arbitrary owner.
- *      Each RemoteAccount created by this factory is uniquely identified by its
- *      principal account string via deterministic CREATE2 address derivation
- *      of the EIP-1167 proxy bytecode
- *      (see https://eips.ethereum.org/EIPS/eip-1167).
+ *      Remote accounts delegate ownership transitively through this factory:
+ *      any caller authorized by the factory (its current owner or an enabled
+ *      router) can execute calls on any account created by this factory.
+ *      The factory also maintains a vetted/enabled router map to support
+ *      experimental routers alongside the main owner.
  */
 contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     // Store the principal details of this factory purely for reference
@@ -39,11 +35,16 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     /// @notice The pre-deployed RemoteAccount implementation that all clones delegate to
     address public immutable implementation;
 
+    /// @dev Routers that have been vetted by the factory owner
+    mapping(address => bool) private _vetted;
+    /// @dev Routers that have been enabled (active) — must be vetted first
+    mapping(address => bool) private _enabled;
+
     /**
      * @param factoryPrincipalCaip2_ The caip2 of the principal for this RemoteAccountFactory
      * @param factoryPrincipalAccount_ The address of the principal for this RemoteAccountFactory
      * @param implementation_ The address of the pre-deployed RemoteAccount implementation contract.
-     *        This implementation must have its ownership renounced to ensure it is inert.
+     *        This implementation must have its initializers disabled to ensure it is inert.
      */
     constructor(
         string memory factoryPrincipalCaip2_,
@@ -52,9 +53,9 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     ) Ownable(_msgSender()) {
         factoryPrincipalCaip2 = factoryPrincipalCaip2_;
         factoryPrincipalAccount = factoryPrincipalAccount_;
-        _principalSalt = keccak256(bytes(factoryPrincipalAccount_)); // _getSalt(factoryPrincipalAccount_);
+        _principalSalt = keccak256(bytes(factoryPrincipalAccount_));
         implementation = implementation_;
-        _verifyRemoteAccountOwner(implementation_, address(0));
+        require(implementation_.code.length > 0, 'Implementation must be a contract');
     }
 
     function _getSalt(string calldata principalAccount) internal pure returns (bytes32) {
@@ -88,7 +89,6 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     ) internal view returns (address, bytes32) {
         bytes32 salt = _getSalt(principalAccount);
         if (salt == _principalSalt) {
-            // XXX address(0) would also be an acceptable argument
             revert InvalidAccountAtAddress(address(this));
         }
         return (Clones.predictDeterministicAddress(implementation, salt), salt);
@@ -107,28 +107,9 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     }
 
     /**
-     * @notice Check if a RemoteAccount with the expected owner exists at the given address
-     * @dev Assumes the caller already derived the account address from the principal account,
-     *      and verified code exists for the address.
-     *      Checks that the owner matches.
-     *      Does not check that contract is a RemoteAccount, relies on deterministic address derivation.
-     * @param accountAddress The derived remote account address to check
-     * @param owner The expected address of the account's current owner
-     */
-    function _verifyRemoteAccountOwner(address accountAddress, address owner) internal view {
-        try RemoteAccount(payable(accountAddress)).owner() returns (address existingOwner) {
-            if (existingOwner != owner) {
-                revert UnauthorizedOwner(owner, accountAddress);
-            }
-        } catch {
-            revert UnauthorizedOwner(owner, accountAddress);
-        }
-    }
-
-    /**
      * @notice Verify an address is the expected one for a remote account
      *         created by this factory given its principal.
-     * @dev Does not perform any ownership or existence checks.
+     * @dev Does not perform any existence checks.
      *      Reverts if the account address does not match the expected address derived from the principal,
      *      or if the factory's principal is used.
      * @param principalAccount The address of the principal for the RemoteAccount
@@ -138,7 +119,7 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     function _verifyRemoteAccountAddress(
         string calldata principalAccount,
         address expectedAccountAddress
-    ) public view returns (bytes32 salt) {
+    ) internal view returns (bytes32 salt) {
         address actualAccountAddress;
         (actualAccountAddress, salt) = _getRemoteAccountAddress(principalAccount);
         if (actualAccountAddress != expectedAccountAddress) {
@@ -147,18 +128,14 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     }
 
     /**
-     * @notice Verify an address is a remote account for a given principal and its owner matches
-     * @dev Does not check the owner matches the factory's current owner to allow a non current owner
-     *      to interact with remote accounts whose ownership needs to be updated.
-     *      Reverts if the account address does not match the expected address derived from the principal.
-     *      Reverts if there is no account at the address, or it does not have the expected owner.
+     * @notice Verify an address is a remote account for a given principal
+     * @dev Reverts if the account address does not match the expected address derived from the principal.
+     *      Reverts if there is no account at the address.
      * @param principalAccount The address of the principal for the RemoteAccount
-     * @param expectedOwner The expected address of the owner
      * @param expectedAccountAddress The expected address to verify
      */
     function verifyRemoteAccount(
         string calldata principalAccount,
-        address expectedOwner,
         address expectedAccountAddress
     ) public view override {
         _verifyRemoteAccountAddress(principalAccount, expectedAccountAddress);
@@ -166,109 +143,125 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
         if (expectedAccountAddress.code.length == 0) {
             revert InvalidAccountAtAddress(expectedAccountAddress);
         }
+    }
 
-        _verifyRemoteAccountOwner(expectedAccountAddress, expectedOwner);
+    /**
+     * @notice Check if a caller is authorized to operate on remote accounts
+     * @dev Returns true if the caller is the current factory owner or an enabled router.
+     * @param caller The address to check
+     * @return True if the caller is authorized
+     */
+    function isAuthorizedCaller(address caller) external view override returns (bool) {
+        return caller == owner() || _enabled[caller];
     }
 
     /**
      * @notice Provide a RemoteAccount - creates if new, verifies if exists
-     * @dev Idempotent: calling multiple times with same params is safe as
-     *      long as the current owner matches between the factory and remote account.
-     *
-     *      The expectedOwner parameter is critical for safety:
-     *      - TOCTOU: Prevents time-of-check time-of-use races where the caller checks
-     *        owner() then calls provideRemoteAccount(), but ownership changes in between. By validating
-     *        expectedOwner matches current owner at execution, caller intent is preserved.
-     *
-     *      - Router upgrades: When upgrading from router A to B, in-flight provideRemoteAccount() calls
-     *        meant for router A will fail rather than creating accounts owned by router B.
-     *
-     *      - Reorgs: During blockchain reorganizations, if a router ownership transfer and
-     *        provideRemoteAccount() call get reordered, the check ensures provideRemoteAccount() fails rather than
-     *        creating accounts with unexpected ownership.
-     *
+     * @dev Idempotent: calling multiple times with same params is safe.
+     *      Only authorized callers (factory owner or enabled routers) can create new accounts.
+     *      Since accounts delegate ownership through this factory, there is no
+     *      per-account owner to verify — any authorized caller can operate any account.
      * @param principalAccount The principal account string for the RemoteAccount
-     * @param expectedOwner The expected address of the owner, must be current owner of the factory
      * @param expectedAddress The expected CREATE2 address (for verification)
      * @return created true if the RemoteAccount was created, false if it was pre-existing
      */
     function provideRemoteAccount(
         string calldata principalAccount,
-        address expectedOwner,
         address expectedAddress
     ) external override returns (bool) {
         bytes32 salt = _verifyRemoteAccountAddress(principalAccount, expectedAddress);
 
         if (expectedAddress.code.length != 0) {
-            _verifyRemoteAccountOwner(expectedAddress, expectedOwner);
             return false;
-        } else if (owner() == expectedOwner) {
-            _createRemoteAccountForOwner(principalAccount, salt, expectedOwner, expectedAddress);
-            return true;
-        } else {
-            // The public method cannot be used to provide a remote account for
-            // a different owner, to prevent potential denial of service where
-            // an attacker would create an inaccessible remote account.
-            revert UnauthorizedOwner(expectedOwner, expectedAddress);
         }
+
+        if (msg.sender != owner() && !_enabled[msg.sender]) {
+            revert UnauthorizedCaller(msg.sender);
+        }
+
+        _createRemoteAccount(principalAccount, salt, expectedAddress);
+        return true;
     }
 
     /**
-     * @notice Provide a RemoteAccount - creates if new, verifies if exists
-     * @dev Idempotent: calling multiple times with same params succeeds as
-     *      long as the RemoteAccount's current owner matches the provided ownerAddress.
-     *      This allows the owner router to provide an account with a specific
-     *      owner address. The owner is expected to call this function only for
-     *      experimentation before committing to its own successor.
-     * @param principalAccount The principal account string for the RemoteAccount
-     * @param ownerAddress The address to use as owner of the RemoteAccount
-     * @param expectedAddress The expected CREATE2 address (for verification)
-     * @return created true if the RemoteAccount was created, false if it was pre-existing
+     * @notice Mark a router address as vetted (code-approved)
+     * @dev Only the factory owner can vet routers. Vetting does not enable the router.
+     * @param router The router address to vet
      */
-    function provideRemoteAccountForOwner(
-        string calldata principalAccount,
-        address ownerAddress,
-        address expectedAddress
-    ) external override onlyOwner returns (bool created) {
-        bytes32 salt = _verifyRemoteAccountAddress(principalAccount, expectedAddress);
-
-        if (expectedAddress.code.length != 0) {
-            // If the account already exists, we can only verify its owner matches the requested one
-            _verifyRemoteAccountOwner(expectedAddress, ownerAddress);
-            return false;
-        } else {
-            _createRemoteAccountForOwner(principalAccount, salt, ownerAddress, expectedAddress);
-            return true;
-        }
+    function vetRouter(address router) external override onlyOwner {
+        _vetted[router] = true;
+        emit RouterVetted(router);
     }
 
     /**
-     * @notice Create a RemoteAccount - creates if new
-     * @dev This accepts any owner. The external function must control owner
-     *      address usage as it may prevent the portfolio manager from reaching
-     *      the RemoteAccount if it does not have access to that router owner.
+     * @notice Enable a vetted router to operate on remote accounts
+     * @dev Only the factory owner can enable routers. Router must be vetted first.
+     * @param router The router address to enable
+     */
+    function enableRouter(address router) external override onlyOwner {
+        if (!_vetted[router]) {
+            revert RouterNotVetted(router);
+        }
+        _enabled[router] = true;
+        emit RouterEnabled(router);
+    }
+
+    /**
+     * @notice Disable an enabled router
+     * @dev Only the factory owner can disable routers.
+     * @param router The router address to disable
+     */
+    function disableRouter(address router) external override onlyOwner {
+        _enabled[router] = false;
+        emit RouterDisabled(router);
+    }
+
+    /**
+     * @notice Revoke vetting from a router
+     * @dev Only the factory owner can revoke. Router must be disabled first.
+     * @param router The router address to revoke
+     */
+    function revokeRouter(address router) external override onlyOwner {
+        if (_enabled[router]) {
+            revert RouterStillEnabled(router);
+        }
+        _vetted[router] = false;
+        emit RouterRevoked(router);
+    }
+
+    /**
+     * @notice Transfer factory ownership to a new owner
+     * @dev Overrides Ownable.transferOwnership to require the new owner is vetted.
+     *      Setting a new owner automatically enables it.
+     * @param newOwner The address of the new owner (must be vetted)
+     */
+    function transferOwnership(address newOwner) public override onlyOwner {
+        if (!_vetted[newOwner]) {
+            revert RouterNotVetted(newOwner);
+        }
+        _enabled[newOwner] = true;
+        super.transferOwnership(newOwner);
+    }
+
+    /**
+     * @notice Create a RemoteAccount clone
+     * @dev Deploys an EIP-1167 clone and initializes it with this factory's address.
      * @param principalAccount The principal account string for the RemoteAccount
-     * @param salt the CREATE2 salt for the remote account that has been derived
-     *        from the principal account
-     * @param ownerAddress The address to use as owner of the RemoteAccount
+     * @param salt the CREATE2 salt derived from the principal account
      * @param expectedAddress The expected CREATE2 address (for verification)
      */
-    function _createRemoteAccountForOwner(
+    function _createRemoteAccount(
         string calldata principalAccount,
         bytes32 salt,
-        address ownerAddress,
         address expectedAddress
     ) internal {
-        // Do not include the owner address to keep the remote account address independent
-        // from its current owner setup.
         address newAccountAddress = Clones.cloneDeterministic(implementation, salt);
         assert(newAccountAddress == expectedAddress);
 
-        // Initialize ownership on the clone. Clones do not run
-        // constructors, so _owner starts as address(0). The initialize
-        // function can only be called once and sets the owner.
-        RemoteAccount(payable(newAccountAddress)).initialize(ownerAddress);
+        // Initialize the clone with this factory's address.
+        // The clone resolves ownership transitively through this factory.
+        RemoteAccount(payable(newAccountAddress)).initialize(address(this));
 
-        emit RemoteAccountCreated(newAccountAddress, principalAccount, ownerAddress);
+        emit RemoteAccountCreated(newAccountAddress, principalAccount);
     }
 }

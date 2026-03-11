@@ -16,11 +16,7 @@ import {
     RouterOperationPayload,
     SupportedOperations,
 } from '../../interfaces/router';
-import {
-    gmpRouterContract,
-    padTxId,
-    predictRemoteAccountAddress,
-} from '../../utils/router';
+import { gmpRouterContract, padTxId, predictRemoteAccountAddress } from '../../utils/router';
 
 // ==================== RemoteAccount Helpers ====================
 
@@ -35,7 +31,6 @@ export const deployRemoteAccountFactory = async (
     const RemoteAccountContract = await ethers.getContractFactory('RemoteAccount');
     const impl = await RemoteAccountContract.deploy();
     await impl.waitForDeployment();
-    await impl.renounceOwnership();
 
     const FactoryContract = await ethers.getContractFactory('RemoteAccountFactory');
     const factory = await FactoryContract.deploy(principalCaip2, principalAccount, impl.target);

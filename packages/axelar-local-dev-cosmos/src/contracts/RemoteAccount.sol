@@ -2,49 +2,58 @@
 pragma solidity ^0.8.20;
 
 import { Initializable } from '@openzeppelin/contracts/proxy/utils/Initializable.sol';
-import { Ownable } from '@openzeppelin/contracts/access/Ownable.sol';
 import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
+import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
 
 /**
  * @title RemoteAccount
  * @notice A wallet contract representing a principal account, controlled
- *         through a replaceable owner (such as an IRemoteAccountRouter).
- * @dev An Ownable for address-based, transferable ownership.
+ *         through the factory's authorized callers (such as an IRemoteAccountRouter).
+ * @dev Ownership is resolved transitively through the factory that deployed this
+ *      clone: any caller authorized by the factory (its owner or an enabled
+ *      router) can execute calls on this account.
  *      This contract does not track its principal directly but instead relies
  *      on RemoteAccountFactory to deploy it at a predictable CREATE2 address
- *      derived from the principal. The owner is responsible for validating the
- *      remote account's address against the acting principal on each call.
- *      This design keeps RemoteAccount as simple as possible while still
- *      supporting migration paths in which the original owner is replaced with
- *      a new contract.
+ *      derived from the principal.
  */
-contract RemoteAccount is Ownable, Initializable, IRemoteAccount {
-    constructor() Ownable(_msgSender()) {
+contract RemoteAccount is Initializable, IRemoteAccount {
+    /// @dev The factory that deployed this clone. Set once during initialize.
+    address private _factory;
+
+    constructor() {
         _disableInitializers();
     }
 
     /**
-     * @notice Initialize ownership for an EIP-1167 clone
-     * @dev Clones do not run constructors, so _owner starts as address(0).
+     * @notice Initialize the factory reference for an EIP-1167 clone
+     * @dev Clones do not run constructors, so _factory starts as address(0).
      *      We use the initializer modifier to ensure this function can only be
      *      called once by contracts that weren't constructed. A factory
      *      deploying this contract using proxies must call this function on
-     *      each clone after deploying it, to set the initial owner.
-     * @param initialOwner The address to set as the owner of this clone
+     *      each clone after deploying it.
+     * @param factory_ The factory that deployed this clone
      */
-    function initialize(address initialOwner) external initializer {
-        assert(owner() == address(0));
-        _transferOwnership(initialOwner);
+    function initialize(address factory_) external initializer {
+        assert(_factory == address(0));
+        _factory = factory_;
+    }
+
+    /// @notice The factory that deployed this clone
+    function factory() external view override returns (address) {
+        return _factory;
     }
 
     /**
      * @notice Execute a batch of calls on behalf of the principal
-     * @dev The owner is the only authorized caller, and is expected to
-     *      target this RemoteAccount after using the RemoteAccountFactory that
-     *      created it to re-derive its address from the acting principal.
+     * @dev Only callers authorized by the factory can execute calls.
+     *      The caller is expected to use the RemoteAccountFactory to
+     *      re-derive this account's address from the acting principal.
      * @param calls Array of contract calls to execute
      */
-    function executeCalls(ContractCall[] calldata calls) external payable override onlyOwner {
+    function executeCalls(ContractCall[] calldata calls) external payable override {
+        if (!IRemoteAccountFactory(_factory).isAuthorizedCaller(msg.sender)) {
+            revert UnauthorizedCaller(msg.sender);
+        }
         if (msg.value > 0) {
             emit Received(msg.sender, msg.value);
         }

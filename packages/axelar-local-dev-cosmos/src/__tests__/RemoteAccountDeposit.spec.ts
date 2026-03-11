@@ -77,6 +77,9 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         );
         await router.waitForDeployment();
 
+        // Vet the router before transferring ownership
+        await factory.vetRouter(router.target);
+
         // Transfer factory ownership to router
         await factory.transferOwnership(router.target);
 
