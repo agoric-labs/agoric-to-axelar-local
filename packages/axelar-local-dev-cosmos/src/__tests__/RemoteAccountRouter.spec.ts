@@ -69,6 +69,9 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
         );
         await router.waitForDeployment();
 
+        // Vet the router before transferring ownership
+        await factory.vetRouter(router.target);
+
         await factory.transferOwnership(router.target);
 
         routeConfig = {
@@ -371,15 +374,21 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
 
     it('should reject direct external call to processUpdateOwnerInstruction', async () => {
         await expect(
-            router.processUpdateOwnerInstruction(portfolioLCA, expectedAccountAddress, {
+            router.processUpdateOwnerInstruction(portfolioLCA, factory.target, {
                 newOwner: addr1.address,
             }),
         ).to.be.reverted;
     });
 
-    it('should reject setSuccessor from non-owner', async () => {
+    it('should reject vetRouter from non-owner', async () => {
         await expect(
-            router.connect(addr1).getFunction('setSuccessor')(addr1.address),
+            router.connect(addr1).getFunction('vetRouter')(addr1.address),
+        ).to.be.revertedWithCustomError(router, 'OwnableUnauthorizedAccount');
+    });
+
+    it('should reject revokeRouter from non-owner', async () => {
+        await expect(
+            router.connect(addr1).getFunction('revokeRouter')(addr1.address),
         ).to.be.revertedWithCustomError(router, 'OwnableUnauthorizedAccount');
     });
 });

@@ -32,6 +32,14 @@ struct UpdateOwnerInstruction {
     address newOwner;
 }
 
+struct EnableRouterInstruction {
+    address router;
+}
+
+struct DisableRouterInstruction {
+    address router;
+}
+
 interface IRemoteAccountRouter {
     event OperationResult(
         string indexed txId,
@@ -43,7 +51,8 @@ interface IRemoteAccountRouter {
         bytes reason
     );
 
-    event SuccessorSet(address indexed previousSuccessor, address indexed newSuccessor);
+    event RouterVetted(address indexed router);
+    event RouterRevoked(address indexed router);
 
     error SubcallOutOfGas();
     error InvalidInstructionSelector(bytes4 selector);
@@ -51,8 +60,6 @@ interface IRemoteAccountRouter {
     function factory() external view returns (IRemoteAccountFactory);
 
     function permit2() external view returns (IPermit2);
-
-    function successor() external view returns (address);
 
     function processProvideRemoteAccountInstruction(
         string calldata sourceAddress,
@@ -68,7 +75,19 @@ interface IRemoteAccountRouter {
 
     function processUpdateOwnerInstruction(
         string calldata sourceAddress,
-        address expectedAccountAddress,
+        address factoryAddress,
         UpdateOwnerInstruction calldata instruction
+    ) external;
+
+    function processEnableRouterInstruction(
+        string calldata sourceAddress,
+        address factoryAddress,
+        EnableRouterInstruction calldata instruction
+    ) external;
+
+    function processDisableRouterInstruction(
+        string calldata sourceAddress,
+        address factoryAddress,
+        DisableRouterInstruction calldata instruction
     ) external;
 }

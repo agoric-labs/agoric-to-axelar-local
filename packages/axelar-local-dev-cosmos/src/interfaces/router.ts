@@ -92,6 +92,28 @@ export type UpdateOwnerInstruction = AbiParameterToPrimitiveType<{
     components: typeof updateOwnerInstructionComponents;
 }>;
 
+export const enableRouterInstructionComponents = [
+    {
+        name: 'router',
+        type: 'address',
+    },
+] as const satisfies AbiParameter[];
+export type EnableRouterInstruction = AbiParameterToPrimitiveType<{
+    type: 'tuple';
+    components: typeof enableRouterInstructionComponents;
+}>;
+
+export const disableRouterInstructionComponents = [
+    {
+        name: 'router',
+        type: 'address',
+    },
+] as const satisfies AbiParameter[];
+export type DisableRouterInstruction = AbiParameterToPrimitiveType<{
+    type: 'tuple';
+    components: typeof disableRouterInstructionComponents;
+}>;
+
 /**
  * ABI inputs for encoding RouterPayload with encodeAbiParameters.
  */
@@ -119,6 +141,24 @@ export const processUpdateOwnerInstructionInputs = [
         name: 'instruction',
         type: 'tuple',
         components: updateOwnerInstructionComponents,
+    },
+] as const satisfies AbiParameter[];
+
+export const processEnableRouterInstructionInputs = [
+    ...routerProcessSharedInputComponents,
+    {
+        name: 'instruction',
+        type: 'tuple',
+        components: enableRouterInstructionComponents,
+    },
+] as const satisfies AbiParameter[];
+
+export const processDisableRouterInstructionInputs = [
+    ...routerProcessSharedInputComponents,
+    {
+        name: 'instruction',
+        type: 'tuple',
+        components: disableRouterInstructionComponents,
     },
 ] as const satisfies AbiParameter[];
 
@@ -170,6 +210,20 @@ export const remoteAccountAxelarRouterABI = [
         type: 'function',
         name: 'processUpdateOwnerInstruction',
         inputs: processUpdateOwnerInstructionInputs,
+        outputs: [],
+        stateMutability: 'nonpayable',
+    },
+    {
+        type: 'function',
+        name: 'processEnableRouterInstruction',
+        inputs: processEnableRouterInstructionInputs,
+        outputs: [],
+        stateMutability: 'nonpayable',
+    },
+    {
+        type: 'function',
+        name: 'processDisableRouterInstruction',
+        inputs: processDisableRouterInstructionInputs,
         outputs: [],
         stateMutability: 'nonpayable',
     },
@@ -236,7 +290,6 @@ export const remoteAccountFactoryABI = [
         name: 'provideRemoteAccount',
         inputs: [
             { name: 'principalAccount', type: 'string' },
-            { name: 'expectedOwner', type: 'address' },
             { name: 'expectedAddress', type: 'address' },
         ],
         outputs: [{ name: '', type: 'bool' }],
@@ -244,13 +297,9 @@ export const remoteAccountFactoryABI = [
     },
     {
         type: 'function',
-        name: 'provideRemoteAccountForOwner',
-        inputs: [
-            { name: 'principalAccount', type: 'string' },
-            { name: 'owner', type: 'address' },
-            { name: 'expectedAddress', type: 'address' },
-        ],
+        name: 'isAuthorizedCaller',
+        inputs: [{ name: 'caller', type: 'address' }],
         outputs: [{ name: '', type: 'bool' }],
-        stateMutability: 'nonpayable',
+        stateMutability: 'view',
     },
 ] as const satisfies Abi;
