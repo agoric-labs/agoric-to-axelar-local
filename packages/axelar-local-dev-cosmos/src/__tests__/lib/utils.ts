@@ -22,7 +22,6 @@ import { gmpRouterContract, padTxId, predictRemoteAccountAddress } from '../../u
 
 /**
  * Deploy the RemoteAccount implementation and RemoteAccountFactory.
- * The implementation's ownership is renounced to make it inert.
  */
 export const deployRemoteAccountFactory = async (
     principalCaip2: string,

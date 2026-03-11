@@ -100,7 +100,6 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         );
         await router.waitForDeployment();
 
-        // Transfer factory ownership to router
         // Vet the router before transferring ownership
         await factory.vetRouter(router.target);
 
