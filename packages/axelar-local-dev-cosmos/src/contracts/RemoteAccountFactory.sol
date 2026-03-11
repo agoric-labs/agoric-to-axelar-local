@@ -247,6 +247,19 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     }
 
     /**
+     * @notice Disabled — renouncing ownership would brick every RemoteAccount.
+     * @dev All remote accounts delegate authorization through this factory via
+     *      isAuthorizedCaller. If ownership is renounced, owner() becomes
+     *      address(0) and all onlyOwner functions (vetRouter, enableRouter,
+     *      disableRouter, transferOwnership) are permanently locked. Any
+     *      currently enabled routers could never be rotated or disabled,
+     *      and if none are enabled, every account becomes inoperable.
+     */
+    function renounceOwnership() public pure override {
+        revert();
+    }
+
+    /**
      * @notice Create a RemoteAccount clone
      * @dev Deploys an EIP-1167 clone and initializes it with this factory's address.
      * @param principalAccount The principal account string for the RemoteAccount
