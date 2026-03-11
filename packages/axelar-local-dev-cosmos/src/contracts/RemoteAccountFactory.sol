@@ -233,6 +233,9 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
      * @notice Transfer factory ownership to a new owner
      * @dev Overrides Ownable.transferOwnership to require the new owner is vetted.
      *      Setting a new owner automatically enables it.
+     *      XXX The previous owner stays enabled to support concurrent multi-router
+     *      operation. The caller must explicitly disableRouter the old owner via
+     *      GMP if it should no longer be authorized.
      * @param newOwner The address of the new owner (must be vetted)
      */
     function transferOwnership(address newOwner) public override onlyOwner {

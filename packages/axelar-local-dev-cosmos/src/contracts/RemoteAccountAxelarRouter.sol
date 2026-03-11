@@ -239,9 +239,10 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
         // to match the length of the address and minimize gas costs.
         // The transaction id is included in the OperationResult event, allowing a
         // resolver to observe/trace transactions.
-        // Note that the second argument of all functions is `expectedAddress`,
-        // relevant to RemoteAccountFactory and also included in the emitted
-        // OperationResult event.
+        // Note that the second argument of all functions is an address: either the
+        // expected remote account address or the factory address (for admin
+        // operations like EnableRouter, DisableRouter, UpdateOwner).
+        // It is included in the emitted OperationResult event.
 
         bytes4 selector = bytes4(payload[:4]);
         bytes calldata encodedArgs = payload[4:];

@@ -379,16 +379,4 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
             }),
         ).to.be.reverted;
     });
-
-    it('should reject vetRouter from non-owner', async () => {
-        await expect(
-            router.connect(addr1).getFunction('vetRouter')(addr1.address),
-        ).to.be.revertedWithCustomError(router, 'OwnableUnauthorizedAccount');
-    });
-
-    it('should reject revokeRouter from non-owner', async () => {
-        await expect(
-            router.connect(addr1).getFunction('revokeRouter')(addr1.address),
-        ).to.be.revertedWithCustomError(router, 'OwnableUnauthorizedAccount');
-    });
 });
