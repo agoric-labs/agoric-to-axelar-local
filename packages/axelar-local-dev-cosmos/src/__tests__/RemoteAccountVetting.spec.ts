@@ -4,6 +4,7 @@ import { Contract } from 'ethers';
 import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
+import * as helpers from '@nomicfoundation/hardhat-network-helpers';
 import { routed, deployRemoteAccountFactory } from './lib/utils';
 
 describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
@@ -361,5 +362,23 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         });
         const reEnableError = reEnableReceipt.parseOperationError(factory.interface);
         expect(reEnableError?.name).to.equal('RouterNotVetted');
+    });
+
+    // ==================== renounceOwnership ====================
+
+    it('should reject renounceOwnership to prevent bricking all accounts', async () => {
+        // Impersonate the router (factory owner) to call renounceOwnership directly
+        const factoryOwner = await factory.owner();
+        await helpers.impersonateAccount(factoryOwner);
+        await helpers.setBalance(factoryOwner, ethers.parseEther('1'));
+        const routerSigner = await ethers.getSigner(factoryOwner);
+
+        await expect(factory.connect(routerSigner).getFunction('renounceOwnership')()).to.be
+            .reverted;
+
+        await helpers.stopImpersonatingAccount(factoryOwner);
+
+        // Verify ownership is unchanged
+        expect(await factory.owner()).to.equal(factoryOwner);
     });
 });
