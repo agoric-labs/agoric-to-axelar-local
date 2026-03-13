@@ -25,7 +25,7 @@ import { RemoteAccount } from './RemoteAccount.sol';
  *      The factory also maintains a vetted/enabled router map to support
  *      experimental routers alongside the main owner.
  */
-contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
+contract RemoteAccountFactory is IRemoteAccountFactory {
     // Store the principal details of this factory purely for reference
     // Immutable, but cannot be declaratively marked as such because they are strings
     string public factoryPrincipalCaip2;
@@ -35,27 +35,59 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     /// @notice The pre-deployed RemoteAccount implementation that all clones delegate to
     address public immutable implementation;
 
-    /// @dev Routers that have been vetted by the factory owner
-    mapping(address => bool) private _vetted;
-    /// @dev Routers that have been enabled (active) — must be vetted first
-    mapping(address => bool) private _enabled;
+    mapping(address => RouterStatus) private _routerStatus;
+
+    /// @notice The address authorized to vet and revoke routers.
+    /// @dev The vetting authority cannot enable or disable routers, only a
+    //       currently enabled router can. A router cannot be revoked if it is
+    //       still enabled.
+    //       Similarly, changing the vetting authority requires the current
+    //       authority to propose a new address, and an enabled router to
+    //       confirm the change.
+    address public vettingAuthority;
+    address private _pendingVettingAuthority;
 
     /**
      * @param factoryPrincipalCaip2_ The caip2 of the principal for this RemoteAccountFactory
      * @param factoryPrincipalAccount_ The address of the principal for this RemoteAccountFactory
      * @param implementation_ The address of the pre-deployed RemoteAccount implementation contract.
      *        This implementation must have its initializers disabled to ensure it is inert.
+     * @param initialRouter The initial router to enable
+     * @param vettingAuthority_ The address authorized to vet and revoke routers
      */
     constructor(
         string memory factoryPrincipalCaip2_,
         string memory factoryPrincipalAccount_,
-        address implementation_
-    ) Ownable(_msgSender()) {
+        address implementation_,
+        address initialRouter,
+        address vettingAuthority_
+    ) {
         factoryPrincipalCaip2 = factoryPrincipalCaip2_;
         factoryPrincipalAccount = factoryPrincipalAccount_;
-        _principalSalt = keccak256(bytes(factoryPrincipalAccount_));
+        _principalSalt = keccak256(bytes(factoryPrincipalAccount_)); // _getSalt(factoryPrincipalAccount_);
         implementation = implementation_;
-        require(implementation_.code.length > 0, 'Implementation must be a contract');
+        _routerStatus[initialRouter] = RouterStatus.Enabled;
+        emit RouterVetted(initialRouter);
+        emit RouterEnabled(initialRouter);
+        if (vettingAuthority_ == address(0)) {
+            vettingAuthority = msg.sender;
+        } else {
+            vettingAuthority = vettingAuthority_;
+        }
+
+        // The initial router must be vetted and enabled by the constructor since there is no owner to call vetRouter or enableRouter.
+        try RemoteAccount(payable(implementation_)).factory() returns (address implFactory) {
+            if (implFactory != address(0)) {
+                revert('Implementation must be an inert RemoteAccount contract');
+            }
+        } catch {
+            revert('Implementation must be a RemoteAccount contract');
+        }
+        try RemoteAccount(payable(implementation_)).initialize(address(0)) {
+            revert('Implementation must be an inert RemoteAccount contract');
+        } catch {
+            // Expected to revert because the implementation should have initializers disabled
+        }
     }
 
     function _getSalt(string calldata principalAccount) internal pure returns (bytes32) {
@@ -146,19 +178,8 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
     }
 
     /**
-     * @notice Check if a caller is authorized to operate on remote accounts
-     * @dev Returns true if the caller is the current factory owner or an enabled router.
-     * @param caller The address to check
-     * @return True if the caller is authorized
-     */
-    function isAuthorizedCaller(address caller) external view override returns (bool) {
-        return caller == owner() || _enabled[caller];
-    }
-
-    /**
      * @notice Provide a RemoteAccount - creates if new, verifies if exists
      * @dev Idempotent: calling multiple times with same params is safe.
-     *      Only authorized callers (factory owner or enabled routers) can create new accounts.
      *      Since accounts delegate ownership through this factory, there is no
      *      per-account owner to verify — any authorized caller can operate any account.
      * @param principalAccount The principal account string for the RemoteAccount
@@ -175,88 +196,8 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
             return false;
         }
 
-        if (msg.sender != owner() && !_enabled[msg.sender]) {
-            revert UnauthorizedCaller(msg.sender);
-        }
-
         _createRemoteAccount(principalAccount, salt, expectedAddress);
         return true;
-    }
-
-    /**
-     * @notice Mark a router address as vetted (code-approved)
-     * @dev Only the factory owner can vet routers. Vetting does not enable the router.
-     * @param router The router address to vet
-     */
-    function vetRouter(address router) external override onlyOwner {
-        _vetted[router] = true;
-        emit RouterVetted(router);
-    }
-
-    /**
-     * @notice Enable a vetted router to operate on remote accounts
-     * @dev Only the factory owner can enable routers. Router must be vetted first.
-     * @param router The router address to enable
-     */
-    function enableRouter(address router) external override onlyOwner {
-        if (!_vetted[router]) {
-            revert RouterNotVetted(router);
-        }
-        _enabled[router] = true;
-        emit RouterEnabled(router);
-    }
-
-    /**
-     * @notice Disable an enabled router
-     * @dev Only the factory owner can disable routers.
-     * @param router The router address to disable
-     */
-    function disableRouter(address router) external override onlyOwner {
-        _enabled[router] = false;
-        emit RouterDisabled(router);
-    }
-
-    /**
-     * @notice Revoke vetting from a router
-     * @dev Only the factory owner can revoke. Router must be disabled first.
-     * @param router The router address to revoke
-     */
-    function revokeRouter(address router) external override onlyOwner {
-        if (_enabled[router]) {
-            revert RouterStillEnabled(router);
-        }
-        _vetted[router] = false;
-        emit RouterRevoked(router);
-    }
-
-    /**
-     * @notice Transfer factory ownership to a new owner
-     * @dev Overrides Ownable.transferOwnership to require the new owner is vetted.
-     *      Setting a new owner automatically enables it.
-     *      XXX The previous owner stays enabled to support concurrent multi-router
-     *      operation. The caller must explicitly disableRouter the old owner via
-     *      GMP if it should no longer be authorized.
-     * @param newOwner The address of the new owner (must be vetted)
-     */
-    function transferOwnership(address newOwner) public override onlyOwner {
-        if (!_vetted[newOwner]) {
-            revert RouterNotVetted(newOwner);
-        }
-        _enabled[newOwner] = true;
-        super.transferOwnership(newOwner);
-    }
-
-    /**
-     * @notice Disabled — renouncing ownership would brick every RemoteAccount.
-     * @dev All remote accounts delegate authorization through this factory via
-     *      isAuthorizedCaller. If ownership is renounced, owner() becomes
-     *      address(0) and all onlyOwner functions (vetRouter, enableRouter,
-     *      disableRouter, transferOwnership) are permanently locked. Any
-     *      currently enabled routers could never be rotated or disabled,
-     *      and if none are enabled, every account becomes inoperable.
-     */
-    function renounceOwnership() public pure override {
-        revert();
     }
 
     /**
@@ -279,5 +220,124 @@ contract RemoteAccountFactory is Ownable, IRemoteAccountFactory {
         RemoteAccount(payable(newAccountAddress)).initialize(address(this));
 
         emit RemoteAccountCreated(newAccountAddress, principalAccount);
+    }
+
+    /**
+     * @notice Check if a caller is authorized to operate on remote accounts
+     * @dev Returns true if the caller is an enabled router.
+     * @param caller The address to check
+     * @return True if the caller is authorized
+     */
+    function isAuthorizedRouter(address caller) public view override returns (bool) {
+        return _routerStatus[caller] == RouterStatus.Enabled;
+    }
+
+    /**
+     * @notice Check the status of a router
+     * @dev Returns the current status of the router.
+     * @param router The address to check
+     * @return The status of the router
+     */
+    function getRouterStatus(address router) external view override returns (RouterStatus) {
+        return _routerStatus[router];
+    }
+
+    /**
+     * @notice Mark a router address as vetted (code-approved)
+     * @dev Only the vetting authority can vet routers. Vetting does not enable the router.
+     * @param router The router address to vet
+     */
+    function vetRouter(address router) external {
+        if (msg.sender != vettingAuthority) {
+            revert UnauthorizedCaller(msg.sender);
+        }
+        if (_routerStatus[router] == RouterStatus.Unknown) {
+            _routerStatus[router] = RouterStatus.Vetted;
+            emit RouterVetted(router);
+        }
+    }
+
+    /**
+     * @notice Enable a vetted router to operate on remote accounts
+     * @dev Only an enabled router can enable other routers. Router must be vetted first.
+     * @param router The router address to enable
+     */
+    function enableRouter(address router) external override {
+        if (!isAuthorizedRouter(msg.sender)) {
+            revert UnauthorizedCaller(msg.sender);
+        }
+        if (_routerStatus[router] != RouterStatus.Vetted) {
+            if (_routerStatus[router] == RouterStatus.Enabled) {
+                return;
+            }
+            revert RouterNotVetted(router);
+        }
+        _routerStatus[router] = RouterStatus.Enabled;
+        emit RouterEnabled(router);
+    }
+
+    /**
+     * @notice Disable an enabled router
+     * @dev Only an enabled router different from the sender can disable
+     * @param router The router address to disable
+     */
+    function disableRouter(address router) external override {
+        if (router == msg.sender || !isAuthorizedRouter(msg.sender)) {
+            revert UnauthorizedCaller(msg.sender);
+        }
+        if (_routerStatus[router] != RouterStatus.Enabled) {
+            if (_routerStatus[router] == RouterStatus.Vetted) {
+                return;
+            }
+            revert RouterNotEnabled(router);
+        }
+        _routerStatus[router] = RouterStatus.Vetted;
+        emit RouterDisabled(router);
+    }
+
+    /**
+     * @notice Revoke vetting from a router
+     * @dev Only the vetting authority can revoke. Router must be disabled first.
+     * @param router The router address to revoke
+     */
+    function revokeRouter(address router) external {
+        if (msg.sender != vettingAuthority) {
+            revert UnauthorizedCaller(msg.sender);
+        }
+        if (_routerStatus[router] != RouterStatus.Vetted) {
+            if (_routerStatus[router] == RouterStatus.Unknown) {
+                return;
+            }
+            revert RouterNotVetted(router);
+        }
+        delete _routerStatus[router];
+        emit RouterRevoked(router);
+    }
+
+    function proposeVettingAuthorityTransfer(address newVettingAuthority) external {
+        if (msg.sender != vettingAuthority) {
+            revert UnauthorizedCaller(msg.sender);
+        }
+        _pendingVettingAuthority = newVettingAuthority;
+    }
+
+    /**
+     * @notice Confirm transfer of vetting authority to the proposed address
+     * @dev Only an enabled router can confirm.
+     * @param newVettingAuthority The address of the new vetting authority (must be proposed first)
+     */
+    function confirmVettingAuthorityTransfer(address newVettingAuthority) external override {
+        if (!isAuthorizedRouter(msg.sender)) {
+            revert UnauthorizedCaller(msg.sender);
+        }
+        if (newVettingAuthority != _pendingVettingAuthority || newVettingAuthority == address(0)) {
+            revert InvalidVettingAuthority(newVettingAuthority, _pendingVettingAuthority);
+        }
+
+        address previousVettingAuthority = vettingAuthority;
+        vettingAuthority = newVettingAuthority;
+        _pendingVettingAuthority = address(0);
+
+        emit VettingAuthorityTransferred(previousVettingAuthority, newVettingAuthority);
     }
 }

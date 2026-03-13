@@ -5,8 +5,7 @@ import { AxelarExecutable } from '@updated-axelar-network/axelar-gmp-sdk-solidit
 import { Ownable } from '@openzeppelin/contracts/access/Ownable.sol';
 import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
 import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
-import { ImmutableOwnable } from './ImmutableOwnable.sol';
-import { IRemoteAccountRouter, IPermit2, DepositPermit, ProvideRemoteAccountInstruction, RemoteAccountExecuteInstruction, UpdateOwnerInstruction, EnableRouterInstruction, DisableRouterInstruction } from './interfaces/IRemoteAccountRouter.sol';
+import { IRemoteAccountRouter, IPermit2, DepositPermit, ProvideRemoteAccountInstruction, RemoteAccountExecuteInstruction, EnableRouterInstruction, DisableRouterInstruction, ConfirmVettingAuthorityInstruction } from './interfaces/IRemoteAccountRouter.sol';
 
 /**
  * @title RemoteAccountAxelarRouter
@@ -33,7 +32,7 @@ import { IRemoteAccountRouter, IPermit2, DepositPermit, ProvideRemoteAccountInst
  *      a new router. This way a leak of owner credentials does not grant exclusive
  *      access to the router's management mechanism.
  */
-contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemoteAccountRouter {
+contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
     IRemoteAccountFactory public immutable override factory;
     IPermit2 public immutable override permit2;
 
@@ -53,15 +52,13 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
      * @param axelarSourceChain_ The source chain name
      * @param factory_ The RemoteAccountFactory address
      * @param permit2_ The Permit2 contract address
-     * @param owner The address authorized to vet and revoke routers
      */
     constructor(
         address axelarGateway,
         string memory axelarSourceChain_,
         address factory_,
-        address permit2_,
-        address owner
-    ) AxelarExecutable(axelarGateway) ImmutableOwnable(owner) {
+        address permit2_
+    ) AxelarExecutable(axelarGateway) {
         factory = IRemoteAccountFactory(factory_);
         permit2 = IPermit2(permit2_);
 
@@ -138,9 +135,9 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
         if (
             selector != RemoteAccountAxelarRouter.processRemoteAccountExecuteInstruction.selector &&
             selector != RemoteAccountAxelarRouter.processProvideRemoteAccountInstruction.selector &&
-            selector != RemoteAccountAxelarRouter.processUpdateOwnerInstruction.selector &&
             selector != RemoteAccountAxelarRouter.processEnableRouterInstruction.selector &&
-            selector != RemoteAccountAxelarRouter.processDisableRouterInstruction.selector
+            selector != RemoteAccountAxelarRouter.processDisableRouterInstruction.selector &&
+            selector != RemoteAccountAxelarRouter.processConfirmVettingAuthorityInstruction.selector
         ) {
             revert InvalidInstructionSelector(selector);
         }
@@ -241,7 +238,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
         // resolver to observe/trace transactions.
         // Note that the second argument of all functions is an address: either the
         // expected remote account address or the factory address (for admin
-        // operations like EnableRouter, DisableRouter, UpdateOwner).
+        // operations like EnableRouter, DisableRouter, ConfirmVettingAuthority).
         // It is included in the emitted OperationResult event.
 
         bytes4 selector = bytes4(payload[:4]);
@@ -296,6 +293,11 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
         factory.verifyFactoryPrincipalAccount(sourceAddress);
 
         require(instruction.expectedAccountAddress != factoryAddress);
+
+        // NOTE: this allows the factory's principal to provision and deposit
+        // into any remote account without proof that it holds the corresponding
+        // principal account. Unfortunately there are no built-in capabilities
+        // over GMP, and implementing one would require some stateful mechanism.
 
         // Transfer first to avoid expensive creation if deposit fails (e.g. insufficient funds,
         // expired permit).
@@ -360,21 +362,22 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
      *      The new owner must be vetted by the factory.
      * @param sourceAddress The principal account address of the factory
      * @param factoryAddress The expected factory address
-     * @param instruction The decoded UpdateOwnerInstruction
+     * @param instruction The decoded ConfirmVettingAuthorityInstruction
      */
-    function processUpdateOwnerInstruction(
+    function processConfirmVettingAuthorityInstruction(
         string calldata sourceAddress,
         address factoryAddress,
-        UpdateOwnerInstruction calldata instruction
+        ConfirmVettingAuthorityInstruction calldata instruction
     ) external override {
         require(msg.sender == address(this));
 
+        // Check the factory's principal is the source
         if (factoryAddress != address(factory)) {
             revert UnauthorizedCaller(sourceAddress);
         }
-
         factory.verifyFactoryPrincipalAccount(sourceAddress);
-        Ownable(address(factory)).transferOwnership(instruction.newOwner);
+
+        factory.confirmVettingAuthorityTransfer(instruction.authority);
     }
 
     /**
@@ -422,28 +425,5 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
         factory.verifyFactoryPrincipalAccount(sourceAddress);
 
         factory.disableRouter(instruction.router);
-    }
-
-    /**
-     * @notice Vet a router address
-     * @dev Can only be called by the immutable owner.
-     *      This marks a router as vetted in the factory but does not enable it.
-     *      Enabling must be done separately via a GMP message from the Agoric chain.
-     * @param router The address of the router to vet
-     */
-    function vetRouter(address router) external onlyOwner {
-        factory.vetRouter(router);
-        emit RouterVetted(router);
-    }
-
-    /**
-     * @notice Revoke vetting from a router
-     * @dev Can only be called by the immutable owner.
-     *      The router must be disabled first.
-     * @param router The address of the router to revoke
-     */
-    function revokeRouter(address router) external onlyOwner {
-        factory.revokeRouter(router);
-        emit RouterRevoked(router);
     }
 }

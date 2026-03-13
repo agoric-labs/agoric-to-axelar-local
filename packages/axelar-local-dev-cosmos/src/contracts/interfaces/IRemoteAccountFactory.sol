@@ -2,12 +2,20 @@
 pragma solidity ^0.8.20;
 
 interface IRemoteAccountFactory {
+    enum RouterStatus {
+        Unknown, // Could be potentially revoked
+        Vetted,
+        Enabled
+    }
+
     error AddressMismatch(address expected, address actual);
     error InvalidAccountAtAddress(address account);
     error PrincipalAccountMismatch(string expected, string actual);
     error RouterNotVetted(address router);
-    error RouterStillEnabled(address router);
+    error RouterNotEnabled(address router);
     error UnauthorizedCaller(address caller);
+
+    error InvalidVettingAuthority(address requested, address expected);
 
     event RemoteAccountCreated(address indexed accountAddress, string principalAccount);
 
@@ -15,6 +23,11 @@ interface IRemoteAccountFactory {
     event RouterEnabled(address indexed router);
     event RouterDisabled(address indexed router);
     event RouterRevoked(address indexed router);
+
+    event VettingAuthorityTransferred(
+        address indexed previousVettingAuthority,
+        address indexed newVettingAuthority
+    );
 
     function factoryPrincipalCaip2() external view returns (string memory);
 
@@ -36,13 +49,13 @@ interface IRemoteAccountFactory {
         address expectedAddress
     ) external returns (bool created);
 
-    function isAuthorizedCaller(address caller) external view returns (bool);
+    function isAuthorizedRouter(address caller) external view returns (bool);
 
-    function vetRouter(address router) external;
+    function getRouterStatus(address router) external view returns (RouterStatus);
 
     function enableRouter(address router) external;
 
     function disableRouter(address router) external;
 
-    function revokeRouter(address router) external;
+    function confirmVettingAuthorityTransfer(address newVettingAuthority) external;
 }

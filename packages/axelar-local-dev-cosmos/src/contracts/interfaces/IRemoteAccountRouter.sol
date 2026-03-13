@@ -28,16 +28,16 @@ struct RemoteAccountExecuteInstruction {
     ContractCall[] multiCalls;
 }
 
-struct UpdateOwnerInstruction {
-    address newOwner;
-}
-
 struct EnableRouterInstruction {
     address router;
 }
 
 struct DisableRouterInstruction {
     address router;
+}
+
+struct ConfirmVettingAuthorityInstruction {
+    address authority;
 }
 
 interface IRemoteAccountRouter {
@@ -50,9 +50,6 @@ interface IRemoteAccountRouter {
         bool success,
         bytes reason
     );
-
-    event RouterVetted(address indexed router);
-    event RouterRevoked(address indexed router);
 
     error SubcallOutOfGas();
     error InvalidInstructionSelector(bytes4 selector);
@@ -73,12 +70,6 @@ interface IRemoteAccountRouter {
         RemoteAccountExecuteInstruction calldata instruction
     ) external;
 
-    function processUpdateOwnerInstruction(
-        string calldata sourceAddress,
-        address factoryAddress,
-        UpdateOwnerInstruction calldata instruction
-    ) external;
-
     function processEnableRouterInstruction(
         string calldata sourceAddress,
         address factoryAddress,
@@ -89,5 +80,11 @@ interface IRemoteAccountRouter {
         string calldata sourceAddress,
         address factoryAddress,
         DisableRouterInstruction calldata instruction
+    ) external;
+
+    function processConfirmVettingAuthorityInstruction(
+        string calldata sourceAddress,
+        address factoryAddress,
+        ConfirmVettingAuthorityInstruction calldata instruction
     ) external;
 }

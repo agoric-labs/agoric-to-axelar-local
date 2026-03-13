@@ -17,8 +17,9 @@ import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
  *      derived from the principal.
  */
 contract RemoteAccount is Initializable, IRemoteAccount {
-    /// @dev The factory that deployed this clone. Set once during initialize.
-    address private _factory;
+    /// @notice The factory that deployed this clone.
+    /// @dev Set once during initialize.
+    address public factory;
 
     constructor() {
         _disableInitializers();
@@ -26,7 +27,7 @@ contract RemoteAccount is Initializable, IRemoteAccount {
 
     /**
      * @notice Initialize the factory reference for an EIP-1167 clone
-     * @dev Clones do not run constructors, so _factory starts as address(0).
+     * @dev Clones do not run constructors, so factory starts as address(0).
      *      We use the initializer modifier to ensure this function can only be
      *      called once by contracts that weren't constructed. A factory
      *      deploying this contract using proxies must call this function on
@@ -34,24 +35,19 @@ contract RemoteAccount is Initializable, IRemoteAccount {
      * @param factory_ The factory that deployed this clone
      */
     function initialize(address factory_) external initializer {
-        assert(_factory == address(0));
-        _factory = factory_;
-    }
-
-    /// @notice The factory that deployed this clone
-    function factory() external view override returns (address) {
-        return _factory;
+        assert(factory == address(0));
+        factory = factory_;
     }
 
     /**
      * @notice Execute a batch of calls on behalf of the principal
-     * @dev Only callers authorized by the factory can execute calls.
+     * @dev Only routers authorized by the factory can execute calls.
      *      The caller is expected to use the RemoteAccountFactory to
      *      re-derive this account's address from the acting principal.
      * @param calls Array of contract calls to execute
      */
     function executeCalls(ContractCall[] calldata calls) external payable override {
-        if (!IRemoteAccountFactory(_factory).isAuthorizedCaller(msg.sender)) {
+        if (!IRemoteAccountFactory(factory).isAuthorizedRouter(msg.sender)) {
             revert UnauthorizedCaller(msg.sender);
         }
         if (msg.value > 0) {
