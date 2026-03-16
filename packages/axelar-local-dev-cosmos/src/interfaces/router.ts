@@ -81,17 +81,6 @@ export type RemoteAccountExecuteInstruction = AbiParameterToPrimitiveType<{
     components: typeof RemoteAccountExecuteInstructionComponents;
 }>;
 
-export const updateOwnerInstructionComponents = [
-    {
-        name: 'newOwner',
-        type: 'address',
-    },
-] as const satisfies AbiParameter[];
-export type UpdateOwnerInstruction = AbiParameterToPrimitiveType<{
-    type: 'tuple';
-    components: typeof updateOwnerInstructionComponents;
-}>;
-
 export const enableRouterInstructionComponents = [
     {
         name: 'router',
@@ -112,6 +101,17 @@ export const disableRouterInstructionComponents = [
 export type DisableRouterInstruction = AbiParameterToPrimitiveType<{
     type: 'tuple';
     components: typeof disableRouterInstructionComponents;
+}>;
+
+export const confirmVettingAuthorityInstructionComponents = [
+    {
+        name: 'authority',
+        type: 'address',
+    },
+] as const satisfies AbiParameter[];
+export type ConfirmVettingAuthorityInstruction = AbiParameterToPrimitiveType<{
+    type: 'tuple';
+    components: typeof confirmVettingAuthorityInstructionComponents;
 }>;
 
 /**
@@ -135,15 +135,6 @@ export const processRemoteAccountExecuteInstructionInputs = [
     },
 ] as const satisfies AbiParameter[];
 
-export const processUpdateOwnerInstructionInputs = [
-    ...routerProcessSharedInputComponents,
-    {
-        name: 'instruction',
-        type: 'tuple',
-        components: updateOwnerInstructionComponents,
-    },
-] as const satisfies AbiParameter[];
-
 export const processEnableRouterInstructionInputs = [
     ...routerProcessSharedInputComponents,
     {
@@ -159,6 +150,15 @@ export const processDisableRouterInstructionInputs = [
         name: 'instruction',
         type: 'tuple',
         components: disableRouterInstructionComponents,
+    },
+] as const satisfies AbiParameter[];
+
+export const processConfirmVettingAuthorityInstructionInputs = [
+    ...routerProcessSharedInputComponents,
+    {
+        name: 'instruction',
+        type: 'tuple',
+        components: confirmVettingAuthorityInstructionComponents,
     },
 ] as const satisfies AbiParameter[];
 
@@ -208,13 +208,6 @@ export const remoteAccountAxelarRouterABI = [
     },
     {
         type: 'function',
-        name: 'processUpdateOwnerInstruction',
-        inputs: processUpdateOwnerInstructionInputs,
-        outputs: [],
-        stateMutability: 'nonpayable',
-    },
-    {
-        type: 'function',
         name: 'processEnableRouterInstruction',
         inputs: processEnableRouterInstructionInputs,
         outputs: [],
@@ -224,6 +217,13 @@ export const remoteAccountAxelarRouterABI = [
         type: 'function',
         name: 'processDisableRouterInstruction',
         inputs: processDisableRouterInstructionInputs,
+        outputs: [],
+        stateMutability: 'nonpayable',
+    },
+    {
+        type: 'function',
+        name: 'processConfirmVettingAuthorityInstruction',
+        inputs: processConfirmVettingAuthorityInstructionInputs,
         outputs: [],
         stateMutability: 'nonpayable',
     },
@@ -297,7 +297,7 @@ export const remoteAccountFactoryABI = [
     },
     {
         type: 'function',
-        name: 'isAuthorizedCaller',
+        name: 'isAuthorizedRouter',
         inputs: [{ name: 'caller', type: 'address' }],
         outputs: [{ name: '', type: 'bool' }],
         stateMutability: 'view',

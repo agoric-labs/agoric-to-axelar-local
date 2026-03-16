@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import { Clones } from '@openzeppelin/contracts/proxy/Clones.sol';
-import { Ownable } from '@openzeppelin/contracts/access/Ownable.sol';
 import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
 import { RemoteAccount } from './RemoteAccount.sol';
 
@@ -16,14 +15,11 @@ import { RemoteAccount } from './RemoteAccount.sol';
  *      The factory uses the EIP-1167 minimal proxy pattern to deploy
  *      the RemoteAccount contracts as "clones", which delegate all calls to a
  *      pre-deployed RemoteAccount implementation contract.
- *      This factory is ownable, and at any point in time is expected to be
- *      owned by the active representative of that factory principal (such as an
- *      IRemoteAccountRouter).
  *      Remote accounts delegate ownership transitively through this factory:
- *      any caller authorized by the factory (its current owner or an enabled
- *      router) can execute calls on any account created by this factory.
+ *      any enabled router can execute calls on any account created by this
+ *      factory.
  *      The factory also maintains a vetted/enabled router map to support
- *      experimental routers alongside the main owner.
+ *      experimental routers alongside the primary router.
  */
 contract RemoteAccountFactory is IRemoteAccountFactory {
     // Store the principal details of this factory purely for reference
