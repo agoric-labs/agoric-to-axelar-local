@@ -24,6 +24,11 @@ interface IRemoteAccountFactory {
     event RouterDisabled(address indexed router);
     event RouterRevoked(address indexed router);
 
+    event VettingAuthorityTransferProposed(
+        address indexed currentVettingAuthority,
+        address indexed proposedVettingAuthority
+    );
+
     event VettingAuthorityTransferred(
         address indexed previousVettingAuthority,
         address indexed newVettingAuthority

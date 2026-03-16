@@ -315,6 +315,7 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
             revert UnauthorizedCaller(msg.sender);
         }
         _pendingVettingAuthority = newVettingAuthority;
+        emit VettingAuthorityTransferProposed(msg.sender, newVettingAuthority);
     }
 
     /**
