@@ -4,8 +4,7 @@ import { Contract } from 'ethers';
 import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
-import * as helpers from '@nomicfoundation/hardhat-network-helpers';
-import { routed, deployRemoteAccountFactory } from './lib/utils';
+import { routed, deployRemoteAccountFactory, predictDeployAddress } from './lib/utils';
 
 describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
     let owner: HardhatEthersSigner, addr1: HardhatEthersSigner;
@@ -53,10 +52,14 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const MockPermit2Factory = await ethers.getContractFactory('MockPermit2');
         permit2Mock = await MockPermit2Factory.deploy();
 
+        // Predict the router address so the factory can enable it at construction
+        const predictedRouterAddress = await predictDeployAddress(owner, 2);
+
         // Deploy RemoteAccount implementation + RemoteAccountFactory
         factory = await deployRemoteAccountFactory(
             portfolioContractCaip2,
             portfolioContractAccount,
+            predictedRouterAddress,
         );
 
         // Deploy RemoteAccountAxelarRouter
@@ -66,15 +69,8 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
             sourceChain,
             factory.target,
             permit2Mock.target,
-            owner.address, // ownerAuthority
         );
         await router.waitForDeployment();
-
-        // Vet the router before transferring ownership
-        await factory.vetRouter(router.target);
-
-        // Transfer factory ownership to router
-        await factory.transferOwnership(router.target);
 
         routeConfig = {
             sourceChain,
@@ -137,19 +133,20 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         expect(decodedError?.args.actual).to.equal(expectedCorrectAddress);
     });
 
-    it('should be protected from front-running - factory rejects unauthorized callers', async () => {
+    it('should be protected from front-running - account rejects unauthorized callers', async () => {
         const frontRunLCA = 'agoric1frontruntest123456789abcdefghij';
 
-        // Compute the expected address
+        // Anyone can call provideRemoteAccount to create the account
         const expectedAddress = await route(frontRunLCA).getRemoteAccountAddress();
+        await factory.connect(addr1).getFunction('provideRemoteAccount')(
+            frontRunLCA,
+            expectedAddress,
+        );
 
-        // Attacker tries to front-run by calling factory.provideRemoteAccount directly
-        // This should revert because the caller is not authorized
+        // But only authorized routers can operate the created account
+        const account = await ethers.getContractAt('RemoteAccount', expectedAddress);
         await expect(
-            factory.connect(addr1).getFunction('provideRemoteAccount')(
-                frontRunLCA,
-                expectedAddress,
-            ),
+            account.connect(addr1).getFunction('executeCalls')([]),
         ).to.be.revertedWithCustomError(factory, 'UnauthorizedCaller');
     });
 
@@ -176,12 +173,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
             sourceChain,
             factory.target,
             permit2Mock.target,
-            owner.address,
         );
         await secondRouter.waitForDeployment();
 
         // Vet the second router via the current router (factory owner)
-        await router.vetRouter(secondRouter.target);
+        await factory.getFunction('vetRouter')(secondRouter.target);
 
         // Enable the second router via GMP from factory principal
         const enableReceipt = await route(portfolioContractAccount).doEnableRouter({
@@ -190,7 +186,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         enableReceipt.expectOperationSuccess();
 
         // Verify the second router is authorized
-        expect(await factory.isAuthorizedCaller(secondRouter.target)).to.equal(true);
+        expect(await factory.getFunction('isAuthorizedRouter')(secondRouter.target)).to.equal(true);
 
         // Second router can create and operate accounts
         const secondRoute = routed(secondRouter, routeConfig);

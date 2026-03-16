@@ -6,7 +6,7 @@ import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { gmpRouterContract, padTxId, contractWithCallMetadata } from '../utils/router';
 import { makeEvmContract } from '../utils/evm-facade';
-import { routed, deployRemoteAccountFactory } from './lib/utils';
+import { routed, deployRemoteAccountFactory, predictDeployAddress } from './lib/utils';
 import type { ContractCall } from '../interfaces/router';
 import { multicallAbi } from './interfaces/multicall';
 
@@ -53,10 +53,14 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
         const MockPermit2Factory = await ethers.getContractFactory('MockPermit2');
         permit2Mock = await MockPermit2Factory.deploy();
 
+        // Predict the router address so the factory can enable it at construction
+        const predictedRouterAddress = await predictDeployAddress(owner, 2);
+
         // Deploy RemoteAccount implementation + RemoteAccountFactory
         factory = await deployRemoteAccountFactory(
             portfolioContractCaip2,
             portfolioContractAccount,
+            predictedRouterAddress,
         );
 
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
@@ -65,14 +69,8 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
             sourceChain,
             factory.target,
             permit2Mock.target,
-            owner.address,
         );
         await router.waitForDeployment();
-
-        // Vet the router before transferring ownership
-        await factory.vetRouter(router.target);
-
-        await factory.transferOwnership(router.target);
 
         routeConfig = {
             sourceChain,
@@ -372,10 +370,10 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
         ).to.be.reverted;
     });
 
-    it('should reject direct external call to processUpdateOwnerInstruction', async () => {
+    it('should reject direct external call to processEnableRouterInstruction', async () => {
         await expect(
-            router.processUpdateOwnerInstruction(portfolioLCA, factory.target, {
-                newOwner: addr1.address,
+            router.processEnableRouterInstruction(portfolioLCA, factory.target, {
+                router: addr1.address,
             }),
         ).to.be.reverted;
     });

@@ -21,18 +21,37 @@ import { gmpRouterContract, padTxId, predictRemoteAccountAddress } from '../../u
 // ==================== RemoteAccount Helpers ====================
 
 /**
+ * Predict the address of a contract deployed at a future nonce offset.
+ */
+export const predictDeployAddress = async (
+    deployer: { address: string },
+    nonceOffset: number = 0,
+) => {
+    const nonce = await ethers.provider.getTransactionCount(deployer.address);
+    return ethers.getCreateAddress({ from: deployer.address, nonce: nonce + nonceOffset });
+};
+
+/**
  * Deploy the RemoteAccount implementation and RemoteAccountFactory.
  */
 export const deployRemoteAccountFactory = async (
     principalCaip2: string,
     principalAccount: string,
+    initialRouter: string,
+    vettingAuthority: string = ethers.ZeroAddress,
 ) => {
     const RemoteAccountContract = await ethers.getContractFactory('RemoteAccount');
     const impl = await RemoteAccountContract.deploy();
     await impl.waitForDeployment();
 
     const FactoryContract = await ethers.getContractFactory('RemoteAccountFactory');
-    const factory = await FactoryContract.deploy(principalCaip2, principalAccount, impl.target);
+    const factory = await FactoryContract.deploy(
+        principalCaip2,
+        principalAccount,
+        impl.target,
+        initialRouter,
+        vettingAuthority,
+    );
     await factory.waitForDeployment();
     return factory;
 };
