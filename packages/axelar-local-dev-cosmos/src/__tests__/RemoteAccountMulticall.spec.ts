@@ -12,6 +12,7 @@ import {
     computeRemoteAccountAddress,
     deployRemoteAccountFactory,
     ParsedLog,
+    predictDeployAddress,
     routed,
 } from './lib/utils';
 import { multicallAbi } from './interfaces/multicall';
@@ -83,10 +84,14 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const MockPermit2Factory = await ethers.getContractFactory('MockPermit2');
         permit2Mock = await MockPermit2Factory.deploy();
 
+        // Predict the router address so the factory can enable it at construction
+        const predictedRouterAddress = await predictDeployAddress(owner, 2);
+
         // Deploy RemoteAccount implementation + RemoteAccountFactory
         factory = await deployRemoteAccountFactory(
             portfolioContractCaip2,
             portfolioContractAccount,
+            predictedRouterAddress,
         );
 
         // Deploy RemoteAccountAxelarRouter
@@ -96,14 +101,8 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
             sourceChain,
             factory.target,
             permit2Mock.target,
-            owner.address, // ownerAuthority
         );
         await router.waitForDeployment();
-
-        // Vet the router before transferring ownership
-        await factory.vetRouter(router.target);
-
-        await factory.transferOwnership(router.target);
 
         // Deploy Multicall target for tests
         const MulticallFactory = await ethers.getContractFactory('Multicall');
@@ -306,7 +305,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         expect(decodedError?.name).to.equal('AddressMismatch');
     });
 
-    it('should transfer factory ownership to vetted router via UpdateOwner', async () => {
+    it('should enable vetted router and allow it to operate accounts', async () => {
         // Deploy a new router
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         const newRouter = await RouterContract.deploy(
@@ -314,27 +313,20 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
             sourceChain,
             factory.target,
             permit2Mock.target,
-            owner.address,
         );
         await newRouter.waitForDeployment();
 
         // Vet the new router via the current router's owner
-        await router.vetRouter(newRouter.target);
+        await factory.getFunction('vetRouter')(newRouter.target);
 
-        // Verify factory is currently owned by old router
-        expect(await factory.owner()).to.equal(router.target);
-
-        // Transfer factory ownership via UpdateOwner from factory principal
+        // Enable the new router via GMP from factory principal
         (
-            await route(portfolioContractAccount).doUpdateOwner({
-                newOwner: newRouter.target as `0x${string}`,
+            await route(portfolioContractAccount).doEnableRouter({
+                router: newRouter.target as `0x${string}`,
             })
         ).expectOperationSuccess();
 
-        // Verify factory ownership was transferred
-        expect(await factory.owner()).to.equal(newRouter.target);
-
-        // New router (now factory owner) can create and operate accounts
+        // New router can create and operate accounts
         const newRoute = routed(newRouter, routeConfig);
         const newPortfolioLCA = 'agoric1newportfolio123456789abcdefghijk';
 
@@ -344,7 +336,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
             })
         ).expectOperationSuccess();
 
-        // New router can execute multicalls on existing accounts (O(1) migration)
+        // New router can execute multicalls on existing accounts
         const multiCalls2: ContractCall[] = [multicallContract.setValue(999n)];
         const receipt3 = await newRoute(portfolioLCA).doRemoteAccountExecute({
             multiCalls: multiCalls2,
@@ -352,40 +344,15 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         receipt3.expectOperationSuccess();
         expect(await multicallTarget.getValue()).to.equal(999n);
 
-        // Old router is still enabled (was auto-enabled as previous owner)
-        // It can still operate accounts until explicitly disabled
+        // Old router is still enabled and can still operate alongside new router
         const anotherLCA = 'agoric1anotherportfolio123456789abcdefg';
         const receiptStillEnabled = await route(anotherLCA).doRemoteAccountExecute({
             multiCalls: [],
         });
         receiptStillEnabled.expectOperationSuccess();
-
-        // Disable old router via new router
-        const newRoute2 = routed(newRouter, routeConfig);
-        (
-            await newRoute2(portfolioContractAccount).doDisableRouter({
-                router: router.target as `0x${string}`,
-            })
-        ).expectOperationSuccess();
-
-        // Now old router cannot operate
-        const yetAnotherLCA = 'agoric1yetanotherlca12345678901234abcde';
-        const receiptFail = await route(yetAnotherLCA).doRemoteAccountExecute({
-            multiCalls: [],
-        });
-        const decodedError = receiptFail.parseOperationError(factory.interface);
-        expect(decodedError?.name).to.equal('UnauthorizedCaller');
     });
 
     it('should allow enabled experimental router to operate alongside main router', async () => {
-        // Get current factory owner
-        const currentFactoryOwner = await factory.owner();
-        const currentRouter = await ethers.getContractAt(
-            'RemoteAccountAxelarRouter',
-            currentFactoryOwner,
-        );
-        const currentRoute = routed(currentRouter, routeConfig);
-
         // Deploy experimental router
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         const expRouter = await RouterContract.deploy(
@@ -393,14 +360,13 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
             sourceChain,
             factory.target,
             permit2Mock.target,
-            owner.address,
         );
         await expRouter.waitForDeployment();
 
         // Vet and enable the experimental router
-        await currentRouter.vetRouter(expRouter.target);
+        await factory.getFunction('vetRouter')(expRouter.target);
         (
-            await currentRoute(portfolioContractAccount).doEnableRouter({
+            await route(portfolioContractAccount).doEnableRouter({
                 router: expRouter.target as `0x${string}`,
             })
         ).expectOperationSuccess();
@@ -414,37 +380,19 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
 
         // Main router can also still operate
         const mainLCA = 'agoric1mainroutertest12345678901234abcde';
-        (
-            await currentRoute(mainLCA).doRemoteAccountExecute({ multiCalls: [] })
-        ).expectOperationSuccess();
+        (await route(mainLCA).doRemoteAccountExecute({ multiCalls: [] })).expectOperationSuccess();
     });
 
-    it('should reject UpdateOwner when newOwner is not vetted', async () => {
-        // Get current factory owner
-        const currentFactoryOwner = await factory.owner();
-        const currentRouter = await ethers.getContractAt(
-            'RemoteAccountAxelarRouter',
-            currentFactoryOwner,
-        );
-        const currentRoute = routed(currentRouter, routeConfig);
-
-        // Try to transfer to an un-vetted address
-        const receipt = await currentRoute(portfolioContractAccount).doUpdateOwner({
-            newOwner: addr1.address as `0x${string}`,
+    it('should reject enabling an un-vetted router', async () => {
+        // Try to enable an un-vetted address
+        const receipt = await route(portfolioContractAccount).doEnableRouter({
+            router: addr1.address as `0x${string}`,
         });
         const decodedError = receipt.parseOperationError(factory.interface);
         expect(decodedError?.name).to.equal('RouterNotVetted');
     });
 
-    it('should reject UpdateOwner from non-factory-principal', async () => {
-        // Get current factory owner
-        const currentFactoryOwner = await factory.owner();
-        const currentRouter = await ethers.getContractAt(
-            'RemoteAccountAxelarRouter',
-            currentFactoryOwner,
-        );
-        const currentRoute = routed(currentRouter, routeConfig);
-
+    it('should reject enableRouter from non-factory-principal', async () => {
         // Deploy and vet a target router
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         const targetRouter = await RouterContract.deploy(
@@ -452,15 +400,13 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
             sourceChain,
             factory.target,
             permit2Mock.target,
-            owner.address,
         );
         await targetRouter.waitForDeployment();
-        await currentRouter.vetRouter(targetRouter.target);
+        await factory.getFunction('vetRouter')(targetRouter.target);
 
-        // Try UpdateOwner from a non-principal source (portfolioLCA resolves to account address, not factory)
-        // The router checks factoryAddress != address(factory), so this should fail with UnauthorizedCaller
-        const receipt = await currentRoute(portfolioLCA).doUpdateOwner({
-            newOwner: targetRouter.target as `0x${string}`,
+        // Try enableRouter from a non-principal source (portfolioLCA resolves to account address, not factory)
+        const receipt = await route(portfolioLCA).doEnableRouter({
+            router: targetRouter.target as `0x${string}`,
         });
         const decodedError = receipt.parseOperationError(router.interface);
         expect(decodedError?.name).to.equal('UnauthorizedCaller');
