@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import { AxelarExecutable } from '@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol';
-import { Ownable } from '@openzeppelin/contracts/access/Ownable.sol';
 import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
 import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
 import { IRemoteAccountRouter, IPermit2, DepositPermit, ProvideRemoteAccountInstruction, RemoteAccountExecuteInstruction, EnableRouterInstruction, DisableRouterInstruction, ConfirmVettingAuthorityInstruction } from './interfaces/IRemoteAccountRouter.sol';
@@ -18,19 +17,14 @@ import { IRemoteAccountRouter, IPermit2, DepositPermit, ProvideRemoteAccountInst
  *
  *      The factory maintains a vetted/enabled router map with two-factor
  *      authorization:
- *      - Vetting: the ImmutableOwnable owner can vet
+ *      - Vetting: the factory's vetting authority can vet
  *        or revoke routers via direct calls
  *      - Enabling (operational switch): the Agoric chain principal can
  *        enable or disable vetted routers via GMP messages
  *
  *      Migration to a new router is done in 2 steps:
- *      1. the owner of this router vets and the principal enables the new router
- *      2. the principal account of the factory sends this router an UpdateOwner
- *         instruction to transfer factory ownership to the new (vetted) router
- *
- *      We use an immutable owner for the router, changing owner requires deploying
- *      a new router. This way a leak of owner credentials does not grant exclusive
- *      access to the router's management mechanism.
+ *      1. the vetting authority vets and the principal enables the new router
+ *      2. the principal optionally disables the old router via GMP
  */
 contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
     IRemoteAccountFactory public immutable override factory;

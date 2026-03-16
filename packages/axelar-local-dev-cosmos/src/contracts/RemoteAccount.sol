@@ -10,8 +10,8 @@ import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
  * @notice A wallet contract representing a principal account, controlled
  *         through the factory's authorized callers (such as an IRemoteAccountRouter).
  * @dev Ownership is resolved transitively through the factory that deployed this
- *      clone: any caller authorized by the factory (its owner or an enabled
- *      router) can execute calls on this account.
+ *      clone: any router enabled by the factory can execute calls on this
+ *      account.
  *      This contract does not track its principal directly but instead relies
  *      on RemoteAccountFactory to deploy it at a predictable CREATE2 address
  *      derived from the principal.
