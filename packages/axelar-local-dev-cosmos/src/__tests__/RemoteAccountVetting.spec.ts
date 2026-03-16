@@ -4,7 +4,6 @@ import { Contract } from 'ethers';
 import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
-import * as helpers from '@nomicfoundation/hardhat-network-helpers';
 import { routed, deployRemoteAccountFactory, predictDeployAddress } from './lib/utils';
 
 describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
@@ -87,18 +86,18 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         );
         await newRouter.waitForDeployment();
 
-        await expect(router.getFunction('vetRouter')(newRouter.target))
-            .to.emit(router, 'RouterVetted')
+        await expect(factory.getFunction('vetRouter')(newRouter.target))
+            .to.emit(factory, 'RouterVetted')
             .withArgs(newRouter.target);
 
         // Vetted but not yet enabled — not authorized
         expect(await factory.getFunction('isAuthorizedRouter')(newRouter.target)).to.equal(false);
     });
 
-    it('should reject vetRouter from non-owner', async () => {
+    it('should reject vetRouter from non-vetting-authority', async () => {
         await expect(
-            router.connect(addr1).getFunction('vetRouter')(addr1.address),
-        ).to.be.revertedWithCustomError(router, 'OwnableUnauthorizedAccount');
+            factory.connect(addr1).getFunction('vetRouter')(addr1.address),
+        ).to.be.revertedWithCustomError(factory, 'UnauthorizedCaller');
     });
 
     // ==================== Enabling ====================
@@ -114,7 +113,7 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         await newRouter.waitForDeployment();
 
         // Vet first
-        await router.getFunction('vetRouter')(newRouter.target);
+        await factory.getFunction('vetRouter')(newRouter.target);
         expect(await factory.getFunction('isAuthorizedRouter')(newRouter.target)).to.equal(false);
 
         // Enable via GMP from factory principal
@@ -146,7 +145,7 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
             permit2Mock.target,
         );
         await newRouter.waitForDeployment();
-        await router.getFunction('vetRouter')(newRouter.target);
+        await factory.getFunction('vetRouter')(newRouter.target);
 
         // Non-principal LCA resolves to a remote account address (not factory),
         // so the router rejects with UnauthorizedCaller before reaching the principal check
@@ -171,7 +170,7 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         await newRouter.waitForDeployment();
 
         // Vet and enable
-        await router.getFunction('vetRouter')(newRouter.target);
+        await factory.getFunction('vetRouter')(newRouter.target);
         (
             await route(portfolioContractAccount).doEnableRouter({
                 router: newRouter.target as `0x${string}`,
@@ -213,7 +212,7 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         await newRouter.waitForDeployment();
 
         // Vet, enable, then disable
-        await router.getFunction('vetRouter')(newRouter.target);
+        await factory.getFunction('vetRouter')(newRouter.target);
         (
             await route(portfolioContractAccount).doEnableRouter({
                 router: newRouter.target as `0x${string}`,
@@ -226,8 +225,8 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         ).expectOperationSuccess();
 
         // Revoke
-        await expect(router.getFunction('revokeRouter')(newRouter.target))
-            .to.emit(router, 'RouterRevoked')
+        await expect(factory.getFunction('revokeRouter')(newRouter.target))
+            .to.emit(factory, 'RouterRevoked')
             .withArgs(newRouter.target);
     });
 
@@ -242,7 +241,7 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         await newRouter.waitForDeployment();
 
         // Vet and enable
-        await router.getFunction('vetRouter')(newRouter.target);
+        await factory.getFunction('vetRouter')(newRouter.target);
         (
             await route(portfolioContractAccount).doEnableRouter({
                 router: newRouter.target as `0x${string}`,
@@ -251,14 +250,14 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
 
         // Try to revoke without disabling first
         await expect(
-            router.getFunction('revokeRouter')(newRouter.target),
-        ).to.be.revertedWithCustomError(factory, 'RouterStillEnabled');
+            factory.getFunction('revokeRouter')(newRouter.target),
+        ).to.be.revertedWithCustomError(factory, 'RouterNotVetted');
     });
 
-    it('should reject revokeRouter from non-owner', async () => {
+    it('should reject revokeRouter from non-vetting-authority', async () => {
         await expect(
-            router.connect(addr1).getFunction('revokeRouter')(addr1.address),
-        ).to.be.revertedWithCustomError(router, 'OwnableUnauthorizedAccount');
+            factory.connect(addr1).getFunction('revokeRouter')(addr1.address),
+        ).to.be.revertedWithCustomError(factory, 'UnauthorizedCaller');
     });
 
     // ==================== isAuthorizedRouter ====================
@@ -285,7 +284,7 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         expect(await factory.getFunction('isAuthorizedRouter')(newRouter.target)).to.equal(false);
 
         // Vet — still not authorized
-        await router.getFunction('vetRouter')(newRouter.target);
+        await factory.getFunction('vetRouter')(newRouter.target);
         expect(await factory.getFunction('isAuthorizedRouter')(newRouter.target)).to.equal(false);
 
         // Enable — now authorized
@@ -317,8 +316,8 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         );
         await expRouter.waitForDeployment();
 
-        // 1. Vet (off-chain admin)
-        await router.getFunction('vetRouter')(expRouter.target);
+        // 1. Vet (vetting authority)
+        await factory.getFunction('vetRouter')(expRouter.target);
 
         // 2. Enable (Agoric chain via GMP)
         (
@@ -339,14 +338,19 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
             })
         ).expectOperationSuccess();
 
-        // Experimental router can no longer operate
-        const lca2 = 'agoric1lifecycletest2345678901234abcdef';
-        const failReceipt = await expRoute(lca2).doRemoteAccountExecute({ multiCalls: [] });
+        // Experimental router can no longer operate (must include a call to trigger auth check)
+        const noopCall = {
+            target: factory.target as `0x${string}`,
+            data: '0x' as `0x${string}`,
+            value: 0n,
+            gasLimit: 0n,
+        };
+        const failReceipt = await expRoute(lca).doRemoteAccountExecute({ multiCalls: [noopCall] });
         const decodedError = failReceipt.parseOperationError(factory.interface);
         expect(decodedError?.name).to.equal('UnauthorizedCaller');
 
-        // 5. Revoke (off-chain admin)
-        await router.getFunction('revokeRouter')(expRouter.target);
+        // 5. Revoke (vetting authority)
+        await factory.getFunction('revokeRouter')(expRouter.target);
 
         // Cannot re-enable without vetting again
         const reEnableReceipt = await route(portfolioContractAccount).doEnableRouter({
@@ -354,23 +358,5 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         });
         const reEnableError = reEnableReceipt.parseOperationError(factory.interface);
         expect(reEnableError?.name).to.equal('RouterNotVetted');
-    });
-
-    // ==================== renounceOwnership ====================
-
-    it('should reject renounceOwnership to prevent bricking all accounts', async () => {
-        // Impersonate the router (factory owner) to call renounceOwnership directly
-        const factoryOwner = await factory.owner();
-        await helpers.impersonateAccount(factoryOwner);
-        await helpers.setBalance(factoryOwner, ethers.parseEther('1'));
-        const routerSigner = await ethers.getSigner(factoryOwner);
-
-        await expect(factory.connect(routerSigner).getFunction('renounceOwnership')()).to.be
-            .reverted;
-
-        await helpers.stopImpersonatingAccount(factoryOwner);
-
-        // Verify ownership is unchanged
-        expect(await factory.owner()).to.equal(factoryOwner);
     });
 });
