@@ -65,22 +65,27 @@ graph TB
         PROTO[DeFi Protocols]
     end
 
+    VA[Vetting Authority<br/>EVM multisig]
+
     YMAX --> AXL
     LCA1 --> AXL
     LCA2 --> AXL
     LCAn --> AXL
     AXL -->|_execute| PR
     PR -->|provideRemoteAccount| RAF
+    PR -->|"enableRouter |<br>disableRouter |<br>confirmVettingAuthorityTransfer"| RAF
     RAF ==>|creates| RA1
     RAF ==>|creates| RA2
     RAF ==>|creates| RAn
     RA1 -.->|delegates to| IMP
     RA2 -.->|delegates to| IMP
     RAn -.->|delegates to| IMP
-    PR -->|"executeCalls |<br>transferOwnership"| RA1
-    PR -->|"executeCalls |<br>transferOwnership"| RA2
-    PR -->|"executeCalls |<br>transferOwnership"| RAn
+    PR -->|executeCalls| RA1
+    PR -->|executeCalls| RA2
+    PR -->|executeCalls| RAn
     PR -.->|permitWitnessTransferFrom| P2
+    VA -->|"vetRouter |<br>revokeRouter |<br>proposeVettingAuthorityTransfer"| RAF
+    IMP -->|checks caller| RAF
     IMP -->|call| PROTO
 
     style PR fill:#ffcccc
@@ -105,21 +110,12 @@ graph TB
     subgraph AxelarExecutable
         AxelarExecutable__execute["_execute<br>(message handler)"]
     end
-    subgraph ImmutableOwnable
-        %% modifiers
-        onlyOwner@{shape: odd}
-        %% state
-        owner@{shape: stored-data, label: "owner: address"}
-    end
     subgraph IRemoteAccountRouter
         IRemoteAccountRouter_factory["factory(): IRemoteAccountFactory"]
         IRemoteAccountRouter_permit2["permit2(): IPermit2"]
         IRemoteAccountRouter_processProvideRemoteAccountInstruction[processProvideRemoteAccountInstruction]
         IRemoteAccountRouter_processRemoteAccountExecuteInstruction[processRemoteAccountExecuteInstruction]
-        IRemoteAccountRouter_processUpdateOwnerInstruction[processUpdateOwnerInstruction]
-        subgraph IRemoteAccountRouter_state[state]
-            successor["successor(): address"]
-        end
+        IRemoteAccountRouter_adminInstructions["processEnableRouterInstruction<br>processDisableRouterInstruction<br>processConfirmVettingAuthorityInstruction"]
         %% events
         OperationResult@{shape: flag}
     end
@@ -133,18 +129,17 @@ graph TB
         processProvideRemoteAccountInstruction_self@{shape: comment, label: "require self-call"}
         processRemoteAccountExecuteInstruction["processRemoteAccountExecuteInstruction<br>override IRemoteAccountRouter"]
         processRemoteAccountExecuteInstruction_self@{shape: comment, label: "require self-call"}
-        processUpdateOwnerInstruction["processUpdateOwnerInstruction<br>override IRemoteAccountRouter"]
-        processUpdateOwnerInstruction_self@{shape: comment, label: "require self-call"}
-        ISFACTORY{for factory}
+        adminInstructions["processEnableRouterInstruction |<br>processDisableRouterInstruction |<br>processConfirmVettingAuthorityInstruction"]
+        adminInstructions_self@{shape: comment, label: "require self-call"}
+        VERIFY_PRINCIPAL@{shape: text, label: "verify factory<br>principal"}
         DEP@{shape: text, label: "Permit2 Integration"}
         PROV@{shape: text, label: "account creation/<br>verification"}
         MULTI@{shape: text, label: "account use"}
-        setSuccessor
+        ADMIN_CALL@{shape: text, label: "factory admin call<br>(enableRouter |<br>disableRouter |<br>confirmVettingAuthorityTransfer)"}
         subgraph state
             factory@{shape: stored-data, label: "factory: IRemoteAccountFactory<br>override IRemoteAccountRouter"}
             permit2@{shape: stored-data, label: "permit2: IPermit2<br>override IRemoteAccountRouter"}
             axelarSourceChainHash@{shape: stored-data, label: "axelarSourceChainHash: bytes32"}
-            successor@{shape: stored-data, label: "successor: address"}
         end
     end
 
@@ -153,58 +148,50 @@ graph TB
     %% inheritance
     RemoteAccountAxelarRouter -.->|is| AxelarExecutable
     RemoteAccountAxelarRouter -.->|is| IRemoteAccountRouter
-    RemoteAccountAxelarRouter -.->|is| ImmutableOwnable
 
     %% operation
     START --> _execute
-    START --> setSuccessor
     _execute -->|"[1]"| VALIDATE
     _execute -->|"[2]"| DECODE
     DECODE -.-> processProvideRemoteAccountInstruction
     DECODE -.-> processRemoteAccountExecuteInstruction
-    DECODE -.-> processUpdateOwnerInstruction
+    DECODE -.-> adminInstructions
     processProvideRemoteAccountInstruction --> processProvideRemoteAccountInstruction_self
-    processProvideRemoteAccountInstruction -.->|"[1] effect deposit"| DEP
-    processProvideRemoteAccountInstruction -->|"[2] provide account"| PROV
-    processRemoteAccountExecuteInstruction -->|"[1] provide account"| PROV
+    processProvideRemoteAccountInstruction -->|"[1]"| VERIFY_PRINCIPAL
+    processProvideRemoteAccountInstruction -.->|"[2] effect deposit"| DEP
+    processProvideRemoteAccountInstruction -->|"[3] provide account"| PROV
     processRemoteAccountExecuteInstruction --> processRemoteAccountExecuteInstruction_self
+    processRemoteAccountExecuteInstruction -->|"[1] provide account"| PROV
     processRemoteAccountExecuteInstruction -->|"[2] send calls"| MULTI
+    adminInstructions --> adminInstructions_self
+    adminInstructions -->|"[1]"| VERIFY_PRINCIPAL
+    adminInstructions -->|"[2]"| ADMIN_CALL
     _execute -->|"[3] emit"| OperationResult
 
     %% state/dependency access
     VALIDATE -->|checks| axelarSourceChainHash
     DEP -->|call<br>permitWitnessTransferFrom| permit2
+    VERIFY_PRINCIPAL -->|call verifyFactoryPrincipalAccount| factory
     PROV -->|call provideRemoteAccount| factory
     MULTI --> |call executeCalls| RAn
-    processUpdateOwnerInstruction --> processUpdateOwnerInstruction_self
-    processUpdateOwnerInstruction --> ISFACTORY
-    ISFACTORY -->|"[2] call provideRemoteAccount"| factory
-    ISFACTORY -->|"[3] call transferOwnership"| RAn
-    ISFACTORY -->|"[2] verify principal"| factory
-    ISFACTORY -->|"[3] call transferOwnership"| factory
-    processUpdateOwnerInstruction -->|"[1] checks"| successor
-    setSuccessor -->|updates| successor
-    setSuccessor -->|modifier| onlyOwner
-    onlyOwner -->|checks| owner
+    ADMIN_CALL -->|call| factory
 
     style _execute fill:#ffe6e6
-    style setSuccessor fill:#ffe6e6
     style processProvideRemoteAccountInstruction fill:#fff0e6
     style processRemoteAccountExecuteInstruction fill:#fff0e6
-    style processUpdateOwnerInstruction fill:#fff0e6
+    style adminInstructions fill:#fff0e6
     style RAn fill:#ccccff
 ```
 
 **Key Components**:
 
-- **\_execute**: Validates source chain, decodes the RouterInstruction selector + payload
+- **\_execute**: Validates source chain, decodes the instruction selector + payload, dispatches to processor
 - **processProvideRemoteAccountInstruction**: Atomically redeems an optional deposit permit and provisions/verifies a RemoteAccount via the factory
 - **processRemoteAccountExecuteInstruction**: Atomically provisions/verifies a RemoteAccount and executes its multicall batch
-- **processUpdateOwnerInstruction**: Transfers factory or remote account ownership to a new router
+- **processEnableRouterInstruction / processDisableRouterInstruction / processConfirmVettingAuthorityInstruction**: Admin instructions that verify the factory principal, then call the corresponding factory method (requires factory principal)
 - **Permit2 Integration**: Transfers tokens to RemoteAccount via Permit2 signature-based transfers
 - **account creation/verification**: Creates or verifies RemoteAccount via factory
 - **account use**: Instructs RemoteAccount to execute arbitrary multicalls
-- **setSuccessor**: Enables ownership transfer to new router versions
 
 ---
 
@@ -218,15 +205,6 @@ graph TB
         %% modifiers
         initializer@{shape: odd}
     end
-    subgraph Ownable
-        _owner
-        owner
-        transferOwnership
-        renounceOwnership
-        _transferOwnership
-        %% modifiers
-        onlyOwner@{shape: odd}
-    end
     subgraph IRemoteAccount
         IRemoteAccount_executeCalls[executeCalls]
     end
@@ -236,12 +214,16 @@ graph TB
         CTOR[constructor]
         initialize
         executeCalls
+        AUTH_CHECK@{shape: text, label: "check factory.isAuthorizedRouter"}
+        subgraph state
+            factory_ref@{shape: stored-data, label: "factory: address"}
+        end
     end
 
     EXTERNAL[target contracts]
+    FACTORY[RemoteAccountFactory]
 
     %% inheritance
-    RemoteAccount -.->|is| Ownable
     RemoteAccount -.->|is| Initializable
     RemoteAccount -.->|is| IRemoteAccount
     executeCalls -.->|override| IRemoteAccount_executeCalls
@@ -250,39 +232,29 @@ graph TB
     START --> CTOR
     START --> initialize
     START --> executeCalls
-    START --> transferOwnership
-    START --> renounceOwnership
-    START --> owner
     CTOR -->|calls| _disableInitializers
     initialize -->|modifier| initializer
-    initialize -->|calls| _transferOwnership
-    executeCalls -->|modifier| onlyOwner
-    executeCalls -.->|loops & calls| EXTERNAL
-    transferOwnership -->|modifier| onlyOwner
-    transferOwnership -->|calls| _transferOwnership
-    renounceOwnership -->|modifier| onlyOwner
-    renounceOwnership -->|calls| _transferOwnership
-    owner -->|reads| _owner
+    initialize -->|sets| factory_ref
+    executeCalls -->|"[1]"| AUTH_CHECK
+    executeCalls -.->|"[2] loops & calls"| EXTERNAL
 
-    %% state access
-    onlyOwner -->|checks| _owner
-    _transferOwnership -->|updates| _owner
+    %% state/dependency access
+    AUTH_CHECK -->|call isAuthorizedRouter| FACTORY
     initializer -->|checks and updates| _initialized
     _disableInitializers -->|updates| _initialized
 
-    style owner fill:#ffe6e6
     style executeCalls fill:#ffe6e6
     style initialize fill:#ffe6e6
-    style transferOwnership fill:#ffe6e6
-    style renounceOwnership fill:#ffe6e6
 ```
 
 **Key Components**:
 
-- **initialize**: One-time ownership initialization for clone instances
-- **executeCalls**: Validates owner, then atomically executes array of contract calls
+- **initialize**: One-time factory reference initialization for clone instances
+- **executeCalls**: Checks authorization via `factory.isAuthorizedRouter(msg.sender)`, then atomically executes array of contract calls
 
-## C4 Level 3: Component Diagram - RemoteAccountFactory
+## C4 Level 3: Component Diagrams - RemoteAccountFactory
+
+### Remote Account Operations
 
 ```mermaid
 graph TB
@@ -290,19 +262,12 @@ graph TB
         cloneDeterministic
         predictDeterministicAddress
     end
-    subgraph Ownable
-        owner
-        transferOwnership
-        renounceOwnership
-        %% modifiers
-        onlyOwner@{shape: odd}
-    end
     subgraph IRemoteAccountFactory
         IRemoteAccountFactory_verifyFactoryPrincipalAccount[verifyFactoryPrincipalAccount]
         IRemoteAccountFactory_getRemoteAccountAddress[getRemoteAccountAddress]
         IRemoteAccountFactory_verifyRemoteAccount[verifyRemoteAccount]
         IRemoteAccountFactory_provideRemoteAccount[provideRemoteAccount]
-        IRemoteAccountFactory_provideRemoteAccountForOwner[provideRemoteAccountForOwner]
+        IRemoteAccountFactory_isAuthorizedRouter[isAuthorizedRouter]
         %% events
         RemoteAccountCreated@{shape: flag}
     end
@@ -314,14 +279,12 @@ graph TB
 
         verifyRemoteAccount["verifyRemoteAccount<br>override IRemoteAccountFactory"]
         _verifyRemoteAccountAddress
-        _verifyRemoteAccountOwner
 
         provideRemoteAccount["provideRemoteAccount<br>override IRemoteAccountFactory"]
-        provideRemoteAccountForOwner["provideRemoteAccountForOwner<br>override IRemoteAccountFactory"]
-        SAME_OWNER{owner matches<br>expected owner?}
-        _createRemoteAccountForOwner
+        _createRemoteAccount
         ACCOUNT_EXISTS{account exists?}
-        ACCOUNT_EXISTS_FOR_OWNER{"account exists?<br>(ForOwner)"}
+
+        isAuthorizedRouter["isAuthorizedRouter<br>override IRemoteAccountFactory"]
 
         CODE_EXISTS["checks code exists"]
         _getSalt[_getSalt<br>deterministic by principal account string]
@@ -330,39 +293,29 @@ graph TB
             factoryPrincipalAccount@{shape: stored-data}
             _principalSalt@{shape: stored-data}
             implementation@{shape: stored-data}
+            _routerStatus@{shape: stored-data, label: "_routerStatus: mapping<br>(Unknown | Vetted | Enabled)"}
         end
     end
 
     RAn[RemoteAccount N]
 
     %% inheritance
-    RemoteAccountFactory -.->|is| Ownable
     RemoteAccountFactory -.->|is| IRemoteAccountFactory
 
     %% operation
     START --> provideRemoteAccount
-    START --> provideRemoteAccountForOwner
     START --> verifyRemoteAccount
     START --> getRemoteAccountAddress
-    START --> transferOwnership
-    START --> renounceOwnership
+    START --> isAuthorizedRouter
+
     provideRemoteAccount --> _verifyRemoteAccountAddress
     provideRemoteAccount --> CODE_EXISTS
     provideRemoteAccount --> ACCOUNT_EXISTS
-    ACCOUNT_EXISTS -.->|yes: calls| _verifyRemoteAccountOwner
-    ACCOUNT_EXISTS -.->|no| SAME_OWNER
-    SAME_OWNER -->|yes: calls| _createRemoteAccountForOwner
-
-    provideRemoteAccountForOwner -->|modifier| onlyOwner
-    provideRemoteAccountForOwner --> _verifyRemoteAccountAddress
-    provideRemoteAccountForOwner --> CODE_EXISTS
-    provideRemoteAccountForOwner --> ACCOUNT_EXISTS_FOR_OWNER
-    ACCOUNT_EXISTS_FOR_OWNER -.->|yes: calls| _verifyRemoteAccountOwner
-    ACCOUNT_EXISTS_FOR_OWNER -->|no: calls| _createRemoteAccountForOwner
+    ACCOUNT_EXISTS -.->|yes: return false| provideRemoteAccount
+    ACCOUNT_EXISTS -->|no: calls| _createRemoteAccount
 
     verifyRemoteAccount -->|calls| _verifyRemoteAccountAddress
     verifyRemoteAccount --> CODE_EXISTS
-    verifyRemoteAccount -->|calls| _verifyRemoteAccountOwner
 
     _verifyRemoteAccountAddress -->|calls| _getRemoteAccountAddress
     _getRemoteAccountAddress -->|calls| _getSalt
@@ -370,40 +323,144 @@ graph TB
 
     CODE_EXISTS -.-> RAn
 
-    _verifyRemoteAccountOwner -.->|"call owner()"| RAn
-    _createRemoteAccountForOwner -->|calls| cloneDeterministic
+    _createRemoteAccount -->|calls| cloneDeterministic
     cloneDeterministic -->|"CREATE2"| RAn
-    _createRemoteAccountForOwner -->|initialize| RAn
-    _createRemoteAccountForOwner -->|"emit"| RemoteAccountCreated
+    _createRemoteAccount -->|"initialize(factory)"| RAn
+    _createRemoteAccount -->|"emit"| RemoteAccountCreated
 
     getRemoteAccountAddress -->|calls| _getRemoteAccountAddress
+
+    isAuthorizedRouter -->|reads| _routerStatus
 
     %% state access
     _getRemoteAccountAddress -.->|reads| _principalSalt
     _getRemoteAccountAddress -.->|reads| implementation
-    _verifyRemoteAccountOwner -.->|checks| owner
-    SAME_OWNER -.->|checks| owner
-    onlyOwner -.->|checks| owner
-    transferOwnership -->|updates| owner
-    renounceOwnership -->|updates| owner
 
     style provideRemoteAccount fill:#ffe6e6
-    style provideRemoteAccountForOwner fill:#ffe6e6
     style verifyRemoteAccount fill:#ffe6e6
     style getRemoteAccountAddress fill:#ffe6e6
-    style transferOwnership fill:#ffe6e6
-    style renounceOwnership fill:#ffe6e6
+    style isAuthorizedRouter fill:#ffe6e6
 ```
 
-**Key Components**:
+### Router & Vetting Authority Administration
 
-- **provideRemoteAccount**: Public method requiring new account owner is current factory owner.
-- **provideRemoteAccountForOwner**: Owner-only method to create or verify accounts for an arbitrary owner
-- **verifyRemoteAccount**: Multi-layer verification of existing accounts (code, principal, owner)
+```mermaid
+graph TB
+    subgraph IRemoteAccountFactory
+        IRemoteAccountFactory_isAuthorizedRouter[isAuthorizedRouter]
+        IRemoteAccountFactory_enableRouter[enableRouter]
+        IRemoteAccountFactory_disableRouter[disableRouter]
+        IRemoteAccountFactory_confirmVettingAuthorityTransfer[confirmVettingAuthorityTransfer]
+        %% events
+        RouterVetted@{shape: flag}
+        RouterEnabled@{shape: flag}
+        RouterDisabled@{shape: flag}
+        RouterRevoked@{shape: flag}
+        VettingAuthorityTransferProposed@{shape: flag}
+        VettingAuthorityTransferred@{shape: flag}
+    end
+
+    subgraph RemoteAccountFactory
+        START@{shape: start}
+
+        isAuthorizedRouter["isAuthorizedRouter<br>override IRemoteAccountFactory"]
+        getRouterStatus
+
+        subgraph "EVM-sourced (vetting authority)"
+            CHECK_VA@{shape: text, label: "check msg.sender ==<br>vettingAuthority"}
+            vetRouter
+            revokeRouter
+            proposeVettingAuthorityTransfer
+        end
+
+        subgraph "Agoric-sourced (enabled router)"
+            CHECK_ROUTER@{shape: text, label: "check isAuthorizedRouter<br>(msg.sender)"}
+            enableRouter["enableRouter<br>override IRemoteAccountFactory"]
+            disableRouter["disableRouter<br>override IRemoteAccountFactory"]
+            confirmVettingAuthorityTransfer["confirmVettingAuthorityTransfer<br>override IRemoteAccountFactory"]
+        end
+
+        subgraph state
+            _routerStatus@{shape: stored-data, label: "_routerStatus: mapping<br>(Unknown | Vetted | Enabled)"}
+            vettingAuthority@{shape: stored-data}
+            _pendingVettingAuthority@{shape: stored-data}
+        end
+    end
+
+    %% inheritance
+    RemoteAccountFactory -.->|is| IRemoteAccountFactory
+
+    %% operation
+    START --> isAuthorizedRouter
+    START --> getRouterStatus
+    START --> vetRouter
+    START --> enableRouter
+    START --> disableRouter
+    START --> revokeRouter
+    START --> proposeVettingAuthorityTransfer
+    START --> confirmVettingAuthorityTransfer
+
+    isAuthorizedRouter -->|reads| _routerStatus
+    getRouterStatus -->|reads| _routerStatus
+
+    %% EVM-sourced operations (vetting authority)
+    vetRouter -->|"[1]"| CHECK_VA
+    vetRouter -->|"[2] updates"| _routerStatus
+    vetRouter -->|emit| RouterVetted
+
+    revokeRouter -->|"[1]"| CHECK_VA
+    revokeRouter -->|"[2] updates"| _routerStatus
+    revokeRouter -->|emit| RouterRevoked
+
+    proposeVettingAuthorityTransfer -->|"[1]"| CHECK_VA
+    proposeVettingAuthorityTransfer -->|"[2] updates"| _pendingVettingAuthority
+    proposeVettingAuthorityTransfer -->|emit| VettingAuthorityTransferProposed
+
+    CHECK_VA -->|checks| vettingAuthority
+
+    %% Agoric-sourced operations (enabled router)
+    enableRouter -->|"[1]"| CHECK_ROUTER
+    enableRouter -->|"[2] updates"| _routerStatus
+    enableRouter -->|emit| RouterEnabled
+
+    disableRouter -->|"[1]"| CHECK_ROUTER
+    disableRouter -->|"[2] updates"| _routerStatus
+    disableRouter -->|emit| RouterDisabled
+
+    confirmVettingAuthorityTransfer -->|"[1]"| CHECK_ROUTER
+    confirmVettingAuthorityTransfer -->|"[2] checks"| _pendingVettingAuthority
+    confirmVettingAuthorityTransfer -->|"[3] updates"| vettingAuthority
+    confirmVettingAuthorityTransfer -->|emit| VettingAuthorityTransferred
+
+    CHECK_ROUTER -->|calls| isAuthorizedRouter
+
+    style isAuthorizedRouter fill:#ffe6e6
+    style vetRouter fill:#ffe6e6
+    style enableRouter fill:#ffe6e6
+    style disableRouter fill:#ffe6e6
+    style revokeRouter fill:#ffe6e6
+    style proposeVettingAuthorityTransfer fill:#ffe6e6
+    style confirmVettingAuthorityTransfer fill:#ffe6e6
+```
+
+**Key Components (Remote Account Operations)**:
+
+- **provideRemoteAccount**: Creates or verifies a remote account at the expected address derived from the principal
+- **verifyRemoteAccount**: Multi-layer verification of existing accounts (code, principal)
 - **verifyFactoryPrincipalAccount**: Validates the factory principal account string
-- **\_verifyRemoteAccountAddress**: Enforces principal-to-address derivation before creation/verification.
-- **\_getRemoteAccountAddress**: Rejects the factory principal account (prevents treating factory as a remote account).
-- **\_createRemoteAccountForOwner**: Core deterministic clone deployment + ownership initialization.
+- **\_verifyRemoteAccountAddress**: Enforces principal-to-address derivation before creation/verification
+- **\_getRemoteAccountAddress**: Rejects the factory principal account (prevents treating factory as a remote account)
+- **\_createRemoteAccount**: Core deterministic clone deployment + factory reference initialization
+- **isAuthorizedRouter**: Checks if a caller is an enabled router
+
+**Key Components (Router & Vetting Authority Administration)**:
+
+- **vetRouter**: Marks a router as vetted (vetting authority only)
+- **enableRouter**: Enables a vetted router (enabled router only)
+- **disableRouter**: Disables an enabled router (enabled router only, not self)
+- **revokeRouter**: Revokes a vetted router (vetting authority only)
+- **proposeVettingAuthorityTransfer**: Proposes a new vetting authority (current vetting authority only)
+- **confirmVettingAuthorityTransfer**: Confirms the pending vetting authority transfer (enabled router only)
 
 ## Data Flow: Account creation and use
 
@@ -418,13 +475,15 @@ sequenceDiagram
     participant DEFI as DeFi Protocol
 
     Note right of PM: using portfolio LCA
-    PM->>AXL: send ProvideRemoteAccountInstruction |<br>RemoteAccountExecuteInstruction |<br>UpdateOwnerInstruction
+    PM->>AXL: send ProvideRemoteAccountInstruction |<br>RemoteAccountExecuteInstruction |<br>EnableRouterInstruction |<br>DisableRouterInstruction |<br>ConfirmVettingAuthorityInstruction
     AXL->>PR: _execute(sourceChain,<br>sourceAddress, payload)
 
     PR->>PR: validate source chain
 
     critical
         alt processProvideRemoteAccountInstruction
+            PR->>RAF: verifyFactoryPrincipalAccount(sourceAddress)
+
             Note over PR,RA: pull deposit
             opt if depositPermit exists
                 PR->>P2: permitWitnessTransferFrom(...)
@@ -432,53 +491,43 @@ sequenceDiagram
             end
 
             Note over PR,RA: provide account
-            PR->>RAF: provideRemoteAccount(instruction.principalAccount,<br> address(this), expectedAddress)
+            PR->>RAF: provideRemoteAccount(instruction.principalAccount,<br> expectedAddress)
             alt if exists
-                RAF->>RA: owner()
-                RAF->>RAF: verify match
+                RAF->>RAF: verify address
             else
                 RAF->>RA: cloneDeterministic
-                RAF->>RA: initialize(router)
+                RAF->>RA: initialize(factory)
             end
         else processRemoteAccountExecuteInstruction
             Note over PR,RA: provide account
-            PR->>RAF: provideRemoteAccount(sourceAddress, address(this), expectedAddress)
+            PR->>RAF: provideRemoteAccount(sourceAddress, expectedAddress)
             alt if exists
-                RAF->>RA: owner()
-                RAF->>RAF: verify match
+                RAF->>RAF: verify address
             else
                 RAF->>RA: cloneDeterministic
-                RAF->>RA: initialize(router)
+                RAF->>RA: initialize(factory)
             end
 
             Note over PR,RA: make calls
             opt if multiCalls exist
                 PR->>RA: executeCalls(multiCalls)
-                RA->>RA: Validate owner
+                RA->>RAF: isAuthorizedRouter(msg.sender)
+                RAF-->>RA: true
                 loop for each {target, data, value, gasLimit}
                     RA->>DEFI: target.call{value, gas: gasLimit}(data)
                     Note over RA,DEFI: gasLimit is optional (0 means no explicit gas)
                     DEFI-->>RA: result
                 end
             end
-        else processUpdateOwnerInstruction
-            PR->>PR: verify newOwner is successor
-
-            Note over PR,RA: provide account / verify principal, then transfer
-            alt expectedAddress == factory
-                PR->>RAF: verifyFactoryPrincipalAccount(sourceAddress)
-                PR->>RAF: transferOwnership(newOwner)
-            else
-                PR->>RAF: provideRemoteAccount(sourceAddress, address(this), expectedAddress)
-                alt if exists
-                    RAF->>RA: owner()
-                    RAF->>RAF: verify match
-                else
-                    RAF->>RA: cloneDeterministic
-                    RAF->>RA: initialize(router)
-                end
-                PR->>RA: transferOwnership(newOwner)
-            end
+        else processEnableRouterInstruction
+            PR->>RAF: verifyFactoryPrincipalAccount(sourceAddress)
+            PR->>RAF: enableRouter(instruction.router)
+        else processDisableRouterInstruction
+            PR->>RAF: verifyFactoryPrincipalAccount(sourceAddress)
+            PR->>RAF: disableRouter(instruction.router)
+        else processConfirmVettingAuthorityInstruction
+            PR->>RAF: verifyFactoryPrincipalAccount(sourceAddress)
+            PR->>RAF: confirmVettingAuthorityTransfer(instruction.authority)
         end
     option [success]
         PR->>PR: emit OperationResult(id, true, '')
@@ -493,15 +542,21 @@ sequenceDiagram
 2. RemoteAccountAxelarRouter validates message source
 3. RemoteAccountAxelarRouter parses and processes input
     - For `processProvideRemoteAccountInstruction`:
-        1. If requested, RemoteAccountAxelarRouter transfers tokens via Permit2
-        2. RemoteAccountAxelarRouter provides account (creating if necessary)
+        1. RemoteAccountAxelarRouter verifies the factory principal matches the source address
+        2. If requested, RemoteAccountAxelarRouter transfers tokens via Permit2
+        3. RemoteAccountAxelarRouter provides account (creating if necessary)
     - For `processRemoteAccountExecuteInstruction`:
         1. RemoteAccountAxelarRouter provides account (creating if necessary)
-        2. If calls for RemoteAccount exist, RemoteAccountAxelarRouter forwards them and RemoteAccount executes them
-    - For `processUpdateOwnerInstruction`:
-        1. RemoteAccountAxelarRouter verifies that the new owner identifies its successor
-        2. RemoteAccountAxelarRouter provides account (creating if necessary), or verifies the factory principal
-        3. RemoteAccountAxelarRouter transfers account ownership
+        2. If calls for RemoteAccount exist, RemoteAccountAxelarRouter forwards them; RemoteAccount verifies the caller is an authorized router via the factory, then executes them
+    - For `processEnableRouterInstruction`:
+        1. RemoteAccountAxelarRouter verifies the factory principal matches the source address
+        2. RemoteAccountAxelarRouter enables a vetted router on the factory
+    - For `processDisableRouterInstruction`:
+        1. RemoteAccountAxelarRouter verifies the factory principal matches the source address
+        2. RemoteAccountAxelarRouter disables an enabled router on the factory
+    - For `processConfirmVettingAuthorityInstruction`:
+        1. RemoteAccountAxelarRouter verifies the factory principal matches the source address
+        2. RemoteAccountAxelarRouter confirms the pending vetting authority transfer on the factory
 4. RemoteAccountAxelarRouter emits an event describing success or failure
 
 ## Ownership and Security Model
@@ -509,111 +564,102 @@ sequenceDiagram
 ```mermaid
 graph TB
     Axelar
-    EVM_OPERATOR["EVM operator multisig"]
-    ROUTER1[old RemoteAccountAxelarRouter v1]
-    ROUTER2[old RemoteAccountAxelarRouter v2]
-    ROUTERn[RemoteAccountAxelarRouter v3]
+    VA["Vetting Authority<br/>(EVM multisig)"]
+    ROUTER1[RemoteAccountAxelarRouter v1<br/>enabled]
+    ROUTER2[RemoteAccountAxelarRouter v2<br/>vetted, not yet enabled]
     RAF[RemoteAccountFactory]
-    RA1["old RemoteAccount<br>(untouched by v2+)"]
-    RA2["old RemoteAccount<br>(touched by v3)"]
-    RAn[new RemoteAccount]
+    RA[RemoteAccount]
 
     Axelar -->|_execute| ROUTER1
-    Axelar -->|_execute| ROUTER2
-    Axelar -->|_execute| ROUTERn
 
-    EVM_OPERATOR -.->|setSuccessor| ROUTER1
-    EVM_OPERATOR -.->|setSuccessor| ROUTER2
-    EVM_OPERATOR -.->|setSuccessor| ROUTERn
+    VA -->|"vetRouter |<br>revokeRouter |<br>proposeVettingAuthorityTransfer"| RAF
 
-    ROUTER1 ==>|owns| RA1
-    ROUTER1 -.->|transferred| RA2
-    ROUTER1 -.->|transferred| RAF
-    ROUTER1 -.->|old successor| ROUTER2
-    ROUTER1 -->|successor| ROUTERn
-    ROUTER2 -.->|transferred| RAF
-    ROUTER2 -->|successor| ROUTERn
-    ROUTERn ==>|owns| RA2
-    ROUTERn ==>|owns| RAn
-    ROUTERn ==>|owns| RAF
+    ROUTER1 ==>|executeCalls| RA
+
+    ROUTER1 -->|"enableRouter |<br>disableRouter |<br>confirmVettingAuthorityTransfer"| RAF
+
+    RAF ==>|creates & initializes| RA
+
+    RA -.->|isAuthorizedRouter| RAF
 
     style Axelar fill:#ffe6e6
-    style EVM_OPERATOR fill:#ffe6e6
-    style ROUTER1 fill:#e8e8e8
+    style VA fill:#ffe6e6
+    style ROUTER1 fill:#e6ffe6
     style ROUTER2 fill:#e8e8e8
-    style ROUTERn fill:#e6ffe6
+    style RAF fill:#ccffcc
 ```
 
-**Ownership**:
+**Transitive Ownership**:
 
-- Current RemoteAccountAxelarRouter owns RemoteAccountFactory and all new accounts
-- Ownership of old accounts is transferred upon activity (`transferOwnership` call through old router)
+- RemoteAccountFactory maintains a router authorization map with statuses: Unknown, Vetted, Enabled
+- RemoteAccount delegates authorization to its factory: any enabled router can execute calls on any account
+- Router migrations are O(1): enabling a new router instantly authorizes it for all accounts
+
+**Two-Factor Router Authorization**:
+
+- **Vetting** (EVM-side): The factory's vetting authority (e.g. multisig) can vet or revoke routers via direct calls
+- **Enabling** (Agoric-side): The factory's principal can enable or disable vetted routers via GMP messages through an enabled router
+- A router must be both vetted and enabled to operate on remote accounts
 
 **Security Checks**:
 
-- **RemoteAccountAxelarRouter `setSuccessor`**: Validate `msg.sender` against immutable `owner`
 - **RemoteAccountAxelarRouter `_execute`**: Validate `sourceChain` against immutable hash
-- **RemoteAccountAxelarRouter `processProvideRemoteAccountInstruction`**: Validate the source address as the factory principal. This ensures only the portfolio manager can redeem signed permit2 intents.
-- **RemoteAccountFactory `provideRemoteAccount`**: For account creation, validate requested owner against its own owner. Validates remote account address derives from sourceAddress.
-- **RemoteAccountFactory/RemoteAccount `executeCalls` and `transferOwnership`**: Validate that sender is current owner
+- **RemoteAccountAxelarRouter admin instructions**: Validate the source address as the factory principal (ensures only the portfolio manager can manage routers or redeem signed permits)
+- **RemoteAccountFactory `provideRemoteAccount`**: Validates remote account address derives from the principal account string
+- **RemoteAccountFactory `vetRouter`/`revokeRouter`**: Only the vetting authority can call these
+- **RemoteAccountFactory `enableRouter`/`disableRouter`**: Only an already-enabled router can call these (preventing unauthorized routers from self-enabling)
+- **RemoteAccountFactory `disableRouter`**: A router cannot disable itself
+- **RemoteAccount `executeCalls`**: Validates that the caller is an authorized router via `factory.isAuthorizedRouter(msg.sender)`
 
 ## Deployment
 
 ```mermaid
 sequenceDiagram
     participant PM as Portfolio Manager<br>(Agoric)
+    participant VA as Vetting Authority<br>(EVM multisig)
     participant EVM_DEPLOYER as EVM deployer
-    participant EVM_OPERATOR as EVM operator<br>multisig
     participant ROUTER1 as RemoteAccountAxelarRouter<br>v1
-    participant ROUTER2 as RemoteAccountAxelarRouter<br>v2
-    participant ROUTERn as RemoteAccountAxelarRouter<br>v3
+    participant ROUTERn as RemoteAccountAxelarRouter<br>v2
     participant IMP as RemoteAccount<br>implementation
     participant RAF as RemoteAccountFactory
     participant RA as RemoteAccount
 
     Note over PM,RA: Initial deployment
     EVM_DEPLOYER->>IMP: deploy
-    EVM_DEPLOYER->>IMP: renounceOwnership
-    EVM_DEPLOYER->>RAF: deploy
-    EVM_DEPLOYER->>ROUTER1: deploy
-    EVM_DEPLOYER->>RAF: transferOwnership to router
+    EVM_DEPLOYER->>RAF: deploy(principal, impl,<br>initialRouter=predicted ROUTER1 addr,<br>vettingAuthority=VA)
+    EVM_DEPLOYER->>ROUTER1: deploy(gateway, sourceChain, factory=RAF, permit2)
 
-    Note over PM,RA: Deploy new router
-    EVM_DEPLOYER->>ROUTERn: deploy
+    Note over PM,RA: Normal operations
+    PM->>ROUTER1: [via Axelar] processRemoteAccountExecuteInstruction
+    ROUTER1->>RAF: provideRemoteAccount
+    RAF-->>RA: create/validate
+    ROUTER1->>RA: executeCalls
+    RA->>RAF: isAuthorizedRouter(ROUTER1)?
+    RAF-->>RA: true
 
-    Note over PM,RA: Update old routers
-    par
-        EVM_OPERATOR->>ROUTER1: setSuccessor(new router)
-        EVM_OPERATOR->>ROUTER2: setSuccessor(new router)
-    end
+    Note over PM,RA: Deploy and vet new router
+    EVM_DEPLOYER->>ROUTERn: deploy(gateway, sourceChain, factory=RAF, permit2)
+    VA->>RAF: vetRouter(ROUTERn)
 
-    Note over PM,RA: Upgrade contract for new router
-    PM->>PM: upgrade
-    PM->>ROUTER2: [via Axelar] send (processUpdateOwnerInstruction, txId, factoryAddr, UpdateOwnerInstruction{newRouterAddr})
-    ROUTER2->>RAF: transferOwnership(newRouterAddr)
-    RAF->>RAF: confirm sender is current owner
-    RAF->>RAF: replace owner
-    ROUTER2->>PM: [via Resolver] ready
-    PM->>PM: new router ready
+    Note over PM,RA: Enable new router (via GMP)
+    PM->>ROUTER1: [via Axelar] processEnableRouterInstruction(ROUTERn)
+    ROUTER1->>RAF: enableRouter(ROUTERn)
 
-    Note over PM,RA: Account interactions
-    opt if account uses old router
-        PM->>ROUTER1: [via Axelar] send (processUpdateOwnerInstruction, txId, addr, UpdateOwnerInstruction{newRouterAddr})
-        ROUTER1->>RAF: provideRemoteAccount
-        RAF-->>RA: create/validate
-        ROUTER1->>RA: transferOwnership(newRouterAddr)
-        RA->>RA: confirm sender is current owner
-        RA->>RA: replace owner
-    end
-    PM->>ROUTERn: [via Axelar] send (processRemoteAccountExecuteInstruction, txId, expectedAddr, RemoteAccountExecuteInstruction{...})
+    Note over PM,RA: Both routers now operational
+    PM->>ROUTERn: [via Axelar] processRemoteAccountExecuteInstruction
     ROUTERn->>RAF: provideRemoteAccount
     RAF-->>RA: create/validate
     ROUTERn->>RA: executeCalls
+
+    Note over PM,RA: Optionally disable old router (via GMP)
+    PM->>ROUTERn: [via Axelar] processDisableRouterInstruction(ROUTER1)
+    ROUTERn->>RAF: disableRouter(ROUTER1)
 ```
 
 **Migration Features**:
 
-- Non-disruptive: Can migrate one account at a time
-- Safe: Requires both owner of old router and portfolio manager agreement
-- Flexible: RemoteAccount addresses remain constant
-- Auditable: All account changes performed via cross-chain messages.
+- **O(1) migration**: Enabling a new router instantly authorizes it for all existing accounts — no per-account ownership transfer needed
+- **Non-disruptive**: Old and new routers can coexist during migration
+- **Two-factor safety**: Router changes require agreement from both the vetting authority (EVM) and the factory principal (Agoric)
+- **Flexible**: RemoteAccount addresses remain constant across router upgrades
+- **Auditable**: All router changes are emitted as events; principal-initiated changes flow through GMP messages
