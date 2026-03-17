@@ -165,7 +165,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         expect(decodedError?.args.owner).to.equal(router.target);
     });
 
-    it('should be protected from front-running - factory rejects unauthorized routers', async () => {
+    it('should reject provide calls with unauthorized router address', async () => {
         const frontRunLCA = 'agoric1frontruntest123456789abcdefghij';
 
         // Compute the expected address
