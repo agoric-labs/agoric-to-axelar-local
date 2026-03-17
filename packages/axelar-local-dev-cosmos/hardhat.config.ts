@@ -89,7 +89,7 @@ const config: HardhatUserConfig = {
   solidity: {
     compilers: [
       {
-        version: "0.8.20",
+        version: "0.8.26",
         settings: {
           optimizer: {
             enabled: true,
@@ -126,7 +126,7 @@ const config: HardhatUserConfig = {
     ...(PRIVATE_KEY ? mainnets : {}),
   },
   paths: {
-    sources: "./src/contracts",
+    sources: "./src",
   },
   mocha: {
     timeout: 200000,

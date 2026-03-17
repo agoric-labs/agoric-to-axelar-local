@@ -1,0 +1,619 @@
+# Remote Account Router System - Design Documentation
+
+This document provides C4-style architectural diagrams documenting the Solidity smart contracts that enable cross-chain portfolio management through [Axelar General Message Passing (GMP)](https://docs.axelar.dev/dev/general-message-passing/overview/).
+
+## System Overview
+
+The system enables remote account management where a portfolio manager on an Agoric chain can control accounts and executes operations on EVM chains through GMP.
+
+## C4 Level 1: System Context Diagram
+
+```mermaid
+graph TB
+    subgraph "Agoric Chain"
+        PM[Portfolio Manager]
+    end
+
+    subgraph "Axelar Network"
+        EX[Axelar Relayer]
+    end
+
+    subgraph "EVM Chain"
+        PRS[Remote Account Router<br>System]
+
+        subgraph "External Systems"
+            P2[Permit2 Contract]
+            DEFI[DeFi Protocols]
+        end
+    end
+
+    PM -->|Send Instructions| EX
+    EX -->|Execute Message| PRS
+    PRS -->|Transfer Tokens| P2
+    PRS -->|Interact| DEFI
+
+    style PM fill:#e1f5ff
+    style PRS fill:#ffe1e1
+```
+
+**Context**: The Remote Account Router System acts as a trusted intermediary that receives cross-chain messages from a portfolio manager on Agoric and directs operation of accounts on the EVM chain.
+
+## C4 Level 2: Container Diagram - Data Plane Operations
+
+```mermaid
+graph TB
+    subgraph "Agoric Chain"
+        YMAX[Portfolio Manager<br>contract]
+        LCA1[LCA account 1]
+        LCA2[LCA account 2]
+        LCAn[LCA account n]
+    end
+
+    AXL[Axelar]
+
+    subgraph "Remote Account Router System"
+        PR[RemoteAccountAxelarRouter]
+        RAF[RemoteAccountFactory<br/>EIP-1167 Clone Factory]
+        IMP[RemoteAccount<br/>Implementation]
+        RA1[RemoteAccount 1]
+        RA2[RemoteAccount 2]
+        RAn[RemoteAccount N]
+    end
+
+    subgraph "External Contracts"
+        P2[Permit2]
+        PROTO[DeFi Protocols]
+    end
+
+    YMAX --> AXL
+    LCA1 --> AXL
+    LCA2 --> AXL
+    LCAn --> AXL
+    AXL -->|_execute| PR
+    PR -->|provideRemoteAccount| RAF
+    RAF ==>|creates| RA1
+    RAF ==>|creates| RA2
+    RAF ==>|creates| RAn
+    RA1 -.->|delegates to| IMP
+    RA2 -.->|delegates to| IMP
+    RAn -.->|delegates to| IMP
+    PR -->|"executeCalls |<br>transferOwnership"| RA1
+    PR -->|"executeCalls |<br>transferOwnership"| RA2
+    PR -->|"executeCalls |<br>transferOwnership"| RAn
+    PR -.->|permitWitnessTransferFrom| P2
+    IMP -->|call| PROTO
+
+    style PR fill:#ffcccc
+    style RAF fill:#ccffcc
+    style IMP fill:#cffcff
+    style RA1 fill:#ccccff
+    style RA2 fill:#ccccff
+    style RAn fill:#ccccff
+```
+
+**Containers**:
+
+- **RemoteAccountAxelarRouter**: Entry point receiving messages from Axelar
+- **RemoteAccountFactory**: EIP-1167 clone factory deploying deterministic proxy instances via `cloneDeterministic`
+- **RemoteAccount implementation**: Shared logic contract used by all clone instances
+- **RemoteAccount**: Individual wallet contracts acting on behalf of external principals (each one an Agoric local chain account [LCA]), executing DeFi operations
+
+## C4 Level 3: Component Diagram - RemoteAccountAxelarRouter
+
+```mermaid
+graph TB
+    subgraph AxelarExecutable
+        AxelarExecutable__execute["_execute<br>(message handler)"]
+    end
+    subgraph ImmutableOwnable
+        %% modifiers
+        onlyOwner@{shape: odd}
+        %% state
+        owner@{shape: stored-data, label: "owner: address"}
+    end
+    subgraph IRemoteAccountRouter
+        IRemoteAccountRouter_factory["factory(): IRemoteAccountFactory"]
+        IRemoteAccountRouter_permit2["permit2(): IPermit2"]
+        IRemoteAccountRouter_processProvideRemoteAccountInstruction[processProvideRemoteAccountInstruction]
+        IRemoteAccountRouter_processRemoteAccountExecuteInstruction[processRemoteAccountExecuteInstruction]
+        IRemoteAccountRouter_processUpdateOwnerInstruction[processUpdateOwnerInstruction]
+        subgraph IRemoteAccountRouter_state[state]
+            successor["successor(): address"]
+        end
+        %% events
+        OperationResult@{shape: flag}
+    end
+
+    subgraph RemoteAccountAxelarRouter
+        START@{shape: start}
+        _execute["_execute<br/>override AxelarExecutable"]
+        VALIDATE@{shape: text, label: "Axelar inbound validation"}
+        DECODE{decode and dispatch}
+        processProvideRemoteAccountInstruction["processProvideRemoteAccountInstruction<br>override IRemoteAccountRouter"]
+        processProvideRemoteAccountInstruction_self@{shape: comment, label: "require self-call"}
+        processRemoteAccountExecuteInstruction["processRemoteAccountExecuteInstruction<br>override IRemoteAccountRouter"]
+        processRemoteAccountExecuteInstruction_self@{shape: comment, label: "require self-call"}
+        processUpdateOwnerInstruction["processUpdateOwnerInstruction<br>override IRemoteAccountRouter"]
+        processUpdateOwnerInstruction_self@{shape: comment, label: "require self-call"}
+        ISFACTORY{for factory}
+        DEP@{shape: text, label: "Permit2 Integration"}
+        PROV@{shape: text, label: "account creation/<br>verification"}
+        MULTI@{shape: text, label: "account use"}
+        setSuccessor
+        subgraph state
+            factory@{shape: stored-data, label: "factory: IRemoteAccountFactory<br>override IRemoteAccountRouter"}
+            permit2@{shape: stored-data, label: "permit2: IPermit2<br>override IRemoteAccountRouter"}
+            axelarSourceChainHash@{shape: stored-data, label: "axelarSourceChainHash: bytes32"}
+            successor@{shape: stored-data, label: "successor: address"}
+        end
+    end
+
+    RAn[RemoteAccount N]
+
+    %% inheritance
+    RemoteAccountAxelarRouter -.->|is| AxelarExecutable
+    RemoteAccountAxelarRouter -.->|is| IRemoteAccountRouter
+    RemoteAccountAxelarRouter -.->|is| ImmutableOwnable
+
+    %% operation
+    START --> _execute
+    START --> setSuccessor
+    _execute -->|"[1]"| VALIDATE
+    _execute -->|"[2]"| DECODE
+    DECODE -.-> processProvideRemoteAccountInstruction
+    DECODE -.-> processRemoteAccountExecuteInstruction
+    DECODE -.-> processUpdateOwnerInstruction
+    processProvideRemoteAccountInstruction --> processProvideRemoteAccountInstruction_self
+    processProvideRemoteAccountInstruction -.->|"[1] effect deposit"| DEP
+    processProvideRemoteAccountInstruction -->|"[2] provide account"| PROV
+    processRemoteAccountExecuteInstruction -->|"[1] provide account"| PROV
+    processRemoteAccountExecuteInstruction --> processRemoteAccountExecuteInstruction_self
+    processRemoteAccountExecuteInstruction -->|"[2] send calls"| MULTI
+    _execute -->|"[3] emit"| OperationResult
+
+    %% state/dependency access
+    VALIDATE -->|checks| axelarSourceChainHash
+    DEP -->|call<br>permitWitnessTransferFrom| permit2
+    PROV -->|call provideRemoteAccount| factory
+    MULTI --> |call executeCalls| RAn
+    processUpdateOwnerInstruction --> processUpdateOwnerInstruction_self
+    processUpdateOwnerInstruction --> ISFACTORY
+    ISFACTORY -->|"[2] call provideRemoteAccount"| factory
+    ISFACTORY -->|"[3] call transferOwnership"| RAn
+    ISFACTORY -->|"[2] verify principal"| factory
+    ISFACTORY -->|"[3] call transferOwnership"| factory
+    processUpdateOwnerInstruction -->|"[1] checks"| successor
+    setSuccessor -->|updates| successor
+    setSuccessor -->|modifier| onlyOwner
+    onlyOwner -->|checks| owner
+
+    style _execute fill:#ffe6e6
+    style setSuccessor fill:#ffe6e6
+    style processProvideRemoteAccountInstruction fill:#fff0e6
+    style processRemoteAccountExecuteInstruction fill:#fff0e6
+    style processUpdateOwnerInstruction fill:#fff0e6
+    style RAn fill:#ccccff
+```
+
+**Key Components**:
+
+- **\_execute**: Validates source chain, decodes the RouterInstruction selector + payload
+- **processProvideRemoteAccountInstruction**: Atomically redeems an optional deposit permit and provisions/verifies a RemoteAccount via the factory
+- **processRemoteAccountExecuteInstruction**: Atomically provisions/verifies a RemoteAccount and executes its multicall batch
+- **processUpdateOwnerInstruction**: Transfers factory or remote account ownership to a new router
+- **Permit2 Integration**: Transfers tokens to RemoteAccount via Permit2 signature-based transfers
+- **account creation/verification**: Creates or verifies RemoteAccount via factory
+- **account use**: Instructs RemoteAccount to execute arbitrary multicalls
+- **setSuccessor**: Enables ownership transfer to new router versions
+
+---
+
+## C4 Level 3: Component Diagram - RemoteAccount
+
+```mermaid
+graph TB
+    subgraph Initializable
+        _initialized
+        _disableInitializers
+        %% modifiers
+        initializer@{shape: odd}
+    end
+    subgraph Ownable
+        _owner
+        owner
+        transferOwnership
+        renounceOwnership
+        _transferOwnership
+        %% modifiers
+        onlyOwner@{shape: odd}
+    end
+    subgraph IRemoteAccount
+        IRemoteAccount_executeCalls[executeCalls]
+    end
+
+    subgraph RemoteAccount
+        START@{shape: start}
+        CTOR[constructor]
+        initialize
+        executeCalls
+    end
+
+    EXTERNAL[target contracts]
+
+    %% inheritance
+    RemoteAccount -.->|is| Ownable
+    RemoteAccount -.->|is| Initializable
+    RemoteAccount -.->|is| IRemoteAccount
+    executeCalls -.->|override| IRemoteAccount_executeCalls
+
+    %% operation
+    START --> CTOR
+    START --> initialize
+    START --> executeCalls
+    START --> transferOwnership
+    START --> renounceOwnership
+    START --> owner
+    CTOR -->|calls| _disableInitializers
+    initialize -->|modifier| initializer
+    initialize -->|calls| _transferOwnership
+    executeCalls -->|modifier| onlyOwner
+    executeCalls -.->|loops & calls| EXTERNAL
+    transferOwnership -->|modifier| onlyOwner
+    transferOwnership -->|calls| _transferOwnership
+    renounceOwnership -->|modifier| onlyOwner
+    renounceOwnership -->|calls| _transferOwnership
+    owner -->|reads| _owner
+
+    %% state access
+    onlyOwner -->|checks| _owner
+    _transferOwnership -->|updates| _owner
+    initializer -->|checks and updates| _initialized
+    _disableInitializers -->|updates| _initialized
+
+    style owner fill:#ffe6e6
+    style executeCalls fill:#ffe6e6
+    style initialize fill:#ffe6e6
+    style transferOwnership fill:#ffe6e6
+    style renounceOwnership fill:#ffe6e6
+```
+
+**Key Components**:
+
+- **initialize**: One-time ownership initialization for clone instances
+- **executeCalls**: Validates owner, then atomically executes array of contract calls
+
+## C4 Level 3: Component Diagram - RemoteAccountFactory
+
+```mermaid
+graph TB
+    subgraph Clones
+        cloneDeterministic
+        predictDeterministicAddress
+    end
+    subgraph Ownable
+        owner
+        transferOwnership
+        renounceOwnership
+        %% modifiers
+        onlyOwner@{shape: odd}
+    end
+    subgraph IRemoteAccountFactory
+        IRemoteAccountFactory_verifyFactoryPrincipalAccount[verifyFactoryPrincipalAccount]
+        IRemoteAccountFactory_getRemoteAccountAddress[getRemoteAccountAddress]
+        IRemoteAccountFactory_verifyRemoteAccount[verifyRemoteAccount]
+        IRemoteAccountFactory_provideRemoteAccount[provideRemoteAccount]
+        IRemoteAccountFactory_provideRemoteAccountForOwner[provideRemoteAccountForOwner]
+        %% events
+        RemoteAccountCreated@{shape: flag}
+    end
+
+    subgraph RemoteAccountFactory
+        START@{shape: start}
+        getRemoteAccountAddress["getRemoteAccountAddress<br>override IRemoteAccountFactory"]
+        _getRemoteAccountAddress
+
+        verifyRemoteAccount["verifyRemoteAccount<br>override IRemoteAccountFactory"]
+        _verifyRemoteAccountAddress
+        _verifyRemoteAccountOwner
+
+        provideRemoteAccount["provideRemoteAccount<br>override IRemoteAccountFactory"]
+        provideRemoteAccountForOwner["provideRemoteAccountForOwner<br>override IRemoteAccountFactory"]
+        SAME_OWNER{owner matches<br>expected owner?}
+        _createRemoteAccountForOwner
+        ACCOUNT_EXISTS{account exists?}
+        ACCOUNT_EXISTS_FOR_OWNER{"account exists?<br>(ForOwner)"}
+
+        CODE_EXISTS["checks code exists"]
+        _getSalt[_getSalt<br>deterministic by principal account string]
+        subgraph state
+            factoryPrincipalCaip2@{shape: stored-data}
+            factoryPrincipalAccount@{shape: stored-data}
+            _principalSalt@{shape: stored-data}
+            implementation@{shape: stored-data}
+        end
+    end
+
+    RAn[RemoteAccount N]
+
+    %% inheritance
+    RemoteAccountFactory -.->|is| Ownable
+    RemoteAccountFactory -.->|is| IRemoteAccountFactory
+
+    %% operation
+    START --> provideRemoteAccount
+    START --> provideRemoteAccountForOwner
+    START --> verifyRemoteAccount
+    START --> getRemoteAccountAddress
+    START --> transferOwnership
+    START --> renounceOwnership
+    provideRemoteAccount --> _verifyRemoteAccountAddress
+    provideRemoteAccount --> CODE_EXISTS
+    provideRemoteAccount --> ACCOUNT_EXISTS
+    ACCOUNT_EXISTS -.->|yes: calls| _verifyRemoteAccountOwner
+    ACCOUNT_EXISTS -.->|no| SAME_OWNER
+    SAME_OWNER -->|yes: calls| _createRemoteAccountForOwner
+
+    provideRemoteAccountForOwner -->|modifier| onlyOwner
+    provideRemoteAccountForOwner --> _verifyRemoteAccountAddress
+    provideRemoteAccountForOwner --> CODE_EXISTS
+    provideRemoteAccountForOwner --> ACCOUNT_EXISTS_FOR_OWNER
+    ACCOUNT_EXISTS_FOR_OWNER -.->|yes: calls| _verifyRemoteAccountOwner
+    ACCOUNT_EXISTS_FOR_OWNER -->|no: calls| _createRemoteAccountForOwner
+
+    verifyRemoteAccount -->|calls| _verifyRemoteAccountAddress
+    verifyRemoteAccount --> CODE_EXISTS
+    verifyRemoteAccount -->|calls| _verifyRemoteAccountOwner
+
+    _verifyRemoteAccountAddress -->|calls| _getRemoteAccountAddress
+    _getRemoteAccountAddress -->|calls| _getSalt
+    _getRemoteAccountAddress -->|calls| predictDeterministicAddress
+
+    CODE_EXISTS -.-> RAn
+
+    _verifyRemoteAccountOwner -.->|"call owner()"| RAn
+    _createRemoteAccountForOwner -->|calls| cloneDeterministic
+    cloneDeterministic -->|"CREATE2"| RAn
+    _createRemoteAccountForOwner -->|initialize| RAn
+    _createRemoteAccountForOwner -->|"emit"| RemoteAccountCreated
+
+    getRemoteAccountAddress -->|calls| _getRemoteAccountAddress
+
+    %% state access
+    _getRemoteAccountAddress -.->|reads| _principalSalt
+    _getRemoteAccountAddress -.->|reads| implementation
+    _verifyRemoteAccountOwner -.->|checks| owner
+    SAME_OWNER -.->|checks| owner
+    onlyOwner -.->|checks| owner
+    transferOwnership -->|updates| owner
+    renounceOwnership -->|updates| owner
+
+    style provideRemoteAccount fill:#ffe6e6
+    style provideRemoteAccountForOwner fill:#ffe6e6
+    style verifyRemoteAccount fill:#ffe6e6
+    style getRemoteAccountAddress fill:#ffe6e6
+    style transferOwnership fill:#ffe6e6
+    style renounceOwnership fill:#ffe6e6
+```
+
+**Key Components**:
+
+- **provideRemoteAccount**: Public method requiring new account owner is current factory owner.
+- **provideRemoteAccountForOwner**: Owner-only method to create or verify accounts for an arbitrary owner
+- **verifyRemoteAccount**: Multi-layer verification of existing accounts (code, principal, owner)
+- **verifyFactoryPrincipalAccount**: Validates the factory principal account string
+- **\_verifyRemoteAccountAddress**: Enforces principal-to-address derivation before creation/verification.
+- **\_getRemoteAccountAddress**: Rejects the factory principal account (prevents treating factory as a remote account).
+- **\_createRemoteAccountForOwner**: Core deterministic clone deployment + ownership initialization.
+
+## Data Flow: Account creation and use
+
+```mermaid
+sequenceDiagram
+    participant PM as Portfolio Manager<br/>(Agoric)
+    participant AXL as Axelar Gateway
+    participant PR as RemoteAccountAxelarRouter
+    participant P2 as Permit2
+    participant RAF as RemoteAccountFactory
+    participant RA as RemoteAccount
+    participant DEFI as DeFi Protocol
+
+    Note right of PM: using portfolio LCA
+    PM->>AXL: send ProvideRemoteAccountInstruction |<br>RemoteAccountExecuteInstruction |<br>UpdateOwnerInstruction
+    AXL->>PR: _execute(sourceChain,<br>sourceAddress, payload)
+
+    PR->>PR: validate source chain
+
+    critical
+        alt processProvideRemoteAccountInstruction
+            Note over PR,RA: pull deposit
+            opt if depositPermit exists
+                PR->>P2: permitWitnessTransferFrom(...)
+                P2->>RA: transfer tokens
+            end
+
+            Note over PR,RA: provide account
+            PR->>RAF: provideRemoteAccount(instruction.principalAccount,<br> address(this), expectedAddress)
+            alt if exists
+                RAF->>RA: owner()
+                RAF->>RAF: verify match
+            else
+                RAF->>RA: cloneDeterministic
+                RAF->>RA: initialize(router)
+            end
+        else processRemoteAccountExecuteInstruction
+            Note over PR,RA: provide account
+            PR->>RAF: provideRemoteAccount(sourceAddress, address(this), expectedAddress)
+            alt if exists
+                RAF->>RA: owner()
+                RAF->>RAF: verify match
+            else
+                RAF->>RA: cloneDeterministic
+                RAF->>RA: initialize(router)
+            end
+
+            Note over PR,RA: make calls
+            opt if multiCalls exist
+                PR->>RA: executeCalls(multiCalls)
+                RA->>RA: Validate owner
+                loop for each {target, data, value, gasLimit}
+                    RA->>DEFI: target.call{value, gas: gasLimit}(data)
+                    Note over RA,DEFI: gasLimit is optional (0 means no explicit gas)
+                    DEFI-->>RA: result
+                end
+            end
+        else processUpdateOwnerInstruction
+            PR->>PR: verify newOwner is successor
+
+            Note over PR,RA: provide account / verify principal, then transfer
+            alt expectedAddress == factory
+                PR->>RAF: verifyFactoryPrincipalAccount(sourceAddress)
+                PR->>RAF: transferOwnership(newOwner)
+            else
+                PR->>RAF: provideRemoteAccount(sourceAddress, address(this), expectedAddress)
+                alt if exists
+                    RAF->>RA: owner()
+                    RAF->>RAF: verify match
+                else
+                    RAF->>RA: cloneDeterministic
+                    RAF->>RA: initialize(router)
+                end
+                PR->>RA: transferOwnership(newOwner)
+            end
+        end
+    option [success]
+        PR->>PR: emit OperationResult(id, true, '')
+    option [failure]
+        PR->>PR: emit OperationResult(id, false, reason)
+    end
+```
+
+**Flow Description**:
+
+1. Portfolio Manager sends instructions from portfolio LCA via Axelar GMP
+2. RemoteAccountAxelarRouter validates message source
+3. RemoteAccountAxelarRouter parses and processes input
+    - For `processProvideRemoteAccountInstruction`:
+        1. If requested, RemoteAccountAxelarRouter transfers tokens via Permit2
+        2. RemoteAccountAxelarRouter provides account (creating if necessary)
+    - For `processRemoteAccountExecuteInstruction`:
+        1. RemoteAccountAxelarRouter provides account (creating if necessary)
+        2. If calls for RemoteAccount exist, RemoteAccountAxelarRouter forwards them and RemoteAccount executes them
+    - For `processUpdateOwnerInstruction`:
+        1. RemoteAccountAxelarRouter verifies that the new owner identifies its successor
+        2. RemoteAccountAxelarRouter provides account (creating if necessary), or verifies the factory principal
+        3. RemoteAccountAxelarRouter transfers account ownership
+4. RemoteAccountAxelarRouter emits an event describing success or failure
+
+## Ownership and Security Model
+
+```mermaid
+graph TB
+    Axelar
+    EVM_OPERATOR["EVM operator multisig"]
+    ROUTER1[old RemoteAccountAxelarRouter v1]
+    ROUTER2[old RemoteAccountAxelarRouter v2]
+    ROUTERn[RemoteAccountAxelarRouter v3]
+    RAF[RemoteAccountFactory]
+    RA1["old RemoteAccount<br>(untouched by v2+)"]
+    RA2["old RemoteAccount<br>(touched by v3)"]
+    RAn[new RemoteAccount]
+
+    Axelar -->|_execute| ROUTER1
+    Axelar -->|_execute| ROUTER2
+    Axelar -->|_execute| ROUTERn
+
+    EVM_OPERATOR -.->|setSuccessor| ROUTER1
+    EVM_OPERATOR -.->|setSuccessor| ROUTER2
+    EVM_OPERATOR -.->|setSuccessor| ROUTERn
+
+    ROUTER1 ==>|owns| RA1
+    ROUTER1 -.->|transferred| RA2
+    ROUTER1 -.->|transferred| RAF
+    ROUTER1 -.->|old successor| ROUTER2
+    ROUTER1 -->|successor| ROUTERn
+    ROUTER2 -.->|transferred| RAF
+    ROUTER2 -->|successor| ROUTERn
+    ROUTERn ==>|owns| RA2
+    ROUTERn ==>|owns| RAn
+    ROUTERn ==>|owns| RAF
+
+    style Axelar fill:#ffe6e6
+    style EVM_OPERATOR fill:#ffe6e6
+    style ROUTER1 fill:#e8e8e8
+    style ROUTER2 fill:#e8e8e8
+    style ROUTERn fill:#e6ffe6
+```
+
+**Ownership**:
+
+- Current RemoteAccountAxelarRouter owns RemoteAccountFactory and all new accounts
+- Ownership of old accounts is transferred upon activity (`transferOwnership` call through old router)
+
+**Security Checks**:
+
+- **RemoteAccountAxelarRouter `setSuccessor`**: Validate `msg.sender` against immutable `owner`
+- **RemoteAccountAxelarRouter `_execute`**: Validate `sourceChain` against immutable hash
+- **RemoteAccountAxelarRouter `processProvideRemoteAccountInstruction`**: Validate the source address as the factory principal. This ensures only the portfolio manager can redeem signed permit2 intents.
+- **RemoteAccountFactory `provideRemoteAccount`**: For account creation, validate requested owner against its own owner. Validates remote account address derives from sourceAddress.
+- **RemoteAccountFactory/RemoteAccount `executeCalls` and `transferOwnership`**: Validate that sender is current owner
+
+## Deployment
+
+```mermaid
+sequenceDiagram
+    participant PM as Portfolio Manager<br>(Agoric)
+    participant EVM_DEPLOYER as EVM deployer
+    participant EVM_OPERATOR as EVM operator<br>multisig
+    participant ROUTER1 as RemoteAccountAxelarRouter<br>v1
+    participant ROUTER2 as RemoteAccountAxelarRouter<br>v2
+    participant ROUTERn as RemoteAccountAxelarRouter<br>v3
+    participant IMP as RemoteAccount<br>implementation
+    participant RAF as RemoteAccountFactory
+    participant RA as RemoteAccount
+
+    Note over PM,RA: Initial deployment
+    EVM_DEPLOYER->>IMP: deploy
+    EVM_DEPLOYER->>IMP: renounceOwnership
+    EVM_DEPLOYER->>RAF: deploy
+    EVM_DEPLOYER->>ROUTER1: deploy
+    EVM_DEPLOYER->>RAF: transferOwnership to router
+
+    Note over PM,RA: Deploy new router
+    EVM_DEPLOYER->>ROUTERn: deploy
+
+    Note over PM,RA: Update old routers
+    par
+        EVM_OPERATOR->>ROUTER1: setSuccessor(new router)
+        EVM_OPERATOR->>ROUTER2: setSuccessor(new router)
+    end
+
+    Note over PM,RA: Upgrade contract for new router
+    PM->>PM: upgrade
+    PM->>ROUTER2: [via Axelar] send (processUpdateOwnerInstruction, txId, factoryAddr, UpdateOwnerInstruction{newRouterAddr})
+    ROUTER2->>RAF: transferOwnership(newRouterAddr)
+    RAF->>RAF: confirm sender is current owner
+    RAF->>RAF: replace owner
+    ROUTER2->>PM: [via Resolver] ready
+    PM->>PM: new router ready
+
+    Note over PM,RA: Account interactions
+    opt if account uses old router
+        PM->>ROUTER1: [via Axelar] send (processUpdateOwnerInstruction, txId, addr, UpdateOwnerInstruction{newRouterAddr})
+        ROUTER1->>RAF: provideRemoteAccount
+        RAF-->>RA: create/validate
+        ROUTER1->>RA: transferOwnership(newRouterAddr)
+        RA->>RA: confirm sender is current owner
+        RA->>RA: replace owner
+    end
+    PM->>ROUTERn: [via Axelar] send (processRemoteAccountExecuteInstruction, txId, expectedAddr, RemoteAccountExecuteInstruction{...})
+    ROUTERn->>RAF: provideRemoteAccount
+    RAF-->>RA: create/validate
+    ROUTERn->>RA: executeCalls
+```
+
+**Migration Features**:
+
+- Non-disruptive: Can migrate one account at a time
+- Safe: Requires both owner of old router and portfolio manager agreement
+- Flexible: RemoteAccount addresses remain constant
+- Auditable: All account changes performed via cross-chain messages.
