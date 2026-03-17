@@ -43,6 +43,12 @@ network=$1
 contract=$2
 owner_type=${3:-ymax0}
 
+# Default AGORIC_LCA addresses per network/owner-type
+MAINNET_YMAX0_LCA="agoric1wl2529tfdlfvure7mw6zteam02prgaz88p0jru4tlzuxdawrdyys6jlmnq"
+MAINNET_YMAX1_LCA="agoric13ecz27mm2ug5kv96jyal2k6z8874mxzs4m4yuet36s4nqdl0ey6qr09p74"
+TESTNET_YMAX0_LCA="agoric18ek5td2h397cmejnlndes50k84ywx82kau7aff80t74fcxmjnzqstjclj0"
+TESTNET_YMAX1_LCA="agoric1ps63986jnululzkmg7h3nhs5at6vkatcgsjy9ttgztykuaepwpxsrw2sus"
+
 delete_deployments_folder() {
     local folder=$1
     if [ -d "$folder" ]; then
