@@ -9,6 +9,7 @@ on:
         options:
           - factory
           - depositFactory
+          - remoteAccountFactory
           - portfolioRouter
       REMOTE_ACCOUNT_FACTORY:
         description: Remote account factory address
@@ -16,18 +17,30 @@ on:
       OWNER_AUTHORITY:
         description: Owner authority address
         required: true
+      ALL_TESTNETS:
+        description: Deploy to all testnets
+        type: boolean
+        default: false
       ETH_SEPOLIA:
         description: Deploy to eth-sepolia
         type: boolean
-        default: true
+        default: false
       BASE_SEPOLIA:
         description: Deploy to base-sepolia
         type: boolean
-        default: true
+        default: false
       ARB_SEPOLIA:
         description: Deploy to arb-sepolia
         type: boolean
-        default: true
+        default: false
+      OPT_SEPOLIA:
+        description: Deploy to opt-sepolia
+        type: boolean
+        default: false
+      FUJI:
+        description: Deploy to fuji
+        type: boolean
+        default: false
 
 jobs:
   deploy-to-testnets:
@@ -56,10 +69,17 @@ jobs:
       - name: Build chain list
         id: chains
         run: |
-          CHAINS=""
-          if [ "${{ github.event.inputs.ETH_SEPOLIA }}" = "true" ]; then CHAINS="eth-sepolia"; fi
-          if [ "${{ github.event.inputs.BASE_SEPOLIA }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}base-sepolia"; fi
-          if [ "${{ github.event.inputs.ARB_SEPOLIA }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}arb-sepolia"; fi
+          ALL="${{ github.event.inputs.ALL_TESTNETS }}"
+          if [ "$ALL" = "true" ]; then
+            CHAINS="eth-sepolia,base-sepolia,arb-sepolia,opt-sepolia,fuji"
+          else
+            CHAINS=""
+            if [ "${{ github.event.inputs.ETH_SEPOLIA }}" = "true" ]; then CHAINS="eth-sepolia"; fi
+            if [ "${{ github.event.inputs.BASE_SEPOLIA }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}base-sepolia"; fi
+            if [ "${{ github.event.inputs.ARB_SEPOLIA }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}arb-sepolia"; fi
+            if [ "${{ github.event.inputs.OPT_SEPOLIA }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}opt-sepolia"; fi
+            if [ "${{ github.event.inputs.FUJI }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}fuji"; fi
+          fi
           if [ -z "$CHAINS" ]; then echo "No chains selected" && exit 1; fi
           echo "list=$CHAINS" >> "$GITHUB_OUTPUT"
 
