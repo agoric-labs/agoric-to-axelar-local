@@ -1,4 +1,4 @@
-name: Deploy to Sepolia
+name: Deploy to Testnets
 on:
   workflow_dispatch:
     inputs:
@@ -16,9 +16,21 @@ on:
       OWNER_AUTHORITY:
         description: Owner authority address
         required: true
+      ETH_SEPOLIA:
+        description: Deploy to eth-sepolia
+        type: boolean
+        default: true
+      BASE_SEPOLIA:
+        description: Deploy to base-sepolia
+        type: boolean
+        default: true
+      ARB_SEPOLIA:
+        description: Deploy to arb-sepolia
+        type: boolean
+        default: true
 
 jobs:
-  deploy-to-sepolia:
+  deploy-to-testnets:
     runs-on: ubuntu-latest
     steps:
       - name: Setup Node
@@ -41,8 +53,18 @@ jobs:
       - name: Install dependencies under integration folder
         run: cd integration && yarn install
 
-      - name: Deploy to Sepolia
-        run: npm run deploy:all -- -c ${{ github.event.inputs.CONTRACT_OPTION }} --chains eth-sepolia,base-sepolia,arb-sepolia
+      - name: Build chain list
+        id: chains
+        run: |
+          CHAINS=""
+          if [ "${{ github.event.inputs.ETH_SEPOLIA }}" = "true" ]; then CHAINS="eth-sepolia"; fi
+          if [ "${{ github.event.inputs.BASE_SEPOLIA }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}base-sepolia"; fi
+          if [ "${{ github.event.inputs.ARB_SEPOLIA }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}arb-sepolia"; fi
+          if [ -z "$CHAINS" ]; then echo "No chains selected" && exit 1; fi
+          echo "list=$CHAINS" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to Testnets
+        run: npm run deploy:all -- -c ${{ github.event.inputs.CONTRACT_OPTION }} --chains ${{ steps.chains.outputs.list }}
         env:
           REMOTE_ACCOUNT_FACTORY: ${{ github.event.inputs.REMOTE_ACCOUNT_FACTORY }}
           OWNER_AUTHORITY: ${{ github.event.inputs.OWNER_AUTHORITY }}
