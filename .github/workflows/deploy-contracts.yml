@@ -18,6 +18,13 @@ on:
         options:
           - testnet
           - mainnet
+      OWNER_TYPE:
+        description: Owner type (used by depositFactory and remoteAccountFactory)
+        required: false
+        type: choice
+        options:
+          - ymax0
+          - ymax1
       REMOTE_ACCOUNT_FACTORY:
         description: Remote account factory address (required for portfolioRouter)
         required: false
@@ -25,7 +32,7 @@ on:
         description: Owner authority address (required for portfolioRouter)
         required: false
       ALL_CHAINS:
-        description: Deploy to all chains for selected network
+        description: Deploy to all chains
         type: boolean
         default: false
       ETH:
@@ -46,6 +53,10 @@ on:
         default: false
       AVAX:
         description: Deploy to AVAX
+        type: boolean
+        default: false
+      PARALLEL:
+        description: Deploy in parallel (faster but cannot stop on first failure)
         type: boolean
         default: false
 
@@ -129,9 +140,15 @@ jobs:
           echo "chain_args=--chains $CHAINS" >> "$GITHUB_OUTPUT"
 
       - name: Deploy
-        run: npm run deploy:all -- -c "$CONTRACT_OPTION" ${{ steps.chains.outputs.chain_args }} --parallel
+        # Sequential (default) stops on first failure; parallel is faster but all chains run regardless.
+        run: |
+          EXEC_FLAG=""
+          if [ "$PARALLEL" = "true" ]; then EXEC_FLAG="--parallel"; fi
+          npm run deploy:all -- -c "$CONTRACT_OPTION" -o "$OWNER_TYPE" ${{ steps.chains.outputs.chain_args }} $EXEC_FLAG
         env:
           CONTRACT_OPTION: ${{ github.event.inputs.CONTRACT_OPTION }}
+          OWNER_TYPE: ${{ github.event.inputs.OWNER_TYPE }}
+          PARALLEL: ${{ github.event.inputs.PARALLEL }}
           REMOTE_ACCOUNT_FACTORY: ${{ github.event.inputs.REMOTE_ACCOUNT_FACTORY }}
           OWNER_AUTHORITY: ${{ github.event.inputs.OWNER_AUTHORITY }}
           # Testnet: `0x15626280BF6a502b2F7f01944Ca23774567Cd56C` is the
