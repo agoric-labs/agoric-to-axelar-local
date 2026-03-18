@@ -19,11 +19,11 @@ on:
           - testnet
           - mainnet
       REMOTE_ACCOUNT_FACTORY:
-        description: Remote account factory address
-        required: true
+        description: Remote account factory address (required for portfolioRouter)
+        required: false
       OWNER_AUTHORITY:
-        description: Owner authority address
-        required: true
+        description: Owner authority address (required for portfolioRouter)
+        required: false
       ALL_CHAINS:
         description: Deploy to all chains for selected network
         type: boolean
@@ -68,17 +68,38 @@ jobs:
           key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Install dependencies under integration folder
         run: cd integration && yarn install
 
+      - name: Validate inputs
+        env:
+          CONTRACT_OPTION: ${{ github.event.inputs.CONTRACT_OPTION }}
+          REMOTE_ACCOUNT_FACTORY: ${{ github.event.inputs.REMOTE_ACCOUNT_FACTORY }}
+          OWNER_AUTHORITY: ${{ github.event.inputs.OWNER_AUTHORITY }}
+        run: |
+          if [ "$CONTRACT_OPTION" = "portfolioRouter" ]; then
+            if [ -z "$REMOTE_ACCOUNT_FACTORY" ]; then
+              echo "REMOTE_ACCOUNT_FACTORY is required for portfolioRouter" && exit 1
+            fi
+            if [ -z "$OWNER_AUTHORITY" ]; then
+              echo "OWNER_AUTHORITY is required for portfolioRouter" && exit 1
+            fi
+          fi
+
       - name: Build chain list
         id: chains
+        env:
+          NETWORK: ${{ github.event.inputs.NETWORK }}
+          ALL_CHAINS: ${{ github.event.inputs.ALL_CHAINS }}
+          CHAIN_ETH: ${{ github.event.inputs.ETH }}
+          CHAIN_BASE: ${{ github.event.inputs.BASE }}
+          CHAIN_ARB: ${{ github.event.inputs.ARB }}
+          CHAIN_OPT: ${{ github.event.inputs.OPT }}
+          CHAIN_AVAX: ${{ github.event.inputs.AVAX }}
         run: |
-          NETWORK="${{ github.event.inputs.NETWORK }}"
-
-          if [ "${{ github.event.inputs.ALL_CHAINS }}" = "true" ]; then
+          if [ "$ALL_CHAINS" = "true" ]; then
             echo "Deploying to all $NETWORK chains"
             echo "chain_args=--$NETWORK" >> "$GITHUB_OUTPUT"
             exit 0
@@ -86,17 +107,18 @@ jobs:
 
           CHAINS=""
           if [ "$NETWORK" = "testnet" ]; then
-            if [ "${{ github.event.inputs.ETH }}" = "true" ]; then CHAINS="eth-sepolia"; fi
-            if [ "${{ github.event.inputs.BASE }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}base-sepolia"; fi
-            if [ "${{ github.event.inputs.ARB }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}arb-sepolia"; fi
-            if [ "${{ github.event.inputs.OPT }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}opt-sepolia"; fi
-            if [ "${{ github.event.inputs.AVAX }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}fuji"; fi
+            if [ "$CHAIN_ETH" = "true" ]; then CHAINS="eth-sepolia"; fi
+            if [ "$CHAIN_BASE" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}base-sepolia"; fi
+            if [ "$CHAIN_ARB" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}arb-sepolia"; fi
+            if [ "$CHAIN_OPT" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}opt-sepolia"; fi
+            # AVAX testnet is called "fuji"
+            if [ "$CHAIN_AVAX" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}fuji"; fi
           else
-            if [ "${{ github.event.inputs.ETH }}" = "true" ]; then CHAINS="eth"; fi
-            if [ "${{ github.event.inputs.BASE }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}base"; fi
-            if [ "${{ github.event.inputs.ARB }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}arb"; fi
-            if [ "${{ github.event.inputs.OPT }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}opt"; fi
-            if [ "${{ github.event.inputs.AVAX }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}avax"; fi
+            if [ "$CHAIN_ETH" = "true" ]; then CHAINS="eth"; fi
+            if [ "$CHAIN_BASE" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}base"; fi
+            if [ "$CHAIN_ARB" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}arb"; fi
+            if [ "$CHAIN_OPT" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}opt"; fi
+            if [ "$CHAIN_AVAX" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}avax"; fi
           fi
 
           if [ -z "$CHAINS" ]; then
@@ -107,16 +129,18 @@ jobs:
           echo "chain_args=--chains $CHAINS" >> "$GITHUB_OUTPUT"
 
       - name: Deploy
-        run: npm run deploy:all -- -c ${{ github.event.inputs.CONTRACT_OPTION }} ${{ steps.chains.outputs.chain_args }} --parallel
+        run: npm run deploy:all -- -c "$CONTRACT_OPTION" ${{ steps.chains.outputs.chain_args }} --parallel
         env:
+          CONTRACT_OPTION: ${{ github.event.inputs.CONTRACT_OPTION }}
           REMOTE_ACCOUNT_FACTORY: ${{ github.event.inputs.REMOTE_ACCOUNT_FACTORY }}
           OWNER_AUTHORITY: ${{ github.event.inputs.OWNER_AUTHORITY }}
-          # `0x15626280BF6a502b2F7f01944Ca23774567Cd56C` is the address
-          # corresponding to the PRIVATE_KEY below
-          # use https://cloud.google.com/application/web3/faucet/ethereum/sepolia
+          # Testnet: `0x15626280BF6a502b2F7f01944Ca23774567Cd56C` is the
+          # address corresponding to the PRIVATE_KEY below.
+          # Use https://cloud.google.com/application/web3/faucet/ethereum/sepolia
           # to get ETH on sepolia testnet
           # and https://testnets.superbridge.app/ to bridge from eth-sepolia to
-          # base/arb sepolia testnets
+          # base/arb sepolia testnets.
+          # Mainnet: ensure PRIVATE_KEY corresponds to a funded deployer wallet.
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
           ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
           INFURA_KEY: ${{ secrets.INFURA_KEY }}
