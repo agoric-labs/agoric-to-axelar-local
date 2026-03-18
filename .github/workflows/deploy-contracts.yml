@@ -1,0 +1,122 @@
+name: Deploy Contracts
+on:
+  workflow_dispatch:
+    inputs:
+      CONTRACT_OPTION:
+        description: EVM contract to be deployed
+        required: true
+        type: choice
+        options:
+          - factory
+          - depositFactory
+          - remoteAccountFactory
+          - portfolioRouter
+      NETWORK:
+        description: Target network
+        required: true
+        type: choice
+        options:
+          - testnet
+          - mainnet
+      REMOTE_ACCOUNT_FACTORY:
+        description: Remote account factory address
+        required: true
+      OWNER_AUTHORITY:
+        description: Owner authority address
+        required: true
+      ALL_CHAINS:
+        description: Deploy to all chains for selected network
+        type: boolean
+        default: false
+      ETH:
+        description: Deploy to ETH
+        type: boolean
+        default: false
+      BASE:
+        description: Deploy to BASE
+        type: boolean
+        default: false
+      ARB:
+        description: Deploy to ARB
+        type: boolean
+        default: false
+      OPT:
+        description: Deploy to OPT
+        type: boolean
+        default: false
+      AVAX:
+        description: Deploy to AVAX
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install dependencies under integration folder
+        run: cd integration && yarn install
+
+      - name: Build chain list
+        id: chains
+        run: |
+          NETWORK="${{ github.event.inputs.NETWORK }}"
+
+          if [ "${{ github.event.inputs.ALL_CHAINS }}" = "true" ]; then
+            echo "Deploying to all $NETWORK chains"
+            echo "chain_args=--$NETWORK" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHAINS=""
+          if [ "$NETWORK" = "testnet" ]; then
+            if [ "${{ github.event.inputs.ETH }}" = "true" ]; then CHAINS="eth-sepolia"; fi
+            if [ "${{ github.event.inputs.BASE }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}base-sepolia"; fi
+            if [ "${{ github.event.inputs.ARB }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}arb-sepolia"; fi
+            if [ "${{ github.event.inputs.OPT }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}opt-sepolia"; fi
+            if [ "${{ github.event.inputs.AVAX }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}fuji"; fi
+          else
+            if [ "${{ github.event.inputs.ETH }}" = "true" ]; then CHAINS="eth"; fi
+            if [ "${{ github.event.inputs.BASE }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}base"; fi
+            if [ "${{ github.event.inputs.ARB }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}arb"; fi
+            if [ "${{ github.event.inputs.OPT }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}opt"; fi
+            if [ "${{ github.event.inputs.AVAX }}" = "true" ]; then CHAINS="${CHAINS:+$CHAINS,}avax"; fi
+          fi
+
+          if [ -z "$CHAINS" ]; then
+            echo "No chains selected" && exit 1
+          fi
+
+          echo "Deploying to: $CHAINS"
+          echo "chain_args=--chains $CHAINS" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy
+        run: npm run deploy:all -- -c ${{ github.event.inputs.CONTRACT_OPTION }} ${{ steps.chains.outputs.chain_args }} --parallel
+        env:
+          REMOTE_ACCOUNT_FACTORY: ${{ github.event.inputs.REMOTE_ACCOUNT_FACTORY }}
+          OWNER_AUTHORITY: ${{ github.event.inputs.OWNER_AUTHORITY }}
+          # `0x15626280BF6a502b2F7f01944Ca23774567Cd56C` is the address
+          # corresponding to the PRIVATE_KEY below
+          # use https://cloud.google.com/application/web3/faucet/ethereum/sepolia
+          # to get ETH on sepolia testnet
+          # and https://testnets.superbridge.app/ to bridge from eth-sepolia to
+          # base/arb sepolia testnets
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
+          INFURA_KEY: ${{ secrets.INFURA_KEY }}
