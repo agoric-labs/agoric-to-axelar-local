@@ -19,11 +19,11 @@ on:
           - testnet
           - mainnet
       REMOTE_ACCOUNT_FACTORY:
-        description: Remote account factory address
-        required: true
+        description: Remote account factory address (required for portfolioRouter)
+        required: false
       OWNER_AUTHORITY:
-        description: Owner authority address
-        required: true
+        description: Owner authority address (required for portfolioRouter)
+        required: false
       ALL_CHAINS:
         description: Deploy to all chains for selected network
         type: boolean
@@ -72,6 +72,17 @@ jobs:
 
       - name: Install dependencies under integration folder
         run: cd integration && yarn install
+
+      - name: Validate inputs
+        run: |
+          if [ "${{ github.event.inputs.CONTRACT_OPTION }}" = "portfolioRouter" ]; then
+            if [ -z "${{ github.event.inputs.REMOTE_ACCOUNT_FACTORY }}" ]; then
+              echo "REMOTE_ACCOUNT_FACTORY is required for portfolioRouter" && exit 1
+            fi
+            if [ -z "${{ github.event.inputs.OWNER_AUTHORITY }}" ]; then
+              echo "OWNER_AUTHORITY is required for portfolioRouter" && exit 1
+            fi
+          fi
 
       - name: Build chain list
         id: chains
