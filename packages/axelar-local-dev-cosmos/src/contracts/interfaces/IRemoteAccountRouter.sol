@@ -5,6 +5,7 @@ import { ContractCall } from './IRemoteAccount.sol';
 import { IRemoteAccountFactory } from './IRemoteAccountFactory.sol';
 import { IPermit2 } from './IPermit2.sol';
 
+/// @notice A signed Permit2 transfer authorization for depositing tokens.
 struct DepositPermit {
     address owner;
     IPermit2.PermitTransferFrom permit;
@@ -19,6 +20,7 @@ struct DepositPermit {
  *         funds to it
  */
 struct ProvideRemoteAccountInstruction {
+    /// @dev Must be length 0 (no deposit) or 1 (single deposit).
     DepositPermit[] depositPermit;
     string principalAccount;
     address expectedAccountAddress;

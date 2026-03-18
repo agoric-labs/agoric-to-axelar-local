@@ -48,11 +48,11 @@ const getNonceForChain = async (
 const CHAINS = {
   mainnet: ["arb", "avax", "base", "eth", "opt"],
   testnet: [
+    "arb-sepolia",
+    "base-sepolia",
     "eth-sepolia",
     "fuji",
-    "base-sepolia",
     "opt-sepolia",
-    "arb-sepolia",
   ],
 };
 

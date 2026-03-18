@@ -21,7 +21,7 @@ if [[ $# -lt 2 ]]; then
     echo ""
     echo "Supported networks:"
     echo "  Mainnets: arb, avax, base, eth, opt"
-    echo "  Testnets: eth-sepolia, fuji, base-sepolia, opt-sepolia, arb-sepolia"
+    echo "  Testnets: arb-sepolia, base-sepolia, eth-sepolia, fuji, opt-sepolia"
     echo ""
     echo "Examples:"
     echo "  $0 eth-sepolia factory              # Deploy Factory"
