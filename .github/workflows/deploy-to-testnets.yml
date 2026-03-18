@@ -64,7 +64,7 @@ jobs:
           echo "list=$CHAINS" >> "$GITHUB_OUTPUT"
 
       - name: Deploy to Testnets
-        run: npm run deploy:all -- -c ${{ github.event.inputs.CONTRACT_OPTION }} --chains ${{ steps.chains.outputs.list }}
+        run: npm run deploy:all -- -c ${{ github.event.inputs.CONTRACT_OPTION }} --chains ${{ steps.chains.outputs.list }} --parallel
         env:
           REMOTE_ACCOUNT_FACTORY: ${{ github.event.inputs.REMOTE_ACCOUNT_FACTORY }}
           OWNER_AUTHORITY: ${{ github.event.inputs.OWNER_AUTHORITY }}
