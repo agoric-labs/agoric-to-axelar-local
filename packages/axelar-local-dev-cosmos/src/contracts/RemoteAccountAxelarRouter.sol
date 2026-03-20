@@ -296,6 +296,10 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
         // principal account. Unfortunately there are no built-in capabilities
         // over GMP, and implementing one would require some stateful mechanism.
 
+        // Permit2 transfer happens before provideRemoteAccount, but this is safe:
+        // processProvideRemoteAccountInstruction runs inside a try/catch in _execute
+        // (via processInstruction), so if provideRemoteAccount reverts, the entire
+        // instruction — including the permit2 transfer — is rolled back atomically.
         // Transfer first to avoid expensive creation if deposit fails (e.g. insufficient funds,
         // expired permit).
         // The subsequent provideRemoteAccount call will revert this deposit if the expectedAccountAddress
