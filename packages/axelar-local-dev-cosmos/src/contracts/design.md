@@ -368,10 +368,13 @@ graph TB
 
         subgraph "EVM-sourced (vetting authority)"
             CHECK_VA@{shape: text, label: "check msg.sender ==<br>vettingAuthority"}
+            vetInitialRouter
             vetRouter
             revokeRouter
             proposeVettingAuthorityTransfer
         end
+
+        _enableRouter["_enableRouter (internal)"]
 
         subgraph "Agoric-sourced (enabled router)"
             CHECK_ROUTER@{shape: text, label: "check isAuthorizedRouter<br>(msg.sender)"}
@@ -381,6 +384,7 @@ graph TB
         end
 
         subgraph state
+            numberOfAuthorizedRouters@{shape: stored-data}
             _routerStatus@{shape: stored-data, label: "_routerStatus: mapping<br>(Unknown | Vetted | Enabled)"}
             vettingAuthority@{shape: stored-data}
             _pendingVettingAuthority@{shape: stored-data}
@@ -393,6 +397,7 @@ graph TB
     %% operation
     START --> isAuthorizedRouter
     START --> getRouterStatus
+    START --> vetInitialRouter
     START --> vetRouter
     START --> enableRouter
     START --> disableRouter
@@ -404,6 +409,10 @@ graph TB
     getRouterStatus -->|reads| _routerStatus
 
     %% EVM-sourced operations (vetting authority)
+    vetInitialRouter -->|"[1] guard"| numberOfAuthorizedRouters
+    vetInitialRouter -->|"[2] calls"| vetRouter
+    vetInitialRouter -->|"[3] calls"| _enableRouter
+
     vetRouter -->|"[1]"| CHECK_VA
     vetRouter -->|"[2] updates"| _routerStatus
     vetRouter -->|emit| RouterVetted
@@ -420,11 +429,15 @@ graph TB
 
     %% Agoric-sourced operations (enabled router)
     enableRouter -->|"[1]"| CHECK_ROUTER
-    enableRouter -->|"[2] updates"| _routerStatus
-    enableRouter -->|emit| RouterEnabled
+    enableRouter -->|"[2] calls"| _enableRouter
+
+    _enableRouter -->|"[1] updates"| _routerStatus
+    _enableRouter -->|"[2] increments"| numberOfAuthorizedRouters
+    _enableRouter -->|emit| RouterEnabled
 
     disableRouter -->|"[1]"| CHECK_ROUTER
     disableRouter -->|"[2] updates"| _routerStatus
+    disableRouter -->|"[3] decrements"| numberOfAuthorizedRouters
     disableRouter -->|emit| RouterDisabled
 
     confirmVettingAuthorityTransfer -->|"[1]"| CHECK_ROUTER
@@ -435,8 +448,10 @@ graph TB
     CHECK_ROUTER -->|calls| isAuthorizedRouter
 
     style isAuthorizedRouter fill:#ffe6e6
+    style vetInitialRouter fill:#ffe6e6
     style vetRouter fill:#ffe6e6
     style enableRouter fill:#ffe6e6
+    style _enableRouter fill:#fff0e6
     style disableRouter fill:#ffe6e6
     style revokeRouter fill:#ffe6e6
     style proposeVettingAuthorityTransfer fill:#ffe6e6
@@ -455,12 +470,49 @@ graph TB
 
 **Key Components (Router & Vetting Authority Administration)**:
 
+- **vetInitialRouter**: Vets and enables the very first router (vetting authority only, no previous router). This initializes the factory.
 - **vetRouter**: Marks a router as vetted (vetting authority only)
 - **enableRouter**: Enables a vetted router (enabled router only)
 - **disableRouter**: Disables an enabled router (enabled router only, not self)
 - **revokeRouter**: Revokes a vetted router (vetting authority only)
 - **proposeVettingAuthorityTransfer**: Proposes a new vetting authority (current vetting authority only)
 - **confirmVettingAuthorityTransfer**: Confirms the pending vetting authority transfer (enabled router only)
+
+## Data Flow: Factory deployment and initial router setup
+
+```mermaid
+sequenceDiagram
+    participant D as Deployer
+    participant V as Vetting Authority
+    participant RA_IMPL as RemoteAccount<br/>(implementation)
+    participant RAF as RemoteAccountFactory
+    participant R as RemoteAccountAxelarRouter
+
+    Note over D: Step 1: Deploy implementation
+    D->>RA_IMPL: deploy()
+    RA_IMPL->>RA_IMPL: _disableInitializers()
+
+    Note over D: Step 2: Deploy factory
+    D->>RAF: deploy(caip2, principalAccount,<br>implementation, vettingAuthority)
+    RAF->>RAF: store immutables
+    RAF->>RA_IMPL: factory() — verify implementation is inert
+
+    Note over D: Step 3: Deploy router
+    D->>R: deploy(gateway, sourceChain,<br>factory, permit2)
+
+    Note over V: Step 4: Bootstrap initial router
+    V->>RAF: vetInitialRouter(router)
+    RAF->>RAF: require numberOfAuthorizedRouters == 0
+    RAF->>RAF: vetRouter(router) — checks vettingAuthority
+    RAF->>RAF: _enableRouter(router)
+    RAF->>RAF: numberOfAuthorizedRouters = 1
+```
+
+**Deployment Notes**:
+
+- The factory constructor does not accept an "initial router" parameter and instead, requires an initialization step (`vetInitialRouter`) from the vetting authority. This avoids creating a circular dependency when constructing the factory and the first router.
+- The vetting authority address is required at construction of the factory. This is to ensure any CREATE2 based deployments cannot be squatted.
+- `vetInitialRouter` is a one-shot bootstrap: it reverts once any router has been authorized (`numberOfAuthorizedRouters > 0`). Subsequent routers follow the normal vet → enable lifecycle via GMP. It's also not possible to revert back to 0 authorized routers.
 
 ## Data Flow: Account creation and use
 
@@ -628,6 +680,7 @@ sequenceDiagram
     EVM_DEPLOYER->>IMP: deploy
     EVM_DEPLOYER->>RAF: deploy(principal, impl,<br>initialRouter=predicted ROUTER1 addr,<br>vettingAuthority=VA)
     EVM_DEPLOYER->>ROUTER1: deploy(gateway, sourceChain, factory=RAF, permit2)
+    VA->>RAF: vetInitialRouter(ROUTER1)
 
     Note over PM,RA: Normal operations
     PM->>ROUTER1: [via Axelar] processRemoteAccountExecuteInstruction

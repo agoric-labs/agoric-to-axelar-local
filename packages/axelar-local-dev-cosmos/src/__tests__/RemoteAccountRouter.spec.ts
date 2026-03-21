@@ -6,7 +6,7 @@ import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { gmpRouterContract, padTxId, contractWithCallMetadata } from '../utils/router';
 import { makeEvmContract } from '../utils/evm-facade';
-import { routed, deployRemoteAccountFactory, predictDeployAddress } from './lib/utils';
+import { routed, deployRemoteAccountFactory } from './lib/utils';
 import type { ContractCall } from '../interfaces/router';
 import { multicallAbi } from './interfaces/multicall';
 
@@ -53,14 +53,11 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
         const MockPermit2Factory = await ethers.getContractFactory('MockPermit2');
         permit2Mock = await MockPermit2Factory.deploy();
 
-        // Predict the router address so the factory can enable it at construction
-        const predictedRouterAddress = await predictDeployAddress(owner, 2);
-
         // Deploy RemoteAccount implementation + RemoteAccountFactory
         factory = await deployRemoteAccountFactory(
             portfolioContractCaip2,
             portfolioContractAccount,
-            predictedRouterAddress,
+            owner.address,
         );
 
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
@@ -71,6 +68,8 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
             permit2Mock.target,
         );
         await router.waitForDeployment();
+
+        await factory.getFunction('vetInitialRouter')(router.target);
 
         routeConfig = {
             sourceChain,

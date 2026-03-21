@@ -12,7 +12,6 @@ import {
     computeRemoteAccountAddress,
     deployRemoteAccountFactory,
     ParsedLog,
-    predictDeployAddress,
     routed,
 } from './lib/utils';
 import { multicallAbi } from './interfaces/multicall';
@@ -84,14 +83,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const MockPermit2Factory = await ethers.getContractFactory('MockPermit2');
         permit2Mock = await MockPermit2Factory.deploy();
 
-        // Predict the router address so the factory can enable it at construction
-        const predictedRouterAddress = await predictDeployAddress(owner, 2);
-
         // Deploy RemoteAccount implementation + RemoteAccountFactory
         factory = await deployRemoteAccountFactory(
             portfolioContractCaip2,
             portfolioContractAccount,
-            predictedRouterAddress,
+            owner.address,
         );
 
         // Deploy RemoteAccountAxelarRouter
@@ -103,6 +99,8 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
             permit2Mock.target,
         );
         await router.waitForDeployment();
+
+        await factory.getFunction('vetInitialRouter')(router.target);
 
         // Deploy Multicall target for tests
         const MulticallFactory = await ethers.getContractFactory('Multicall');

@@ -4,7 +4,7 @@ import { Contract } from 'ethers';
 import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
-import { routed, deployRemoteAccountFactory, predictDeployAddress } from './lib/utils';
+import { routed, deployRemoteAccountFactory } from './lib/utils';
 
 describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
     let owner: HardhatEthersSigner, addr1: HardhatEthersSigner;
@@ -52,14 +52,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const MockPermit2Factory = await ethers.getContractFactory('MockPermit2');
         permit2Mock = await MockPermit2Factory.deploy();
 
-        // Predict the router address so the factory can enable it at construction
-        const predictedRouterAddress = await predictDeployAddress(owner, 2);
-
         // Deploy RemoteAccount implementation + RemoteAccountFactory
         factory = await deployRemoteAccountFactory(
             portfolioContractCaip2,
             portfolioContractAccount,
-            predictedRouterAddress,
+            owner.address,
         );
 
         // Deploy RemoteAccountAxelarRouter
@@ -71,6 +68,8 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
             permit2Mock.target,
         );
         await router.waitForDeployment();
+
+        await factory.getFunction('vetInitialRouter')(router.target);
 
         routeConfig = {
             sourceChain,

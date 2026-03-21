@@ -31,6 +31,8 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
     /// @notice The pre-deployed RemoteAccount implementation that all clones delegate to
     address public immutable implementation;
 
+    uint256 public numberOfAuthorizedRouters;
+
     mapping(address => RouterStatus) private _routerStatus;
 
     /// @notice The address authorized to vet and revoke routers.
@@ -48,30 +50,26 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
      * @param factoryPrincipalAccount_ The address of the principal for this RemoteAccountFactory
      * @param implementation_ The address of the pre-deployed RemoteAccount implementation contract.
      *        This implementation must have its initializers disabled to ensure it is inert.
-     * @param initialRouter The initial router to enable
-     * @param vettingAuthority_ The address authorized to vet and revoke routers
+     * @param initialVettingAuthority_ The initial address authorized to vet and revoke routers
      */
     constructor(
         string memory factoryPrincipalCaip2_,
         string memory factoryPrincipalAccount_,
         address implementation_,
-        address initialRouter,
-        address vettingAuthority_
+        address initialVettingAuthority_
     ) {
         factoryPrincipalCaip2 = factoryPrincipalCaip2_;
         factoryPrincipalAccount = factoryPrincipalAccount_;
         _principalSalt = keccak256(bytes(factoryPrincipalAccount_)); // _getSalt(factoryPrincipalAccount_);
         implementation = implementation_;
-        _routerStatus[initialRouter] = RouterStatus.Enabled;
-        emit RouterVetted(initialRouter);
-        emit RouterEnabled(initialRouter);
-        if (vettingAuthority_ == address(0)) {
-            vettingAuthority = msg.sender;
-        } else {
-            vettingAuthority = vettingAuthority_;
-        }
 
-        // The initial router must be vetted and enabled by the constructor since there is no owner to call vetRouter or enableRouter.
+        if (initialVettingAuthority_ == address(0)) {
+            // The "expected" address in the error is somewhat subjective, but
+            // it should be clear that the zero address is not valid.
+            revert InvalidVettingAuthority(initialVettingAuthority_, msg.sender);
+        }
+        vettingAuthority = initialVettingAuthority_;
+
         try RemoteAccount(payable(implementation_)).factory() returns (address implFactory) {
             if (implFactory != address(0)) {
                 revert('Implementation must be an inert RemoteAccount contract');
@@ -243,7 +241,7 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
      * @dev Only the vetting authority can vet routers. Vetting does not enable the router.
      * @param router The router address to vet
      */
-    function vetRouter(address router) external {
+    function vetRouter(address router) public {
         if (msg.sender != vettingAuthority) {
             revert UnauthorizedCaller(msg.sender);
         }
@@ -251,6 +249,21 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
             _routerStatus[router] = RouterStatus.Vetted;
             emit RouterVetted(router);
         }
+    }
+
+    /**
+     * @notice Vet and enable the initial router
+     * @dev Only the vetting authority can authorize the initial router.
+     *      Reverts if already initialized (any router authorized).
+     * @param router The router address to vet and enable
+     */
+    function vetInitialRouter(address router) external {
+        if (numberOfAuthorizedRouters > 0) {
+            revert UnauthorizedCaller(msg.sender);
+        }
+        // This will check that the caller is authorized.
+        vetRouter(router);
+        _enableRouter(router);
     }
 
     /**
@@ -262,6 +275,15 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
         if (!isAuthorizedRouter(msg.sender)) {
             revert UnauthorizedCaller(msg.sender);
         }
+        _enableRouter(router);
+    }
+
+    /**
+     * @notice Enable a vetted router to operate on remote accounts
+     * @dev The internal caller must ensure the caller is authorized. Router must be vetted first.
+     * @param router The router address to enable
+     */
+    function _enableRouter(address router) internal {
         if (_routerStatus[router] != RouterStatus.Vetted) {
             if (_routerStatus[router] == RouterStatus.Enabled) {
                 return;
@@ -269,7 +291,8 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
             revert RouterNotVetted(router);
         }
         _routerStatus[router] = RouterStatus.Enabled;
-        emit RouterEnabled(router);
+        numberOfAuthorizedRouters += 1;
+        emit RouterEnabled(router, numberOfAuthorizedRouters);
     }
 
     /**
@@ -288,7 +311,8 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
             revert RouterNotEnabled(router);
         }
         _routerStatus[router] = RouterStatus.Vetted;
-        emit RouterDisabled(router);
+        numberOfAuthorizedRouters -= 1;
+        emit RouterDisabled(router, numberOfAuthorizedRouters);
     }
 
     /**

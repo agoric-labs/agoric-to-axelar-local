@@ -4,7 +4,7 @@ import { Contract } from 'ethers';
 import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
-import { routed, deployRemoteAccountFactory, predictDeployAddress } from './lib/utils';
+import { routed, deployRemoteAccountFactory } from './lib/utils';
 
 describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
     let owner: HardhatEthersSigner, addr1: HardhatEthersSigner;
@@ -46,13 +46,10 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         const MockPermit2Factory = await ethers.getContractFactory('MockPermit2');
         permit2Mock = await MockPermit2Factory.deploy();
 
-        // Predict the router address so the factory can enable it at construction
-        const predictedRouterAddress = await predictDeployAddress(owner, 2);
-
         factory = await deployRemoteAccountFactory(
             portfolioContractCaip2,
             portfolioContractAccount,
-            predictedRouterAddress,
+            owner.address,
         );
 
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
@@ -63,6 +60,8 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
             permit2Mock.target,
         );
         await router.waitForDeployment();
+
+        await factory.getFunction('vetInitialRouter')(router.target);
 
         routeConfig = {
             sourceChain,
@@ -97,6 +96,21 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
     it('should reject vetRouter from non-vetting-authority', async () => {
         await expect(
             factory.connect(addr1).getFunction('vetRouter')(addr1.address),
+        ).to.be.revertedWithCustomError(factory, 'UnauthorizedCaller');
+    });
+
+    it('should reject vetInitialRouter after a router is already authorized', async () => {
+        const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
+        const newRouter = await RouterContract.deploy(
+            axelarGatewayMock.target,
+            sourceChain,
+            factory.target,
+            permit2Mock.target,
+        );
+        await newRouter.waitForDeployment();
+
+        await expect(
+            factory.getFunction('vetInitialRouter')(newRouter.target),
         ).to.be.revertedWithCustomError(factory, 'UnauthorizedCaller');
     });
 

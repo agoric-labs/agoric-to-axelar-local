@@ -4,12 +4,7 @@ import { Contract } from 'ethers';
 import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
-import {
-    computeRemoteAccountAddress,
-    deployRemoteAccountFactory,
-    predictDeployAddress,
-    routed,
-} from './lib/utils';
+import { computeRemoteAccountAddress, deployRemoteAccountFactory, routed } from './lib/utils';
 import type { DepositPermit } from '../interfaces/router.ts';
 
 /**
@@ -65,14 +60,11 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         const MockPermit2Factory = await ethers.getContractFactory('MockPermit2');
         permit2Mock = await MockPermit2Factory.deploy();
 
-        // Predict the router address so the factory can enable it at construction
-        const predictedRouterAddress = await predictDeployAddress(owner, 2);
-
         // Deploy RemoteAccount implementation + RemoteAccountFactory
         factory = await deployRemoteAccountFactory(
             portfolioContractCaip2,
             portfolioContractAccount,
-            predictedRouterAddress,
+            owner.address,
         );
 
         // Deploy RemoteAccountAxelarRouter
@@ -84,6 +76,8 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
             permit2Mock.target,
         );
         await router.waitForDeployment();
+
+        await factory.getFunction('vetInitialRouter')(router.target);
 
         // Deploy test token
         const MockERC20Factory = await ethers.getContractFactory('MockERC20');

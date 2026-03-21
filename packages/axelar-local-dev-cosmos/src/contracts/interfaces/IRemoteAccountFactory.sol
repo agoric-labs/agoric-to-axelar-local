@@ -20,8 +20,8 @@ interface IRemoteAccountFactory {
     event RemoteAccountCreated(address indexed accountAddress, string principalAccount);
 
     event RouterVetted(address indexed router);
-    event RouterEnabled(address indexed router);
-    event RouterDisabled(address indexed router);
+    event RouterEnabled(address indexed router, uint256 numberOfAuthorizedRouters);
+    event RouterDisabled(address indexed router, uint256 numberOfAuthorizedRouters);
     event RouterRevoked(address indexed router);
 
     event VettingAuthorityTransferProposed(
@@ -57,6 +57,8 @@ interface IRemoteAccountFactory {
     function isAuthorizedRouter(address caller) external view returns (bool);
 
     function getRouterStatus(address router) external view returns (RouterStatus);
+
+    function numberOfAuthorizedRouters() external view returns (uint256);
 
     function enableRouter(address router) external;
 
