@@ -1,4 +1,5 @@
 import "@nomicfoundation/hardhat-toolbox";
+import "@nomicfoundation/hardhat-ignition-ethers";
 import { config as envConfig } from "dotenv";
 import { HardhatUserConfig } from "hardhat/config";
 

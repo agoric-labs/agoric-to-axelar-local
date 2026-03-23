@@ -28,8 +28,8 @@ on:
       REMOTE_ACCOUNT_FACTORY:
         description: Remote account factory address (required for portfolioRouter)
         required: false
-      OWNER_AUTHORITY:
-        description: Owner authority address (required for portfolioRouter)
+      VETTING_AUTHORITY:
+        description: Vetting authority address (required for remoteAccountFactory)
         required: false
       ALL_CHAINS:
         description: Deploy to all chains
@@ -88,15 +88,13 @@ jobs:
         env:
           CONTRACT_OPTION: ${{ github.event.inputs.CONTRACT_OPTION }}
           REMOTE_ACCOUNT_FACTORY: ${{ github.event.inputs.REMOTE_ACCOUNT_FACTORY }}
-          OWNER_AUTHORITY: ${{ github.event.inputs.OWNER_AUTHORITY }}
+          VETTING_AUTHORITY: ${{ github.event.inputs.VETTING_AUTHORITY }}
         run: |
-          if [ "$CONTRACT_OPTION" = "portfolioRouter" ]; then
-            if [ -z "$REMOTE_ACCOUNT_FACTORY" ]; then
-              echo "REMOTE_ACCOUNT_FACTORY is required for portfolioRouter" && exit 1
-            fi
-            if [ -z "$OWNER_AUTHORITY" ]; then
-              echo "OWNER_AUTHORITY is required for portfolioRouter" && exit 1
-            fi
+          if [ "$CONTRACT_OPTION" = "portfolioRouter" ] && [ -z "$REMOTE_ACCOUNT_FACTORY" ]; then
+            echo "REMOTE_ACCOUNT_FACTORY is required for portfolioRouter" && exit 1
+          fi
+          if [ "$CONTRACT_OPTION" = "remoteAccountFactory" ] && [ -z "$VETTING_AUTHORITY" ]; then
+            echo "VETTING_AUTHORITY is required for remoteAccountFactory" && exit 1
           fi
 
       - name: Build chain list
@@ -150,7 +148,7 @@ jobs:
           OWNER_TYPE: ${{ github.event.inputs.OWNER_TYPE }}
           PARALLEL: ${{ github.event.inputs.PARALLEL }}
           REMOTE_ACCOUNT_FACTORY: ${{ github.event.inputs.REMOTE_ACCOUNT_FACTORY }}
-          OWNER_AUTHORITY: ${{ github.event.inputs.OWNER_AUTHORITY }}
+          VETTING_AUTHORITY: ${{ github.event.inputs.VETTING_AUTHORITY }}
           # Testnet: `0x15626280BF6a502b2F7f01944Ca23774567Cd56C` is the
           # address corresponding to the PRIVATE_KEY below.
           # Use https://cloud.google.com/application/web3/faucet/ethereum/sepolia

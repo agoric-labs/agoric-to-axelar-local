@@ -486,9 +486,11 @@ Supported Chains:
 
 Note: Nonces are automatically checked and synchronized if they differ across chains.
 
+Environment Variables (for remoteAccountFactory):
+  VETTING_AUTHORITY            Required: Address authorized to vet new routers
+
 Environment Variables (for portfolioRouter):
   REMOTE_ACCOUNT_FACTORY       Required: Address of the deployed RemoteAccountFactory contract
-  OWNER_AUTHORITY              Required: Address authorized to designate router replacement
 
 Examples:
   # Deploy factory to all chains sequentially
@@ -507,10 +509,10 @@ Examples:
   yarn deploy:all -c depositFactory -o ymax1 --stop-on-error
 
   # Deploy remoteAccountFactory to testnets
-  yarn deploy:all -c remoteAccountFactory --testnet
+  VETTING_AUTHORITY=0x... yarn deploy:all -c remoteAccountFactory --testnet
 
   # Deploy RemoteAccountAxelarRouter
-  REMOTE_ACCOUNT_FACTORY=0x... OWNER_AUTHORITY=0x... yarn deploy:all -c portfolioRouter --testnet
+  REMOTE_ACCOUNT_FACTORY=0x... yarn deploy:all -c portfolioRouter --testnet
 `);
 };
 
