@@ -22,6 +22,28 @@ import { RemoteAccount } from './RemoteAccount.sol';
  *      experimental routers alongside the primary router.
  */
 contract RemoteAccountFactory is IRemoteAccountFactory {
+    enum RouterStatus {
+        Unknown, // Could be potentially revoked
+        Vetted,
+        Enabled
+    }
+
+    error RouterNotVetted(address router);
+    error RouterNotEnabled(address router);
+
+    event RouterVetted(address indexed router);
+    event RouterRevoked(address indexed router);
+
+    event VettingAuthorityTransferProposed(
+        address indexed currentVettingAuthority,
+        address indexed proposedVettingAuthority
+    );
+
+    event VettingAuthorityTransferred(
+        address indexed previousVettingAuthority,
+        address indexed newVettingAuthority
+    );
+
     // Store the principal details of this factory purely for reference
     // Immutable, but cannot be declaratively marked as such because they are strings
     string public factoryPrincipalCaip2;
@@ -232,7 +254,7 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
      * @param router The address to check
      * @return The status of the router
      */
-    function getRouterStatus(address router) external view override returns (RouterStatus) {
+    function getRouterStatus(address router) external view returns (RouterStatus) {
         return _routerStatus[router];
     }
 
