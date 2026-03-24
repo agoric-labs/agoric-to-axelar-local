@@ -41,6 +41,7 @@ contract RemoteAccount is Initializable, IRemoteAccount {
      */
     function initialize(address factory_, string memory principalAccount_) external initializer {
         assert(factory == address(0));
+        require(factory_ != address(0));
         factory = factory_;
         principalAccount = principalAccount_;
     }
