@@ -9,7 +9,7 @@ import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
  * @title RemoteAccount
  * @notice A wallet contract representing a principal account, controlled
  *         through the factory's authorized callers (such as an IRemoteAccountRouter).
- * @dev Ownership is resolved transitively through the factory that deployed this
+ * @dev Caller authorization is resolved through the factory that deployed this
  *      clone: any router enabled by the factory can execute calls on this
  *      account.
  *      This contract does not track its principal directly but instead relies
@@ -19,7 +19,7 @@ import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
 contract RemoteAccount is Initializable, IRemoteAccount {
     /// @notice The factory that deployed this clone.
     /// @dev Set once during initialize.
-    address public factory;
+    address public override factory;
 
     constructor() {
         _disableInitializers();

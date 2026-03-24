@@ -15,17 +15,17 @@ import { RemoteAccount } from './RemoteAccount.sol';
  *      The factory uses the EIP-1167 minimal proxy pattern to deploy
  *      the RemoteAccount contracts as "clones", which delegate all calls to a
  *      pre-deployed RemoteAccount implementation contract.
- *      Remote accounts delegate ownership transitively through this factory:
- *      any enabled router can execute calls on any account created by this
- *      factory.
- *      The factory also maintains a vetted/enabled router map to support
- *      experimental routers alongside the primary router.
+ *      Remote accounts delegate authorization to this factory: any enabled
+ *      router can execute calls on any account created by this factory.
+ *      The factory maintains a vetted/enabled router map to support
+ *      transitioning to updated routers, while enforcing a 2-factor mechanism
+ *      for authorizing new routers.
  */
 contract RemoteAccountFactory is IRemoteAccountFactory {
     enum RouterStatus {
         Unknown, // Could be potentially revoked
         Vetted,
-        Enabled
+        Enabled // Authorized to operate on remote accounts
     }
 
     error RouterNotVetted(address router);
@@ -46,13 +46,16 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
 
     // Store the principal details of this factory purely for reference
     // Immutable, but cannot be declaratively marked as such because they are strings
+    /// @notice The CAIP-2 chain identifier for the factory's principal
     string public factoryPrincipalCaip2;
+    /// @notice The account identifier for the factory's principal
     string public factoryPrincipalAccount;
 
     bytes32 private immutable _principalSalt;
     /// @notice The pre-deployed RemoteAccount implementation that all clones delegate to
     address public immutable implementation;
 
+    /// @notice The number of routers currently authorized to operate remote accounts created by this factory
     uint256 public numberOfAuthorizedRouters;
 
     mapping(address => RouterStatus) private _routerStatus;
@@ -196,8 +199,9 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
     /**
      * @notice Provide a RemoteAccount - creates if new, verifies if exists
      * @dev Idempotent: calling multiple times with same params is safe.
-     *      Since accounts delegate ownership through this factory, there is no
-     *      per-account owner to verify — any authorized caller can operate any account.
+     *      Since accounts immutably delegate authorization through this factory,
+     *      there is no account state to verify (we rely on deterministic address
+     *      derivation of the remote accounts, and atomic initialization).
      * @param principalAccount The principal account string for the RemoteAccount
      * @param expectedAddress The expected CREATE2 address (for verification)
      * @return created true if the RemoteAccount was created, false if it was pre-existing
@@ -232,7 +236,7 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
         assert(newAccountAddress == expectedAddress);
 
         // Initialize the clone with this factory's address.
-        // The clone resolves ownership transitively through this factory.
+        // The clone immutably delegates authorization to this factory.
         RemoteAccount(payable(newAccountAddress)).initialize(address(this));
 
         emit RemoteAccountCreated(newAccountAddress, principalAccount);
@@ -276,7 +280,7 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
     /**
      * @notice Vet and enable the initial router
      * @dev Only the vetting authority can authorize the initial router.
-     *      Reverts if already initialized (any router authorized).
+     *      Reverts if the factory is already initialized (any router authorized).
      * @param router The router address to vet and enable
      */
     function vetInitialRouter(address router) external {
@@ -356,6 +360,13 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
         emit RouterRevoked(router);
     }
 
+    /**
+     * @notice Propose transfer of vetting authority to a new address
+     * @dev Only the current vetting authority can propose a new address.
+     *      The proposed address must be confirmed via an enabled router to
+     *      become the new vetting authority.
+     * @param newVettingAuthority The address of the new vetting authority
+     */
     function proposeVettingAuthorityTransfer(address newVettingAuthority) external {
         if (msg.sender != vettingAuthority) {
             revert UnauthorizedCaller(msg.sender);
@@ -366,7 +377,8 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
 
     /**
      * @notice Confirm transfer of vetting authority to the proposed address
-     * @dev Only an enabled router can confirm.
+     * @dev Only an enabled router can confirm. The address must match the
+     *      previously proposed address.
      * @param newVettingAuthority The address of the new vetting authority (must be proposed first)
      */
     function confirmVettingAuthorityTransfer(address newVettingAuthority) external override {

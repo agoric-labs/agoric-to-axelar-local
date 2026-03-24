@@ -10,15 +10,15 @@ import { IRemoteAccountRouter, IPermit2, DepositPermit, ProvideRemoteAccountInst
  * @title RemoteAccountAxelarRouter
  * @notice The single AxelarExecutable entry point for all remote account operations
  * @dev Handles account creation, deposits, and multicalls atomically.
- *      Remote accounts delegate ownership transitively through the factory:
- *      any caller authorized by the factory can operate any account.
- *      This enables O(1) router migration — transferring factory ownership
- *      instantly updates the authorized caller for all accounts.
+ *      Remote accounts delegate authorization to the factory that deployed them:
+ *      any caller authorized by the factory can operate any accounts it created.
+ *      This enables O(1) router migration — updating router status in the
+ *      factory instantly updates the caller authorization for all accounts.
  *
- *      The factory maintains a vetted/enabled router map with two-factor
+ *      The factory maintains a vetted/enabled router map for two-factor
  *      authorization:
- *      - Vetting: the factory's vetting authority can vet
- *        or revoke routers via direct calls
+ *      - Vetting: the factory's vetting authority can vet or revoke routers
+ *        via direct calls
  *      - Enabling (operational switch): the Agoric chain principal can
  *        enable or disable vetted routers via GMP messages
  *
@@ -353,11 +353,12 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
     }
 
     /**
-     * @notice Process the update owner instruction to transfer factory ownership
+     * @notice Process the instruction to confirm transfer of the factory vetting authority
      * @dev This is an external function which can only be called by this contract
      *      Used to create a call stack that can be reverted atomically
-     *      Only the factory's principal can trigger factory ownership transfer.
-     *      The new owner must be vetted by the factory.
+     *      Only the factory's principal can confirm the factory's vetting
+     *      authority transfer via GMP. The new vetting authority must be have
+     *      been previously proposed directly by the current vetting authority.
      * @param sourceAddress The principal account address of the factory
      * @param factoryAddress The expected factory address
      * @param instruction The decoded ConfirmVettingAuthorityInstruction
@@ -406,6 +407,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
      * @notice Process a disable router instruction
      * @dev This is an external function which can only be called by this contract.
      *      Only the factory's principal can disable routers via GMP.
+     *      The current router cannot disable itself.
      * @param sourceAddress The principal account address of the factory
      * @param factoryAddress The expected factory address
      * @param instruction The decoded DisableRouterInstruction
