@@ -202,6 +202,10 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
      *      Since accounts immutably delegate authorization through this factory,
      *      there is no account state to verify (we rely on deterministic address
      *      derivation of the remote accounts, and atomic initialization).
+     *      This method is intentionally public as the created remote account is
+     *      intrinsically tied to its principal and this factory. No other party
+     *      than the designated principal can operate the account, and only
+     *      through an authorized router.
      * @param principalAccount The principal account string for the RemoteAccount
      * @param expectedAddress The expected CREATE2 address (for verification)
      * @return created true if the RemoteAccount was created, false if it was pre-existing
