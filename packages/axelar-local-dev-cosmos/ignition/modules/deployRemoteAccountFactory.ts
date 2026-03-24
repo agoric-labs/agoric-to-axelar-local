@@ -27,8 +27,6 @@ export default buildModule('RemoteAccountFactoryModule', (m) => {
     });
 
     // Deploy the factory with the implementation address
-    // Explicitly depend on renounceImplementationOwnership so the factory
-    // constructor sees the implementation with owner = address(0)
     const RemoteAccountFactory = m.contract('RemoteAccountFactory', [
         principalCaip2,
         principalAccount,

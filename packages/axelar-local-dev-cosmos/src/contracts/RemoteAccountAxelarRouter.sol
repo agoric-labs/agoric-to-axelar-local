@@ -357,8 +357,8 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
      * @dev This is an external function which can only be called by this contract
      *      Used to create a call stack that can be reverted atomically
      *      Only the factory's principal can confirm the factory's vetting
-     *      authority transfer via GMP. The new vetting authority must be have
-     *      been previously proposed directly by the current vetting authority.
+     *      authority transfer via GMP. The new vetting authority must have been
+     *      previously proposed directly by the current vetting authority.
      * @param sourceAddress The principal account address of the factory
      * @param factoryAddress The expected factory address
      * @param instruction The decoded ConfirmVettingAuthorityInstruction
