@@ -102,7 +102,7 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
         } catch {
             revert('Implementation must be a RemoteAccount contract');
         }
-        try RemoteAccount(payable(implementation_)).initialize(address(0)) {
+        try RemoteAccount(payable(implementation_)).initialize(address(0), '') {
             revert('Implementation must be an inert RemoteAccount contract');
         } catch {
             // Expected to revert because the implementation should have initializers disabled
@@ -237,7 +237,7 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
 
         // Initialize the clone with this factory's address.
         // The clone immutably delegates authorization to this factory.
-        RemoteAccount(payable(newAccountAddress)).initialize(address(this));
+        RemoteAccount(payable(newAccountAddress)).initialize(address(this), principalAccount);
 
         emit RemoteAccountCreated(newAccountAddress, principalAccount);
     }

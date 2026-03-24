@@ -37,5 +37,7 @@ interface IRemoteAccount {
 
     function factory() external view returns (address);
 
+    function principalAccount() external view returns (string memory);
+
     function executeCalls(ContractCall[] calldata calls) external payable;
 }

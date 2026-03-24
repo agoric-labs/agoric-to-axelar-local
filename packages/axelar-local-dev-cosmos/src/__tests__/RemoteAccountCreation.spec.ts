@@ -199,7 +199,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const account = await ethers.getContractAt('RemoteAccount', implementationAddress);
 
         // Try to call initialize on the implementation contract
-        await expect(account.initialize(addr1.address)).to.be.revertedWithCustomError(
+        await expect(account.initialize(ethers.ZeroAddress, '')).to.be.revertedWithCustomError(
             account,
             'InvalidInitialization',
         );
@@ -214,7 +214,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const account = await ethers.getContractAt('RemoteAccount', accountAddress);
 
         // Try to call initialize again on the clone
-        await expect(account.initialize(addr1.address)).to.be.revertedWithCustomError(
+        await expect(account.initialize(addr1.address, lca)).to.be.revertedWithCustomError(
             account,
             'InvalidInitialization',
         );
