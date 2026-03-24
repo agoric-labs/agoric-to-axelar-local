@@ -126,9 +126,14 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         );
         await newRouter.waitForDeployment();
 
+        const initialAuthorizedRouters = await factory.getFunction('numberOfAuthorizedRouters')();
+
         // Vet first
         await factory.getFunction('vetRouter')(newRouter.target);
         expect(await factory.getFunction('isAuthorizedRouter')(newRouter.target)).to.equal(false);
+        expect(await factory.getFunction('numberOfAuthorizedRouters')()).to.equal(
+            initialAuthorizedRouters,
+        );
 
         // Enable via GMP from factory principal
         const receipt = await route(portfolioContractAccount).doEnableRouter({
@@ -138,6 +143,9 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
 
         // Now authorized
         expect(await factory.getFunction('isAuthorizedRouter')(newRouter.target)).to.equal(true);
+        expect(await factory.getFunction('numberOfAuthorizedRouters')()).to.equal(
+            initialAuthorizedRouters + 1n,
+        );
     });
 
     it('should reject enabling an un-vetted router', async () => {
@@ -183,6 +191,8 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         );
         await newRouter.waitForDeployment();
 
+        const initialAuthorizedRouters = await factory.getFunction('numberOfAuthorizedRouters')();
+
         // Vet and enable
         await factory.getFunction('vetRouter')(newRouter.target);
         (
@@ -191,6 +201,9 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
             })
         ).expectOperationSuccess();
         expect(await factory.getFunction('isAuthorizedRouter')(newRouter.target)).to.equal(true);
+        expect(await factory.getFunction('numberOfAuthorizedRouters')()).to.equal(
+            initialAuthorizedRouters + 1n,
+        );
 
         // Disable via GMP
         const receipt = await route(portfolioContractAccount).doDisableRouter({
@@ -200,6 +213,9 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
 
         // No longer authorized
         expect(await factory.getFunction('isAuthorizedRouter')(newRouter.target)).to.equal(false);
+        expect(await factory.getFunction('numberOfAuthorizedRouters')()).to.equal(
+            initialAuthorizedRouters,
+        );
     });
 
     it('should reject disableRouter from non-factory-principal', async () => {
@@ -215,7 +231,7 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
 
     // ==================== Revoking ====================
 
-    it('should revoke a disabled router and emit RouterRevoked', async () => {
+    it('should revoke a disabled router and keep vet / enable / disable / revoke idempotent', async () => {
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         const newRouter = await RouterContract.deploy(
             axelarGatewayMock.target,
@@ -225,23 +241,79 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         );
         await newRouter.waitForDeployment();
 
-        // Vet, enable, then disable
+        const initialAuthorizedRouters = await factory.getFunction('numberOfAuthorizedRouters')();
+
+        // Vet is idempotent
+        await expect(factory.getFunction('vetRouter')(newRouter.target))
+            .to.emit(factory, 'RouterVetted')
+            .withArgs(newRouter.target);
+        expect(await factory.getFunction('isAuthorizedRouter')(newRouter.target)).to.equal(false);
+        expect(await factory.getFunction('numberOfAuthorizedRouters')()).to.equal(
+            initialAuthorizedRouters,
+        );
+
         await factory.getFunction('vetRouter')(newRouter.target);
+        expect(await factory.getFunction('isAuthorizedRouter')(newRouter.target)).to.equal(false);
+        expect(await factory.getFunction('numberOfAuthorizedRouters')()).to.equal(
+            initialAuthorizedRouters,
+        );
+
+        // Enable is idempotent
         (
             await route(portfolioContractAccount).doEnableRouter({
                 router: newRouter.target as `0x${string}`,
             })
         ).expectOperationSuccess();
+        expect(await factory.getFunction('isAuthorizedRouter')(newRouter.target)).to.equal(true);
+        expect(await factory.getFunction('numberOfAuthorizedRouters')()).to.equal(
+            initialAuthorizedRouters + 1n,
+        );
+
+        (
+            await route(portfolioContractAccount).doEnableRouter({
+                router: newRouter.target as `0x${string}`,
+            })
+        ).expectOperationSuccess();
+        expect(await factory.getFunction('isAuthorizedRouter')(newRouter.target)).to.equal(true);
+        expect(await factory.getFunction('numberOfAuthorizedRouters')()).to.equal(
+            initialAuthorizedRouters + 1n,
+        );
+
+        // Disable is idempotent
         (
             await route(portfolioContractAccount).doDisableRouter({
                 router: newRouter.target as `0x${string}`,
             })
         ).expectOperationSuccess();
+        expect(await factory.getFunction('isAuthorizedRouter')(newRouter.target)).to.equal(false);
+        expect(await factory.getFunction('numberOfAuthorizedRouters')()).to.equal(
+            initialAuthorizedRouters,
+        );
 
-        // Revoke
+        (
+            await route(portfolioContractAccount).doDisableRouter({
+                router: newRouter.target as `0x${string}`,
+            })
+        ).expectOperationSuccess();
+        expect(await factory.getFunction('isAuthorizedRouter')(newRouter.target)).to.equal(false);
+        expect(await factory.getFunction('numberOfAuthorizedRouters')()).to.equal(
+            initialAuthorizedRouters,
+        );
+
+        // Revoke is idempotent
         await expect(factory.getFunction('revokeRouter')(newRouter.target))
             .to.emit(factory, 'RouterRevoked')
             .withArgs(newRouter.target);
+        expect(await factory.getFunction('isAuthorizedRouter')(newRouter.target)).to.equal(false);
+        expect(await factory.getFunction('numberOfAuthorizedRouters')()).to.equal(
+            initialAuthorizedRouters,
+        );
+
+        await factory.getFunction('revokeRouter')(newRouter.target);
+        expect(await factory.getFunction('isAuthorizedRouter')(newRouter.target)).to.equal(false);
+        expect(await factory.getFunction('numberOfAuthorizedRouters')()).to.equal(
+            initialAuthorizedRouters,
+        );
     });
 
     it('should reject revoking a router that is still enabled', async () => {

@@ -31,7 +31,6 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
     error InvalidImplementation(address implementation);
 
     error RouterNotVetted(address router);
-    error RouterNotEnabled(address router);
 
     event RouterVetted(address indexed router);
     event RouterRevoked(address indexed router);
@@ -316,8 +315,9 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
      * @param router The router address to enable
      */
     function _enableRouter(address router) internal {
-        if (_routerStatus[router] != RouterStatus.Vetted) {
-            if (_routerStatus[router] == RouterStatus.Enabled) {
+        RouterStatus status = _routerStatus[router];
+        if (status != RouterStatus.Vetted) {
+            if (status == RouterStatus.Enabled) {
                 return;
             }
             revert RouterNotVetted(router);
@@ -336,11 +336,10 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
         if (router == msg.sender || !isAuthorizedRouter(msg.sender)) {
             revert UnauthorizedCaller(msg.sender);
         }
-        if (_routerStatus[router] != RouterStatus.Enabled) {
-            if (_routerStatus[router] == RouterStatus.Vetted) {
-                return;
-            }
-            revert RouterNotEnabled(router);
+        RouterStatus status = _routerStatus[router];
+        if (status != RouterStatus.Enabled) {
+            assert(status == RouterStatus.Vetted || status == RouterStatus.Unknown);
+            return;
         }
         _routerStatus[router] = RouterStatus.Vetted;
         numberOfAuthorizedRouters -= 1;
@@ -356,8 +355,9 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
         if (msg.sender != vettingAuthority) {
             revert UnauthorizedCaller(msg.sender);
         }
-        if (_routerStatus[router] != RouterStatus.Vetted) {
-            if (_routerStatus[router] == RouterStatus.Unknown) {
+        RouterStatus status = _routerStatus[router];
+        if (status != RouterStatus.Vetted) {
+            if (status == RouterStatus.Unknown) {
                 return;
             }
             revert RouterNotVetted(router);
