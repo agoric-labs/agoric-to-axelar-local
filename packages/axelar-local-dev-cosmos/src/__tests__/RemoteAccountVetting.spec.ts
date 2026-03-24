@@ -373,4 +373,89 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         const reEnableError = reEnableReceipt.parseOperationError(factory.interface);
         expect(reEnableError?.name).to.equal('RouterNotVetted');
     });
+
+    // ==================== Vetting Authority Transfer ====================
+    // NOTE: These tests are ordered carefully. The "propose" and "reject"
+    // tests run first (non-mutating or self-contained), then the successful
+    // confirm test transfers authority to addr1, and subsequent tests
+    // operate under that new authority.
+
+    it('should reject proposeVettingAuthorityTransfer from non-vetting-authority', async () => {
+        await expect(
+            factory.connect(addr1).getFunction('proposeVettingAuthorityTransfer')(addr1.address),
+        ).to.be.revertedWithCustomError(factory, 'UnauthorizedCaller');
+    });
+
+    it('should reject confirmVettingAuthorityTransfer when nothing was proposed', async () => {
+        const receipt = await route(portfolioContractAccount).doConfirmVettingAuthority({
+            authority: addr1.address as `0x${string}`,
+        });
+        const decodedError = receipt.parseOperationError(factory.interface);
+        expect(decodedError?.name).to.equal('InvalidVettingAuthority');
+    });
+
+    it('should propose vetting authority transfer and emit VettingAuthorityTransferProposed', async () => {
+        await expect(factory.getFunction('proposeVettingAuthorityTransfer')(addr1.address))
+            .to.emit(factory, 'VettingAuthorityTransferProposed')
+            .withArgs(owner.address, addr1.address);
+    });
+
+    it('should reject confirmVettingAuthorityTransfer with wrong address', async () => {
+        // Previous test proposed addr1; try to confirm with owner instead
+        const receipt = await route(portfolioContractAccount).doConfirmVettingAuthority({
+            authority: owner.address as `0x${string}`,
+        });
+        const decodedError = receipt.parseOperationError(factory.interface);
+        expect(decodedError?.name).to.equal('InvalidVettingAuthority');
+    });
+
+    it('should reject confirmVettingAuthorityTransfer from non-factory-principal', async () => {
+        // addr1 is still the pending authority from the propose test
+        const nonPrincipalLCA = 'agoric1notprincipal12345678901234abcde';
+        const receipt = await route(nonPrincipalLCA).doConfirmVettingAuthority({
+            authority: addr1.address as `0x${string}`,
+        });
+        const decodedError = receipt.parseOperationError(router.interface);
+        expect(decodedError?.name).to.equal('UnauthorizedCaller');
+    });
+
+    it('should confirm vetting authority transfer via GMP and emit VettingAuthorityTransferred', async () => {
+        // addr1 is still pending from the propose test above
+        const receipt = await route(portfolioContractAccount).doConfirmVettingAuthority({
+            authority: addr1.address as `0x${string}`,
+        });
+        receipt.expectOperationSuccess();
+
+        // Verify the vetting authority has changed
+        expect(await factory.getFunction('vettingAuthority')()).to.equal(addr1.address);
+    });
+
+    it('should allow new vetting authority to vet routers after transfer', async () => {
+        // Authority was transferred to addr1 by the previous test
+        const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
+        const newRouter = await RouterContract.deploy(
+            axelarGatewayMock.target,
+            sourceChain,
+            factory.target,
+            permit2Mock.target,
+        );
+        await newRouter.waitForDeployment();
+
+        await expect(factory.connect(addr1).getFunction('vetRouter')(newRouter.target))
+            .to.emit(factory, 'RouterVetted')
+            .withArgs(newRouter.target);
+
+        // Old vetting authority (owner) can no longer vet
+        const anotherRouter = await RouterContract.deploy(
+            axelarGatewayMock.target,
+            sourceChain,
+            factory.target,
+            permit2Mock.target,
+        );
+        await anotherRouter.waitForDeployment();
+
+        await expect(
+            factory.connect(owner).getFunction('vetRouter')(anotherRouter.target),
+        ).to.be.revertedWithCustomError(factory, 'UnauthorizedCaller');
+    });
 });
