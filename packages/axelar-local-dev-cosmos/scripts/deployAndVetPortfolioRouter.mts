@@ -1,3 +1,4 @@
+import '@nomicfoundation/hardhat-ignition-ethers';
 import hre from 'hardhat';
 import PortfolioRouter from '../ignition/modules/deployPortfolioRouter.ts';
 
@@ -31,10 +32,14 @@ async function main() {
         console.log(
             'Vetting router. This is not the initial router, it must be enabled through an existing router.',
         );
-        await factory.vetRouter(routerAddress);
+        const vetTx = await factory.vetRouter(routerAddress);
+        const vetReceipt = await vetTx.wait();
+        console.log(`vetRouter tx: ${vetReceipt.hash} (status: ${vetReceipt.status})`);
     } else {
         console.log('Vetting and enabling initial router.');
-        await factory.vetInitialRouter(routerAddress);
+        const vetTx = await factory.vetInitialRouter(routerAddress);
+        const vetReceipt = await vetTx.wait();
+        console.log(`vetInitialRouter tx: ${vetReceipt.hash} (status: ${vetReceipt.status})`);
     }
 }
 
