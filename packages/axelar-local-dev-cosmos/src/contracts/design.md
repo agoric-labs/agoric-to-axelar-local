@@ -325,7 +325,7 @@ graph TB
 
     _createRemoteAccount -->|calls| cloneDeterministic
     cloneDeterministic -->|"CREATE2"| RAn
-    _createRemoteAccount -->|"initialize(factory)"| RAn
+    _createRemoteAccount -->|"initialize(factory, principalAccount)"| RAn
     _createRemoteAccount -->|"emit"| RemoteAccountCreated
 
     getRemoteAccountAddress -->|calls| _getRemoteAccountAddress
@@ -548,7 +548,7 @@ sequenceDiagram
                 RAF->>RAF: verify address
             else
                 RAF->>RA: cloneDeterministic
-                RAF->>RA: initialize(factory)
+                RAF->>RA: initialize(factory, principalAccount)
             end
         else processRemoteAccountExecuteInstruction
             Note over PR,RA: provide account
@@ -557,7 +557,7 @@ sequenceDiagram
                 RAF->>RAF: verify address
             else
                 RAF->>RA: cloneDeterministic
-                RAF->>RA: initialize(factory)
+                RAF->>RA: initialize(factory, principalAccount)
             end
 
             Note over PR,RA: make calls
@@ -678,7 +678,7 @@ sequenceDiagram
 
     Note over PM,RA: Initial deployment
     EVM_DEPLOYER->>IMP: deploy
-    EVM_DEPLOYER->>RAF: deploy(principal, impl,<br>initialRouter=predicted ROUTER1 addr,<br>vettingAuthority=VA)
+    EVM_DEPLOYER->>RAF: deploy(principal, impl,<br>vettingAuthority=VA)
     EVM_DEPLOYER->>ROUTER1: deploy(gateway, sourceChain, factory=RAF, permit2)
     VA->>RAF: vetInitialRouter(ROUTER1)
 
