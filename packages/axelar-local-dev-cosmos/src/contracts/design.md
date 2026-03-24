@@ -123,15 +123,16 @@ graph TB
     subgraph RemoteAccountAxelarRouter
         START@{shape: start}
         _execute["_execute<br/>override AxelarExecutable"]
-        VALIDATE@{shape: text, label: "Axelar inbound validation"}
-        DECODE{decode and dispatch}
+        VALIDATE@{shape: text, label: "validate source and<br>decoded payload"}
+        DISPATCH@{shape: text, label: "self-call instruction<br>processor"}
+        OOG@{shape: text, label: "revert<br>SubcallOutOfGas()"}
         processProvideRemoteAccountInstruction["processProvideRemoteAccountInstruction<br>override IRemoteAccountRouter"]
         processProvideRemoteAccountInstruction_self@{shape: comment, label: "require self-call"}
         processRemoteAccountExecuteInstruction["processRemoteAccountExecuteInstruction<br>override IRemoteAccountRouter"]
         processRemoteAccountExecuteInstruction_self@{shape: comment, label: "require self-call"}
         adminInstructions["processEnableRouterInstruction |<br>processDisableRouterInstruction |<br>processConfirmVettingAuthorityInstruction"]
         adminInstructions_self@{shape: comment, label: "require self-call"}
-        VERIFY_PRINCIPAL@{shape: text, label: "verify factory<br>principal"}
+        VERIFY_FACTORY@{shape: text, label: "verify factory address<br>and principal"}
         DEP@{shape: text, label: "Permit2 Integration"}
         PROV@{shape: text, label: "account creation/<br>verification"}
         MULTI@{shape: text, label: "account use"}
@@ -139,6 +140,7 @@ graph TB
         subgraph state
             factory@{shape: stored-data, label: "factory: IRemoteAccountFactory<br>override IRemoteAccountRouter"}
             permit2@{shape: stored-data, label: "permit2: IPermit2<br>override IRemoteAccountRouter"}
+            axelarSourceChain@{shape: stored-data, label: "axelarSourceChain: string"}
             axelarSourceChainHash@{shape: stored-data, label: "axelarSourceChainHash: bytes32"}
         end
     end
@@ -152,26 +154,27 @@ graph TB
     %% operation
     START --> _execute
     _execute -->|"[1]"| VALIDATE
-    _execute -->|"[2]"| DECODE
-    DECODE -.-> processProvideRemoteAccountInstruction
-    DECODE -.-> processRemoteAccountExecuteInstruction
-    DECODE -.-> adminInstructions
+    _execute -->|"[2]"| DISPATCH
+    _execute -->|"[3] gas heuristics"| OOG
+    DISPATCH -.-> processProvideRemoteAccountInstruction
+    DISPATCH -.-> processRemoteAccountExecuteInstruction
+    DISPATCH -.-> adminInstructions
     processProvideRemoteAccountInstruction --> processProvideRemoteAccountInstruction_self
-    processProvideRemoteAccountInstruction -->|"[1]"| VERIFY_PRINCIPAL
+    processProvideRemoteAccountInstruction -->|"[1]"| VERIFY_FACTORY
     processProvideRemoteAccountInstruction -.->|"[2] effect deposit"| DEP
     processProvideRemoteAccountInstruction -->|"[3] provide account"| PROV
     processRemoteAccountExecuteInstruction --> processRemoteAccountExecuteInstruction_self
     processRemoteAccountExecuteInstruction -->|"[1] provide account"| PROV
     processRemoteAccountExecuteInstruction -->|"[2] send calls"| MULTI
     adminInstructions --> adminInstructions_self
-    adminInstructions -->|"[1]"| VERIFY_PRINCIPAL
+    adminInstructions -->|"[1]"| VERIFY_FACTORY
     adminInstructions -->|"[2]"| ADMIN_CALL
-    _execute -->|"[3] emit"| OperationResult
+    _execute -->|"[4] else emit"| OperationResult
 
     %% state/dependency access
     VALIDATE -->|checks| axelarSourceChainHash
     DEP -->|call<br>permitWitnessTransferFrom| permit2
-    VERIFY_PRINCIPAL -->|call verifyFactoryPrincipalAccount| factory
+    VERIFY_FACTORY -->|call verifyFactoryPrincipalAccount| factory
     PROV -->|call provideRemoteAccount| factory
     MULTI --> |call executeCalls| RAn
     ADMIN_CALL -->|call| factory
@@ -185,13 +188,14 @@ graph TB
 
 **Key Components**:
 
-- **\_execute**: Validates source chain, decodes the instruction selector + payload, dispatches to processor
+- **\_execute**: Validates source chain, selector, and common decoded payload arguments before dispatching
 - **processProvideRemoteAccountInstruction**: Atomically redeems an optional deposit permit and provisions/verifies a RemoteAccount via the factory
 - **processRemoteAccountExecuteInstruction**: Atomically provisions/verifies a RemoteAccount and executes its multicall batch
-- **processEnableRouterInstruction / processDisableRouterInstruction / processConfirmVettingAuthorityInstruction**: Admin instructions that verify the factory principal, then call the corresponding factory method (requires factory principal)
+- **processEnableRouterInstruction / processDisableRouterInstruction / processConfirmVettingAuthorityInstruction**: Admin instructions that verify the factory principal, then call the corresponding factory method
 - **Permit2 Integration**: Transfers tokens to RemoteAccount via Permit2 signature-based transfers
 - **account creation/verification**: Creates or verifies RemoteAccount via factory
 - **account use**: Instructs RemoteAccount to execute arbitrary multicalls
+- **OperationResult / SubcallOutOfGas**: Processor-level success and failure produce `OperationResult`; selected out-of-gas cases revert with `SubcallOutOfGas`
 
 ---
 
@@ -207,16 +211,22 @@ graph TB
     end
     subgraph IRemoteAccount
         IRemoteAccount_executeCalls[executeCalls]
+        %% events
+        Received@{shape: flag}
+        ContractCallSuccess@{shape: flag}
     end
 
     subgraph RemoteAccount
         START@{shape: start}
         CTOR[constructor]
         initialize
+        receive
         executeCalls
         AUTH_CHECK@{shape: text, label: "check factory.isAuthorizedRouter"}
+        CALL["process call<br>instruction"]
         subgraph state
             factory_ref@{shape: stored-data, label: "factory: address"}
+            principalAccount_ref@{shape: stored-data, label: "principalAccount: string"}
         end
     end
 
@@ -231,12 +241,18 @@ graph TB
     %% operation
     START --> CTOR
     START --> initialize
+    START --> receive
     START --> executeCalls
     CTOR -->|calls| _disableInitializers
     initialize -->|modifier| initializer
     initialize -->|sets| factory_ref
+    initialize -->|sets| principalAccount_ref
     executeCalls -->|"[1]"| AUTH_CHECK
-    executeCalls -.->|"[2] loops & calls"| EXTERNAL
+    executeCalls -->|"[2] value > 0"| Received
+    executeCalls -->|"[3] loops"| CALL
+    CALL -.->|"[1] calls"| EXTERNAL
+    CALL -.->|"[2] emits"| ContractCallSuccess
+    receive -->|"emits"| Received
 
     %% state/dependency access
     AUTH_CHECK -->|call isAuthorizedRouter| FACTORY
@@ -249,8 +265,9 @@ graph TB
 
 **Key Components**:
 
-- **initialize**: One-time factory reference initialization for clone instances
-- **executeCalls**: Checks authorization via `factory.isAuthorizedRouter(msg.sender)`, then atomically executes array of contract calls
+- **initialize**: One-time factory and `principalAccount` initialization for clone instances
+- **receive**: Accepts native token transfers and emits `Received`
+- **executeCalls**: Checks authorization via `factory.isAuthorizedRouter(msg.sender)`, then atomically executes array of contract calls with per-call reporting
 
 ## C4 Level 3: Component Diagrams - RemoteAccountFactory
 
@@ -461,7 +478,7 @@ graph TB
 **Key Components (Remote Account Operations)**:
 
 - **provideRemoteAccount**: Creates or verifies a remote account at the expected address derived from the principal
-- **verifyRemoteAccount**: Multi-layer verification of existing accounts (code, principal)
+- **verifyRemoteAccount**: Verification of existing accounts by deterministic address derivation and code existence
 - **verifyFactoryPrincipalAccount**: Validates the factory principal account string
 - **\_verifyRemoteAccountAddress**: Enforces principal-to-address derivation before creation/verification
 - **\_getRemoteAccountAddress**: Rejects the factory principal account (prevents treating factory as a remote account)
@@ -496,6 +513,7 @@ sequenceDiagram
     D->>RAF: deploy(caip2, principalAccount,<br>implementation, vettingAuthority)
     RAF->>RAF: store immutables
     RAF->>RA_IMPL: factory() — verify implementation is inert
+    RAF->>RA_IMPL: initialize(address(0), '') — verify initializers disabled
 
     Note over D: Step 3: Deploy router
     D->>R: deploy(gateway, sourceChain,<br>factory, permit2)
@@ -530,7 +548,7 @@ sequenceDiagram
     PM->>AXL: send ProvideRemoteAccountInstruction |<br>RemoteAccountExecuteInstruction |<br>EnableRouterInstruction |<br>DisableRouterInstruction |<br>ConfirmVettingAuthorityInstruction
     AXL->>PR: _execute(sourceChain,<br>sourceAddress, payload)
 
-    PR->>PR: validate source chain
+    PR->>PR: validate source chain<br>and payload shape
 
     critical
         alt processProvideRemoteAccountInstruction
@@ -583,7 +601,9 @@ sequenceDiagram
         end
     option [success]
         PR->>PR: emit OperationResult(id, true, '')
-    option [failure]
+    option [failure / Out-of-gas heuristics]
+        PR->>PR: revert SubcallOutOfGas()
+    option [other failure]
         PR->>PR: emit OperationResult(id, false, reason)
     end
 ```
@@ -609,7 +629,7 @@ sequenceDiagram
     - For `processConfirmVettingAuthorityInstruction`:
         1. RemoteAccountAxelarRouter verifies the factory principal matches the source address
         2. RemoteAccountAxelarRouter confirms the pending vetting authority transfer on the factory
-4. RemoteAccountAxelarRouter emits an event describing success or failure
+4. RemoteAccountAxelarRouter emits `OperationResult` for instruction success or failure, but hard-reverts for detected `SubcallOutOfGas`
 
 ## Ownership and Security Model
 
@@ -679,6 +699,7 @@ sequenceDiagram
     Note over PM,RA: Initial deployment
     EVM_DEPLOYER->>IMP: deploy
     EVM_DEPLOYER->>RAF: deploy(principal, impl,<br>vettingAuthority=VA)
+    RAF->>IMP: factory() / initialize(address(0), '') checks
     EVM_DEPLOYER->>ROUTER1: deploy(gateway, sourceChain, factory=RAF, permit2)
     VA->>RAF: vetInitialRouter(ROUTER1)
 
