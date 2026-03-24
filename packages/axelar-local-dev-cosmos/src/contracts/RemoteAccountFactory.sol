@@ -28,6 +28,8 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
         Enabled // Authorized to operate on remote accounts
     }
 
+    error InvalidImplementation(address implementation);
+
     error RouterNotVetted(address router);
     error RouterNotEnabled(address router);
 
@@ -97,13 +99,13 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
 
         try RemoteAccount(payable(implementation_)).factory() returns (address implFactory) {
             if (implFactory != address(0)) {
-                revert('Implementation must be an inert RemoteAccount contract');
+                revert InvalidImplementation(implementation_);
             }
         } catch {
-            revert('Implementation must be a RemoteAccount contract');
+            revert InvalidImplementation(implementation_);
         }
         try RemoteAccount(payable(implementation_)).initialize(address(0), '') {
-            revert('Implementation must be an inert RemoteAccount contract');
+            revert InvalidImplementation(implementation_);
         } catch {
             // Expected to revert because the implementation should have initializers disabled
         }
