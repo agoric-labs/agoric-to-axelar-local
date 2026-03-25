@@ -222,7 +222,7 @@ graph TB
         initialize
         receive
         executeCalls
-        AUTH_CHECK@{shape: text, label: "check factory.isAuthorizedRouter"}
+        AUTH_CHECK@{shape: text, label: "call factory.checkAuthorizedRouter"}
         CALL["process call<br>instruction"]
         subgraph state
             factory_ref@{shape: stored-data, label: "factory: address"}
@@ -255,7 +255,7 @@ graph TB
     receive -->|"emits"| Received
 
     %% state/dependency access
-    AUTH_CHECK -->|call isAuthorizedRouter| FACTORY
+    AUTH_CHECK -->|call checkAuthorizedRouter| FACTORY
     initializer -->|checks and updates| _initialized
     _disableInitializers -->|updates| _initialized
 
@@ -267,7 +267,7 @@ graph TB
 
 - **initialize**: One-time factory and `principalAccount` initialization for clone instances
 - **receive**: Accepts native token transfers and emits `Received`
-- **executeCalls**: Checks authorization via `factory.isAuthorizedRouter(msg.sender)`, then atomically executes array of contract calls with per-call reporting
+- **executeCalls**: Calls `factory.checkAuthorizedRouter(msg.sender)`, then atomically executes array of contract calls with per-call reporting
 
 ## C4 Level 3: Component Diagrams - RemoteAccountFactory
 
@@ -285,6 +285,7 @@ graph TB
         IRemoteAccountFactory_verifyRemoteAccount[verifyRemoteAccount]
         IRemoteAccountFactory_provideRemoteAccount[provideRemoteAccount]
         IRemoteAccountFactory_isAuthorizedRouter[isAuthorizedRouter]
+        IRemoteAccountFactory_checkAuthorizedRouter[checkAuthorizedRouter]
         %% events
         RemoteAccountCreated@{shape: flag}
     end
@@ -386,6 +387,7 @@ graph TB
         START@{shape: start}
 
         isAuthorizedRouter["isAuthorizedRouter<br>override IRemoteAccountFactory"]
+        checkAuthorizedRouter["checkAuthorizedRouter<br>override IRemoteAccountFactory"]
         getRouterStatus
 
         %% modifiers
@@ -420,6 +422,7 @@ graph TB
 
     %% operation
     START --> isAuthorizedRouter
+    START --> checkAuthorizedRouter
     START --> getRouterStatus
     START --> vetInitialRouter
     START --> vetRouter
@@ -430,6 +433,7 @@ graph TB
     START --> confirmVettingAuthorityTransfer
 
     isAuthorizedRouter -->|reads| _routerStatus
+    checkAuthorizedRouter -->|calls| isAuthorizedRouter
     getRouterStatus -->|reads| _routerStatus
 
     %% EVM-sourced operations (vetting authority)
@@ -471,10 +475,10 @@ graph TB
     confirmVettingAuthorityTransfer -->|"[2] updates"| vettingAuthority
     confirmVettingAuthorityTransfer -->|emit| VettingAuthorityTransferred
 
-    onlyAuthorizedRouter -->|calls| isAuthorizedRouter
+    onlyAuthorizedRouter -->|calls| checkAuthorizedRouter
 
 
-    class isAuthorizedRouter,getRouterStatus,onlyVettingAuthority,onlyAuthorizedRouter readonly
+    class isAuthorizedRouter,checkAuthorizedRouter,getRouterStatus,onlyVettingAuthority,onlyAuthorizedRouter readonly
     class vetInitialRouter,vetRouter,unvetRouter,proposeVettingAuthorityTransfer evm
     class authorizeRouter,deauthorizeRouter,confirmVettingAuthorityTransfer controller
     class _authorizeRouter internal
@@ -492,11 +496,12 @@ graph TB
 - **\_getRemoteAccountAddress**: Rejects the factory principal account (prevents treating factory as a remote account)
 - **\_createRemoteAccount**: Core deterministic clone deployment + factory reference initialization
 - **isAuthorizedRouter**: Checks if a caller is an authorized router
+- **checkAuthorizedRouter**: Reverting authorization check shared by factory modifiers and remote account execution
 
 **Key Components (Router & Vetting Authority Administration)**:
 
 - **onlyVettingAuthority**: Shared modifier enforcing `msg.sender == vettingAuthority` for EVM-side administrative entrypoints
-- **onlyAuthorizedRouter**: Shared modifier enforcing `isAuthorizedRouter(msg.sender)` for Agoric-controlled administrative entrypoints
+- **onlyAuthorizedRouter**: Shared modifier enforcing `checkAuthorizedRouter(msg.sender)` for Agoric-controlled administrative entrypoints
 - **vetInitialRouter**: Vets and authorizes the very first router (vetting authority only, no previous router). This initializes the factory.
 - **vetRouter**: Marks a router as vetted (vetting authority only)
 - **authorizeRouter**: Authorizes a vetted router (authorized router only)
@@ -692,8 +697,7 @@ sequenceDiagram
             Note over PR,RA: make calls
             opt if multiCalls exist
                 PR->>RA: executeCalls(multiCalls)
-                RA->>RAF: isAuthorizedRouter(msg.sender)
-                RAF-->>RA: true
+                RA->>RAF: checkAuthorizedRouter(msg.sender)
                 loop for each {target, data, value, gasLimit}
                     RA->>DEFI: target.call{value, gas: gasLimit}(data)
                     Note over RA,DEFI: gasLimit is optional (0 means no explicit gas)
@@ -730,7 +734,7 @@ sequenceDiagram
         3. RemoteAccountAxelarRouter provides account (creating if necessary)
     - For `processRemoteAccountExecuteInstruction`:
         1. RemoteAccountAxelarRouter provides account (creating if necessary)
-        2. If calls for RemoteAccount exist, RemoteAccountAxelarRouter forwards them; RemoteAccount verifies the caller is an authorized router via the factory, then executes them
+        2. If calls for RemoteAccount exist, RemoteAccountAxelarRouter forwards them; RemoteAccount invokes the factory's shared router authorization check, then executes them
     - For `processAuthorizeRouterInstruction`:
         1. RemoteAccountAxelarRouter verifies the factory principal matches the source address
         2. RemoteAccountAxelarRouter authorizes a vetted router on the factory
@@ -763,7 +767,7 @@ graph TB
 
     RAF ==>|creates & initializes| RA
 
-    RA -.->|isAuthorizedRouter| RAF
+    RA -.->|checkAuthorizedRouter| RAF
 
     style Axelar fill:#ffe6e6
     style VA fill:#ffe6e6
@@ -790,9 +794,10 @@ graph TB
 - **RemoteAccountAxelarRouter admin instructions**: Validate the source address as the factory principal (ensures only the portfolio manager can manage routers or redeem signed permits)
 - **RemoteAccountFactory `provideRemoteAccount`**: Validates remote account address derives from the principal account string
 - **RemoteAccountFactory `onlyVettingAuthority` modifier**: Centralizes `msg.sender == vettingAuthority` enforcement for vetting-authority entrypoints
-- **RemoteAccountFactory `onlyAuthorizedRouter` modifier**: Centralizes `isAuthorizedRouter(msg.sender)` enforcement for router-controlled entrypoints, preventing unauthorized routers from self-authorizing
+- **RemoteAccountFactory `checkAuthorizedRouter`**: Centralizes the reverting authorization check used by router-controlled entrypoints and remote account execution
+- **RemoteAccountFactory `onlyAuthorizedRouter` modifier**: Centralizes `checkAuthorizedRouter(msg.sender)` enforcement for router-controlled entrypoints, preventing unauthorized routers from self-authorizing
 - **RemoteAccountFactory `deauthorizeRouter`**: A router cannot deauthorize itself
-- **RemoteAccount `executeCalls`**: Validates that the caller is an authorized router via `factory.isAuthorizedRouter(msg.sender)`
+- **RemoteAccount `executeCalls`**: Validates that the caller is an authorized router via `factory.checkAuthorizedRouter(msg.sender)`
 
 ## Deployment
 

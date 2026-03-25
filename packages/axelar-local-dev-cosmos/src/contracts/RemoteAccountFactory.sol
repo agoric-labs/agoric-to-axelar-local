@@ -72,9 +72,7 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
     address private _pendingVettingAuthority;
 
     modifier onlyAuthorizedRouter() {
-        if (!isAuthorizedRouter(msg.sender)) {
-            revert UnauthorizedCaller(msg.sender);
-        }
+        checkAuthorizedRouter(msg.sender);
         _;
     }
 
@@ -269,6 +267,17 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
      */
     function isAuthorizedRouter(address caller) public view override returns (bool) {
         return _routerStatus[caller] == RouterStatus.Authorized;
+    }
+
+    /**
+     * @notice Check that a caller is an authorized router
+     * @dev Reverts if the caller is not an authorized router.
+     * @param caller The address to check
+     */
+    function checkAuthorizedRouter(address caller) public view override {
+        if (!isAuthorizedRouter(caller)) {
+            revert UnauthorizedCaller(caller);
+        }
     }
 
     /**

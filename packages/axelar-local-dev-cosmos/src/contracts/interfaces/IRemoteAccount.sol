@@ -33,7 +33,6 @@ interface IRemoteAccount {
     );
 
     error ContractCallFailed(address target, bytes4 selector, uint32 callIndex, bytes reason);
-    error UnauthorizedCaller(address caller);
 
     function factory() external view returns (address);
 

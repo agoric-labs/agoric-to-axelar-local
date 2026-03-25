@@ -36,6 +36,8 @@ interface IRemoteAccountFactory {
 
     function isAuthorizedRouter(address caller) external view returns (bool);
 
+    function checkAuthorizedRouter(address caller) external view;
+
     function numberOfAuthorizedRouters() external view returns (uint256);
 
     function authorizeRouter(address router) external;

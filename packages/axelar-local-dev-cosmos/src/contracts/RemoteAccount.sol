@@ -54,9 +54,7 @@ contract RemoteAccount is Initializable, IRemoteAccount {
      * @param calls Array of contract calls to execute
      */
     function executeCalls(ContractCall[] calldata calls) external payable override {
-        if (!IRemoteAccountFactory(factory).isAuthorizedRouter(msg.sender)) {
-            revert UnauthorizedCaller(msg.sender);
-        }
+        IRemoteAccountFactory(factory).checkAuthorizedRouter(msg.sender);
         if (msg.value > 0) {
             emit Received(msg.sender, msg.value);
         }
