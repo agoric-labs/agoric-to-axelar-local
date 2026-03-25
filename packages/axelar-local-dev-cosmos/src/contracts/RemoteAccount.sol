@@ -12,18 +12,14 @@ import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
  * @dev Caller authorization is resolved through the factory that deployed this
  *      clone: any router authorized by the factory can execute calls on this
  *      account.
- *      The principal account for which the factory deterministically deployed
- *      this RemoteAccount using CREATE2 is documented but not used on-chain.
+ *      This contract does not track its principal directly but instead relies
+ *      on RemoteAccountFactory to deploy it at a predictable CREATE2 address
+ *      derived from the principal.
  */
 contract RemoteAccount is Initializable, IRemoteAccount {
     /// @notice The factory that deployed this clone.
     /// @dev Set once during initialize.
     address public override factory;
-
-    /// @notice The principal account represented by this RemoteAccount.
-    /// @dev Set once during initialize. The CAIP-2 chain identifier can be
-    ///      looked up on the factory's `factoryPrincipalCaip2`.
-    string public override principalAccount;
 
     constructor() {
         _disableInitializers();
@@ -37,13 +33,11 @@ contract RemoteAccount is Initializable, IRemoteAccount {
      *      deploying this contract using proxies must call this function on
      *      each clone after deploying it.
      * @param factory_ The factory that deployed this clone
-     * @param principalAccount_ The principal account represented by this RemoteAccount
      */
-    function initialize(address factory_, string memory principalAccount_) external initializer {
+    function initialize(address factory_) external initializer {
         assert(factory == address(0));
         require(factory_ != address(0));
         factory = factory_;
-        principalAccount = principalAccount_;
     }
 
     /**
