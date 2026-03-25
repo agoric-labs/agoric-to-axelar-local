@@ -54,22 +54,30 @@ Deploy contracts in this order due to dependencies:
 
 ## Deploying RemoteAccountFactory
 
-`RemoteAccountFactory` requires principal CAIP2 and account constructor arguments to identify the controlling portfolio contract.
+`RemoteAccountFactory` requires principal CAIP2 and account constructor arguments to identify the controlling portfolio contract, as well as the address for a vetting authority
+
+The following environment variables are required:
+
+| Variable            | Required | Description                           |
+| ------------------- | -------- | ------------------------------------- |
+| `VETTING_AUTHORITY` | Yes      | Address authorized to vet new routers |
 
 ### Single Chain
 
 ```bash
 cd packages/axelar-local-dev-cosmos
-./scripts/deploy.sh <network> remoteAccountFactory [owner_type]
+VETTING_AUTHORITY=0x... ./scripts/deploy.sh <network> remoteAccountFactory [owner_type]
 ```
 
 Example:
 
 ```bash
 # Deploy with ymax0 principal (default)
+VETTING_AUTHORITY=0xabcd1234567890abcdef1234567890abcdef5678 \
 ./scripts/deploy.sh eth-sepolia remoteAccountFactory
 
 # Deploy with ymax1 principal
+VETTING_AUTHORITY=0xabcd1234567890abcdef1234567890abcdef5678 \
 ./scripts/deploy.sh eth-sepolia remoteAccountFactory ymax1
 ```
 
@@ -77,12 +85,15 @@ Example:
 
 ```bash
 # All testnets
+VETTING_AUTHORITY=0x... \
 npm run deploy:all -- -c remoteAccountFactory --testnet
 
 # All mainnets
+VETTING_AUTHORITY=0x... \
 npm run deploy:all -- -c remoteAccountFactory --mainnet
 
 # Specific chains
+VETTING_AUTHORITY=0x... \
 npm run deploy:all -- -c remoteAccountFactory --chains eth-sepolia,fuji,base-sepolia
 ```
 
@@ -93,23 +104,22 @@ npm run deploy:all -- -c remoteAccountFactory --chains eth-sepolia,fuji,base-sep
 | Variable                 | Required | Description                                           |
 | ------------------------ | -------- | ----------------------------------------------------- |
 | `REMOTE_ACCOUNT_FACTORY` | Yes      | Address of the deployed RemoteAccountFactory contract |
-| `OWNER_AUTHORITY`        | Yes      | Address authorized to designate router replacement    |
 
-**Note:** Factory ownership is automatically transferred to the router during deployment.
+**Note:** If the deployer is the same as the factory vetting authority, the new router is
+automatically vetted during deployment (and enabled if the initial router).
 
 ### Single Chain
 
 ```bash
 cd packages/axelar-local-dev-cosmos
 
-REMOTE_ACCOUNT_FACTORY=0x... OWNER_AUTHORITY=0x... ./scripts/deploy.sh <network> portfolioRouter
+REMOTE_ACCOUNT_FACTORY=0x... ./scripts/deploy.sh <network> portfolioRouter
 ```
 
 Example:
 
 ```bash
 REMOTE_ACCOUNT_FACTORY=0x1234567890abcdef1234567890abcdef12345678 \
-OWNER_AUTHORITY=0xabcd1234567890abcdef1234567890abcdef5678 \
 ./scripts/deploy.sh eth-sepolia portfolioRouter
 ```
 
@@ -117,14 +127,14 @@ OWNER_AUTHORITY=0xabcd1234567890abcdef1234567890abcdef5678 \
 
 ```bash
 # All testnets
-REMOTE_ACCOUNT_FACTORY=0x... OWNER_AUTHORITY=0x... \
+REMOTE_ACCOUNT_FACTORY=0x... \
 npm run deploy:all -- -c portfolioRouter --testnet
 
 # All mainnets
-REMOTE_ACCOUNT_FACTORY=0x... OWNER_AUTHORITY=0x... \
+REMOTE_ACCOUNT_FACTORY=0x... \
 npm run deploy:all -- -c portfolioRouter --mainnet
 
 # Specific chains
-REMOTE_ACCOUNT_FACTORY=0x... OWNER_AUTHORITY=0x... \
+REMOTE_ACCOUNT_FACTORY=0x... \
 npm run deploy:all -- -c portfolioRouter --chains eth-sepolia,fuji
 ```

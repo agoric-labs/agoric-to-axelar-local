@@ -30,22 +30,28 @@ struct RemoteAccountExecuteInstruction {
     ContractCall[] multiCalls;
 }
 
-struct UpdateOwnerInstruction {
-    address newOwner;
+struct AuthorizeRouterInstruction {
+    address router;
+}
+
+struct DeauthorizeRouterInstruction {
+    address router;
+}
+
+struct ConfirmVettingAuthorityInstruction {
+    address authority;
 }
 
 interface IRemoteAccountRouter {
     event OperationResult(
         string indexed txId,
         string indexed sourceAddressIndex,
-        string sourceAddress,
+        string txIdPlaintext,
         address indexed allegedRemoteAccount,
         bytes4 instructionSelector,
         bool success,
         bytes reason
     );
-
-    event SuccessorSet(address indexed previousSuccessor, address indexed newSuccessor);
 
     error SubcallOutOfGas();
     error InvalidInstructionSelector(bytes4 selector);
@@ -53,8 +59,6 @@ interface IRemoteAccountRouter {
     function factory() external view returns (IRemoteAccountFactory);
 
     function permit2() external view returns (IPermit2);
-
-    function successor() external view returns (address);
 
     function processProvideRemoteAccountInstruction(
         string calldata sourceAddress,
@@ -68,9 +72,21 @@ interface IRemoteAccountRouter {
         RemoteAccountExecuteInstruction calldata instruction
     ) external;
 
-    function processUpdateOwnerInstruction(
+    function processAuthorizeRouterInstruction(
         string calldata sourceAddress,
-        address expectedAccountAddress,
-        UpdateOwnerInstruction calldata instruction
+        address factoryAddress,
+        AuthorizeRouterInstruction calldata instruction
+    ) external;
+
+    function processDeauthorizeRouterInstruction(
+        string calldata sourceAddress,
+        address factoryAddress,
+        DeauthorizeRouterInstruction calldata instruction
+    ) external;
+
+    function processConfirmVettingAuthorityInstruction(
+        string calldata sourceAddress,
+        address factoryAddress,
+        ConfirmVettingAuthorityInstruction calldata instruction
     ) external;
 }

@@ -64,6 +64,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
         factory = await deployRemoteAccountFactory(
             portfolioContractCaip2,
             portfolioContractAccount,
+            owner.address,
         );
 
         // Deploy RemoteAccountAxelarRouter
@@ -73,12 +74,10 @@ describe('RemoteAccountAxelarRouter - RemoteAccountDeposit', () => {
             sourceChain,
             factory.target,
             permit2Mock.target,
-            owner.address, // ownerAuthority
         );
         await router.waitForDeployment();
 
-        // Transfer factory ownership to router
-        await factory.transferOwnership(router.target);
+        await factory.getFunction('vetInitialRouter')(router.target);
 
         // Deploy test token
         const MockERC20Factory = await ethers.getContractFactory('MockERC20');

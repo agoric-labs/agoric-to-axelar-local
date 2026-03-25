@@ -57,6 +57,7 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
         factory = await deployRemoteAccountFactory(
             portfolioContractCaip2,
             portfolioContractAccount,
+            owner.address,
         );
 
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
@@ -65,11 +66,10 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
             sourceChain,
             factory.target,
             permit2Mock.target,
-            owner.address,
         );
         await router.waitForDeployment();
 
-        await factory.transferOwnership(router.target);
+        await factory.getFunction('vetInitialRouter')(router.target);
 
         routeConfig = {
             sourceChain,
@@ -369,17 +369,11 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
         ).to.be.reverted;
     });
 
-    it('should reject direct external call to processUpdateOwnerInstruction', async () => {
+    it('should reject direct external call to processAuthorizeRouterInstruction', async () => {
         await expect(
-            router.processUpdateOwnerInstruction(portfolioLCA, expectedAccountAddress, {
-                newOwner: addr1.address,
+            router.processAuthorizeRouterInstruction(portfolioLCA, factory.target, {
+                router: addr1.address,
             }),
         ).to.be.reverted;
-    });
-
-    it('should reject setSuccessor from non-owner', async () => {
-        await expect(
-            router.connect(addr1).getFunction('setSuccessor')(addr1.address),
-        ).to.be.revertedWithCustomError(router, 'OwnableUnauthorizedAccount');
     });
 });

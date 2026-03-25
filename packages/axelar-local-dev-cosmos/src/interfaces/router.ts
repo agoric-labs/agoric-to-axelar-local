@@ -81,15 +81,37 @@ export type RemoteAccountExecuteInstruction = AbiParameterToPrimitiveType<{
     components: typeof RemoteAccountExecuteInstructionComponents;
 }>;
 
-export const updateOwnerInstructionComponents = [
+export const authorizeRouterInstructionComponents = [
     {
-        name: 'newOwner',
+        name: 'router',
         type: 'address',
     },
 ] as const satisfies AbiParameter[];
-export type UpdateOwnerInstruction = AbiParameterToPrimitiveType<{
+export type AuthorizeRouterInstruction = AbiParameterToPrimitiveType<{
     type: 'tuple';
-    components: typeof updateOwnerInstructionComponents;
+    components: typeof authorizeRouterInstructionComponents;
+}>;
+
+export const deauthorizeRouterInstructionComponents = [
+    {
+        name: 'router',
+        type: 'address',
+    },
+] as const satisfies AbiParameter[];
+export type DeauthorizeRouterInstruction = AbiParameterToPrimitiveType<{
+    type: 'tuple';
+    components: typeof deauthorizeRouterInstructionComponents;
+}>;
+
+export const confirmVettingAuthorityInstructionComponents = [
+    {
+        name: 'authority',
+        type: 'address',
+    },
+] as const satisfies AbiParameter[];
+export type ConfirmVettingAuthorityInstruction = AbiParameterToPrimitiveType<{
+    type: 'tuple';
+    components: typeof confirmVettingAuthorityInstructionComponents;
 }>;
 
 /**
@@ -113,12 +135,30 @@ export const processRemoteAccountExecuteInstructionInputs = [
     },
 ] as const satisfies AbiParameter[];
 
-export const processUpdateOwnerInstructionInputs = [
+export const processAuthorizeRouterInstructionInputs = [
     ...routerProcessSharedInputComponents,
     {
         name: 'instruction',
         type: 'tuple',
-        components: updateOwnerInstructionComponents,
+        components: authorizeRouterInstructionComponents,
+    },
+] as const satisfies AbiParameter[];
+
+export const processDeauthorizeRouterInstructionInputs = [
+    ...routerProcessSharedInputComponents,
+    {
+        name: 'instruction',
+        type: 'tuple',
+        components: deauthorizeRouterInstructionComponents,
+    },
+] as const satisfies AbiParameter[];
+
+export const processConfirmVettingAuthorityInstructionInputs = [
+    ...routerProcessSharedInputComponents,
+    {
+        name: 'instruction',
+        type: 'tuple',
+        components: confirmVettingAuthorityInstructionComponents,
     },
 ] as const satisfies AbiParameter[];
 
@@ -168,8 +208,22 @@ export const remoteAccountAxelarRouterABI = [
     },
     {
         type: 'function',
-        name: 'processUpdateOwnerInstruction',
-        inputs: processUpdateOwnerInstructionInputs,
+        name: 'processAuthorizeRouterInstruction',
+        inputs: processAuthorizeRouterInstructionInputs,
+        outputs: [],
+        stateMutability: 'nonpayable',
+    },
+    {
+        type: 'function',
+        name: 'processDeauthorizeRouterInstruction',
+        inputs: processDeauthorizeRouterInstructionInputs,
+        outputs: [],
+        stateMutability: 'nonpayable',
+    },
+    {
+        type: 'function',
+        name: 'processConfirmVettingAuthorityInstruction',
+        inputs: processConfirmVettingAuthorityInstructionInputs,
         outputs: [],
         stateMutability: 'nonpayable',
     },
@@ -236,7 +290,6 @@ export const remoteAccountFactoryABI = [
         name: 'provideRemoteAccount',
         inputs: [
             { name: 'principalAccount', type: 'string' },
-            { name: 'expectedOwner', type: 'address' },
             { name: 'expectedAddress', type: 'address' },
         ],
         outputs: [{ name: '', type: 'bool' }],
@@ -244,13 +297,9 @@ export const remoteAccountFactoryABI = [
     },
     {
         type: 'function',
-        name: 'provideRemoteAccountForOwner',
-        inputs: [
-            { name: 'principalAccount', type: 'string' },
-            { name: 'owner', type: 'address' },
-            { name: 'expectedAddress', type: 'address' },
-        ],
+        name: 'isAuthorizedRouter',
+        inputs: [{ name: 'caller', type: 'address' }],
         outputs: [{ name: '', type: 'bool' }],
-        stateMutability: 'nonpayable',
+        stateMutability: 'view',
     },
 ] as const satisfies Abi;

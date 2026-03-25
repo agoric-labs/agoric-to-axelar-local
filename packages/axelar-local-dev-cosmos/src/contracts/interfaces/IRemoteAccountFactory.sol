@@ -3,15 +3,16 @@ pragma solidity ^0.8.20;
 
 interface IRemoteAccountFactory {
     error AddressMismatch(address expected, address actual);
-    error UnauthorizedOwner(address owner, address account);
     error InvalidAccountAtAddress(address account);
     error PrincipalAccountMismatch(string expected, string actual);
+    error UnauthorizedCaller(address caller);
 
-    event RemoteAccountCreated(
-        address indexed accountAddress,
-        string principalAccount,
-        address indexed ownerAddress
-    );
+    error InvalidVettingAuthority(address requested, address expected);
+
+    event RemoteAccountCreated(address indexed accountAddress, string principalAccount);
+
+    event RouterAuthorized(address indexed router, uint256 numberOfAuthorizedRouters);
+    event RouterDeauthorized(address indexed router, uint256 numberOfAuthorizedRouters);
 
     function factoryPrincipalCaip2() external view returns (string memory);
 
@@ -25,19 +26,23 @@ interface IRemoteAccountFactory {
 
     function verifyRemoteAccount(
         string calldata principalAccount,
-        address expectedOwner,
         address accountAddress
     ) external view;
 
     function provideRemoteAccount(
         string calldata principalAccount,
-        address expectedOwner,
         address expectedAddress
     ) external returns (bool created);
 
-    function provideRemoteAccountForOwner(
-        string calldata principalAccount,
-        address owner,
-        address expectedAddress
-    ) external returns (bool created);
+    function isAuthorizedRouter(address caller) external view returns (bool);
+
+    function checkAuthorizedRouter(address caller) external view;
+
+    function numberOfAuthorizedRouters() external view returns (uint256);
+
+    function authorizeRouter(address router) external;
+
+    function deauthorizeRouter(address router) external;
+
+    function confirmVettingAuthorityTransfer(address newVettingAuthority) external;
 }

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -euo pipefail
+
 YMAX0_MAINNET="agoric1wl2529tfdlfvure7mw6zteam02prgaz88p0jru4tlzuxdawrdyys6jlmnq"
 YMAX1_MAINNET="agoric13ecz27mm2ug5kv96jyal2k6z8874mxzs4m4yuet36s4nqdl0ey6qr09p74"
 
@@ -24,18 +26,20 @@ if [[ $# -lt 2 ]]; then
     echo "  Testnets: arb-sepolia, base-sepolia, eth-sepolia, fuji, opt-sepolia"
     echo ""
     echo "Examples:"
-    echo "  $0 eth-sepolia factory              # Deploy Factory"
-    echo "  $0 eth-sepolia depositFactory       # Deploy DepositFactory with ymax0 owner"
-    echo "  $0 eth-sepolia depositFactory ymax1 # Deploy DepositFactory with ymax1 owner"
-    echo "  $0 eth-sepolia remoteAccountFactory       # Deploy RemoteAccountFactory with ymax0 principal"
-    echo "  $0 eth-sepolia remoteAccountFactory ymax1 # Deploy RemoteAccountFactory with ymax1 principal"
+    echo "  $0 eth-sepolia factory               # Deploy Factory"
+    echo "  $0 eth-sepolia depositFactory        # Deploy DepositFactory with ymax0 owner"
+    echo "  $0 eth-sepolia depositFactory ymax1  # Deploy DepositFactory with ymax1 owner"
+    echo ""
+    echo "  # Deploy RemoteAccount (implementation) and RemoteAccountFactory (requires env vars):"
+    echo "  VETTING_AUTHORITY=0x... $0 eth-sepolia remoteAccountFactory       # Deploy with ymax0 principal"
+    echo "  VETTING_AUTHORITY=0x... $0 eth-sepolia remoteAccountFactory ymax1 # Deploy with ymax1 principal"
     echo ""
     echo "  # Deploy RemoteAccountAxelarRouter (requires env vars):"
-    echo "  REMOTE_ACCOUNT_FACTORY=0x... OWNER_AUTHORITY=0x... $0 eth-sepolia portfolioRouter"
+    echo "  REMOTE_ACCOUNT_FACTORY=0x... $0 eth-sepolia portfolioRouter"
     echo ""
     echo "Environment Variables:"
-    echo "  REMOTE_ACCOUNT_FACTORY - Required for portfolioRouter: deployed factory address"
-    echo "  OWNER_AUTHORITY        - Required for portfolioRouter: address that can designate router replacement"
+    echo "  REMOTE_ACCOUNT_FACTORY - Required for portfolioRouter: previously deployed factory address"
+    echo "  VETTING_AUTHORITY      - Required for remoteAccountFactory: address that can vet new routers"
     exit 0
 fi
 
@@ -149,13 +153,15 @@ case "$contract" in
 
         echo ""
         echo "========================================="
-        echo "Deploying RemoteAccountFactory..."
+        echo "Deploying RemoteAccount and RemoteAccountFactory..."
         echo "========================================="
         echo "Using owner type: $owner_type"
         echo "Using Principal CAIP2: $PRINCIPAL_CAIP2"
         echo "Using Principal Account: $PRINCIPAL_ACCOUNT"
+        echo "Using Vetting Authority: $VETTING_AUTHORITY"
         PRINCIPAL_CAIP2="$PRINCIPAL_CAIP2" \
             PRINCIPAL_ACCOUNT="$PRINCIPAL_ACCOUNT" \
+            VETTING_AUTHORITY="$VETTING_AUTHORITY" \
             npx hardhat ignition deploy "./ignition/modules/deployRemoteAccountFactory.ts" --network "$network" --verify
         ;;
 
@@ -170,15 +176,18 @@ case "$contract" in
         echo "========================================="
         echo "Using RemoteAccountFactory: $REMOTE_ACCOUNT_FACTORY"
         echo "Using Axelar Source Chain: $AXELAR_SOURCE_CHAIN"
-        echo "Using Owner Authority: $OWNER_AUTHORITY"
-
 
         GATEWAY_CONTRACT="$GATEWAY" \
             AXELAR_SOURCE_CHAIN="$AXELAR_SOURCE_CHAIN" \
             FACTORY_CONTRACT="$REMOTE_ACCOUNT_FACTORY" \
             PERMIT2_CONTRACT="$PERMIT2" \
-            OWNER_AUTHORITY="$OWNER_AUTHORITY" \
             npx hardhat ignition deploy "./ignition/modules/deployPortfolioRouter.ts" --network "$network" --verify
+        # Vet router after deployment
+        GATEWAY_CONTRACT="$GATEWAY" \
+            AXELAR_SOURCE_CHAIN="$AXELAR_SOURCE_CHAIN" \
+            FACTORY_CONTRACT="$REMOTE_ACCOUNT_FACTORY" \
+            PERMIT2_CONTRACT="$PERMIT2" \
+            npx hardhat run "./scripts/deployAndVetPortfolioRouter.mts" --network "$network"
         ;;
     *)
         echo "Error: Invalid contract type '$contract'"

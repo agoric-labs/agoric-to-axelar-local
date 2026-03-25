@@ -2,43 +2,39 @@
 pragma solidity ^0.8.20;
 
 import { AxelarExecutable } from '@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol';
-import { Ownable } from '@openzeppelin/contracts/access/Ownable.sol';
 import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
 import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
-import { ImmutableOwnable } from './ImmutableOwnable.sol';
-import { IRemoteAccountRouter, IPermit2, DepositPermit, ProvideRemoteAccountInstruction, RemoteAccountExecuteInstruction, UpdateOwnerInstruction } from './interfaces/IRemoteAccountRouter.sol';
+import { IRemoteAccountRouter, IPermit2, DepositPermit, ProvideRemoteAccountInstruction, RemoteAccountExecuteInstruction, AuthorizeRouterInstruction, DeauthorizeRouterInstruction, ConfirmVettingAuthorityInstruction } from './interfaces/IRemoteAccountRouter.sol';
 
 /**
  * @title RemoteAccountAxelarRouter
  * @notice The single AxelarExecutable entry point for all remote account operations
  * @dev Handles account creation, deposits, and multicalls atomically.
- *      Each RemoteAccount and the factory is owned by this router, enabling future migration
- *      by deploying a new router and transferring ownership.
+ *      Remote accounts delegate authorization to the factory that deployed them:
+ *      any caller authorized by the factory can operate any accounts it created.
+ *      This supports O(1) router migration — updating router status in the
+ *      factory instantly updates the caller authorization for all accounts.
  *
- *      Migration to a new router is done in 3 steps:
- *      1. the owner of this router calls `setSuccessor`
- *      2. the principal account of the associated RemoteAccountFactory sends
- *         this router an UpdateOwner instruction specifying as new owner the
- *         successor designated in step 1
- *      3. the principal account of each RemoteAccount owned by this router
- *         sends this router an UpdateOwner instruction like the one from step 2
+ *      The factory maintains a vetted/authorized router map for two-factor
+ *      authorization:
+ *      - Vetting: the factory's vetting authority can vet or unvet routers
+ *        via direct calls
+ *      - Authorization (operational switch): the Agoric chain principal can
+ *        authorize or deauthorize vetted routers via GMP messages
  *
- *      We use an immutable owner for the router, changing owner requires designating a
- *      successor router with a different owner. This way a leak of owner credentials
- *      does not grant exclusive access to the router's successor mechanism, maintaining
- *      the possibility to transition owned contracts to a rightful successor.
+ *      Migration to a new router is done in 2 steps:
+ *      1. the vetting authority vets and the principal authorizes the new router
+ *      2. the principal optionally deauthorizes the old router via GMP
  */
-contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemoteAccountRouter {
+contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
     IRemoteAccountFactory public immutable override factory;
     IPermit2 public immutable override permit2;
 
     // Immutable, but cannot be declaratively marked as such because this is a string
     // Only used for validation error messages. The router is seldom deployed
     // so the cost of storing this string is accepted.
-    string private axelarSourceChain;
+    string public axelarSourceChain;
     bytes32 private immutable axelarSourceChainHash;
-
-    address public successor;
 
     error InvalidSourceChain(string expected, string actual);
     error InvalidPayload(bytes4 selector);
@@ -50,15 +46,13 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
      * @param axelarSourceChain_ The source chain name
      * @param factory_ The RemoteAccountFactory address
      * @param permit2_ The Permit2 contract address
-     * @param owner The address authorized to designate a successor
      */
     constructor(
         address axelarGateway,
         string memory axelarSourceChain_,
         address factory_,
-        address permit2_,
-        address owner
-    ) AxelarExecutable(axelarGateway) ImmutableOwnable(owner) {
+        address permit2_
+    ) AxelarExecutable(axelarGateway) {
         factory = IRemoteAccountFactory(factory_);
         permit2 = IPermit2(permit2_);
 
@@ -135,7 +129,9 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
         if (
             selector != RemoteAccountAxelarRouter.processRemoteAccountExecuteInstruction.selector &&
             selector != RemoteAccountAxelarRouter.processProvideRemoteAccountInstruction.selector &&
-            selector != RemoteAccountAxelarRouter.processUpdateOwnerInstruction.selector
+            selector != RemoteAccountAxelarRouter.processAuthorizeRouterInstruction.selector &&
+            selector != RemoteAccountAxelarRouter.processDeauthorizeRouterInstruction.selector &&
+            selector != RemoteAccountAxelarRouter.processConfirmVettingAuthorityInstruction.selector
         ) {
             revert InvalidInstructionSelector(selector);
         }
@@ -234,9 +230,10 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
         // to match the length of the address and minimize gas costs.
         // The transaction id is included in the OperationResult event, allowing a
         // resolver to observe/trace transactions.
-        // Note that the second argument of all functions is `expectedAddress`,
-        // relevant to RemoteAccountFactory and also included in the emitted
-        // OperationResult event.
+        // Note that the second argument of all functions is an address: either the
+        // expected remote account address or the factory address (for admin
+        // operations like AuthorizeRouter, DeauthorizeRouter, ConfirmVettingAuthority).
+        // It is included in the emitted OperationResult event.
 
         bytes4 selector = bytes4(payload[:4]);
         bytes calldata encodedArgs = payload[4:];
@@ -253,15 +250,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
         (bool success, bytes memory result) = processInstruction(payload, sourceAddress);
 
         // Note that this is a transport-level event applicable to any instruction.
-        emit OperationResult(
-            txId,
-            sourceAddress,
-            sourceAddress,
-            expectedAddress,
-            selector,
-            success,
-            result
-        );
+        emit OperationResult(txId, sourceAddress, txId, expectedAddress, selector, success, result);
     }
 
     /**
@@ -328,7 +317,6 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
 
         factory.provideRemoteAccount(
             instruction.principalAccount,
-            address(this),
             instruction.expectedAccountAddress
         );
     }
@@ -348,8 +336,8 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
     ) external override {
         require(msg.sender == address(this));
 
-        // Provide or verify the remote account matches the source principal and its owner is this router
-        factory.provideRemoteAccount(sourceAddress, address(this), expectedAccountAddress);
+        // Provide or verify the remote account exists at the expected address
+        factory.provideRemoteAccount(sourceAddress, expectedAccountAddress);
 
         if (instruction.multiCalls.length > 0) {
             IRemoteAccount(expectedAccountAddress).executeCalls(instruction.multiCalls);
@@ -357,55 +345,77 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, ImmutableOwnable, IRemot
     }
 
     /**
-     * @notice Process the update owner instruction
+     * @notice Process the instruction to confirm transfer of the factory vetting authority
      * @dev This is an external function which can only be called by this contract
      *      Used to create a call stack that can be reverted atomically
-     *      The owned contract can be a RemoteAccount or the factory
-     * @param sourceAddress The principal account address of the owned contract
-     * @param expectedAccountAddress The expected contract address corresponding to the principal address
-     * @param instruction The decoded UpdateOwnerInstruction
+     *      Only the factory's principal can confirm the factory's vetting
+     *      authority transfer via GMP. The new vetting authority must have been
+     *      previously proposed directly by the current vetting authority.
+     * @param sourceAddress The principal account address of the factory
+     * @param factoryAddress The expected factory address
+     * @param instruction The decoded ConfirmVettingAuthorityInstruction
      */
-    function processUpdateOwnerInstruction(
+    function processConfirmVettingAuthorityInstruction(
         string calldata sourceAddress,
-        address expectedAccountAddress,
-        UpdateOwnerInstruction calldata instruction
+        address factoryAddress,
+        ConfirmVettingAuthorityInstruction calldata instruction
     ) external override {
         require(msg.sender == address(this));
 
-        address newOwner = instruction.newOwner;
-
-        if (newOwner == address(0) || newOwner != successor) {
-            revert Ownable.OwnableInvalidOwner(newOwner);
+        // Check the factory's principal is the source
+        if (factoryAddress != address(factory)) {
+            revert UnauthorizedCaller(sourceAddress);
         }
+        factory.verifyFactoryPrincipalAccount(sourceAddress);
 
-        if (expectedAccountAddress == address(factory)) {
-            // Before transferring the factory, verify that this call comes from
-            // its principal account
-            // No need to check the factory's current owner as the transfer will
-            // fail if that's not us
-            factory.verifyFactoryPrincipalAccount(sourceAddress);
-        } else {
-            // Provide or verify the remote account matches the source principal and owner
-            // The factory does an owner check as part of this, even though transfer would also check it.
-            factory.provideRemoteAccount(sourceAddress, address(this), expectedAccountAddress);
-        }
-
-        Ownable(expectedAccountAddress).transferOwnership(newOwner);
+        factory.confirmVettingAuthorityTransfer(instruction.authority);
     }
 
     /**
-     * @notice Initialize or replace the successor of this router
-     * @dev Can only be called by the contract owner.
-     *      The new successor may be the zero address to allow reverting to a
-     *      state where no successor is set.
-     *      Any contracts whose ownership has already been transferred to a
-     *      previously designated successor will need to arrange any further
-     *      ownership updates through their new owner.
-     * @param newSuccessor The address designated as the successor router.
+     * @notice Process an authorize router instruction
+     * @dev This is an external function which can only be called by this contract.
+     *      Only the factory's principal can authorize routers via GMP.
+     *      The router must be vetted first.
+     * @param sourceAddress The principal account address of the factory
+     * @param factoryAddress The expected factory address
+     * @param instruction The decoded AuthorizeRouterInstruction
      */
-    function setSuccessor(address newSuccessor) external onlyOwner {
-        address previousSuccessor = successor;
-        successor = newSuccessor;
-        emit SuccessorSet(previousSuccessor, newSuccessor);
+    function processAuthorizeRouterInstruction(
+        string calldata sourceAddress,
+        address factoryAddress,
+        AuthorizeRouterInstruction calldata instruction
+    ) external override {
+        require(msg.sender == address(this));
+
+        if (factoryAddress != address(factory)) {
+            revert UnauthorizedCaller(sourceAddress);
+        }
+        factory.verifyFactoryPrincipalAccount(sourceAddress);
+
+        factory.authorizeRouter(instruction.router);
+    }
+
+    /**
+     * @notice Process a deauthorize router instruction
+     * @dev This is an external function which can only be called by this contract.
+     *      Only the factory's principal can deauthorize routers via GMP.
+     *      The current router cannot deauthorize itself.
+     * @param sourceAddress The principal account address of the factory
+     * @param factoryAddress The expected factory address
+     * @param instruction The decoded DeauthorizeRouterInstruction
+     */
+    function processDeauthorizeRouterInstruction(
+        string calldata sourceAddress,
+        address factoryAddress,
+        DeauthorizeRouterInstruction calldata instruction
+    ) external override {
+        require(msg.sender == address(this));
+
+        if (factoryAddress != address(factory)) {
+            revert UnauthorizedCaller(sourceAddress);
+        }
+        factory.verifyFactoryPrincipalAccount(sourceAddress);
+
+        factory.deauthorizeRouter(instruction.router);
     }
 }

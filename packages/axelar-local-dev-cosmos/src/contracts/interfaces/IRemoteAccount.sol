@@ -34,5 +34,7 @@ interface IRemoteAccount {
 
     error ContractCallFailed(address target, bytes4 selector, uint32 callIndex, bytes reason);
 
+    function factory() external view returns (address);
+
     function executeCalls(ContractCall[] calldata calls) external payable;
 }
