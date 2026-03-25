@@ -58,11 +58,11 @@ delete_deployments_folder() {
 }
 
 get_network_config "$network"
-delete_deployments_folder "ignition/deployments"
 
 # Deploy based on contract type
 case "$contract" in
     factory)
+        delete_deployments_folder "ignition/deployments"
         echo ""
         echo "========================================="
         echo "Deploying Factory (simple wallet factory)..."
@@ -73,6 +73,7 @@ case "$contract" in
         ;;
 
     depositFactory)
+        delete_deployments_folder "ignition/deployments"
         if [ -z "$FACTORY" ]; then
             echo "Error: FACTORY environment variable is not set"
             echo "Please set FACTORY=0x... before deploying DepositFactory"
@@ -153,7 +154,7 @@ case "$contract" in
 
         echo ""
         echo "========================================="
-        echo "Deploying RemoteAccount and RemoteAccountFactory..."
+        echo "Deploying RemoteAccount and RemoteAccountFactory (CREATE2)..."
         echo "========================================="
         echo "Using owner type: $owner_type"
         echo "Using Principal CAIP2: $PRINCIPAL_CAIP2"
@@ -162,10 +163,11 @@ case "$contract" in
         PRINCIPAL_CAIP2="$PRINCIPAL_CAIP2" \
             PRINCIPAL_ACCOUNT="$PRINCIPAL_ACCOUNT" \
             VETTING_AUTHORITY="$VETTING_AUTHORITY" \
-            npx hardhat ignition deploy "./ignition/modules/deployRemoteAccountFactory.ts" --network "$network" --verify
+            npx hardhat run "./scripts/deployCreate2RemoteAccountFactory.ts" --network "$network"
         ;;
 
     portfolioRouter)
+        delete_deployments_folder "ignition/deployments"
         # Axelar source chain can vary by $network, but all mainnet and testnet
         # networks currently share the same value.
         AXELAR_SOURCE_CHAIN="agoric"
