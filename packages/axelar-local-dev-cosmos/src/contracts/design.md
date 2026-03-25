@@ -388,8 +388,11 @@ graph TB
         isAuthorizedRouter["isAuthorizedRouter<br>override IRemoteAccountFactory"]
         getRouterStatus
 
-        subgraph "EVM-sourced (vetting authority)"
-            CHECK_VA@{shape: text, label: "check msg.sender ==<br>vettingAuthority"}
+        %% modifiers
+        onlyVettingAuthority@{shape: odd, label: "onlyVettingAuthority<br>modifier"}
+        onlyAuthorizedRouter@{shape: odd, label: "onlyAuthorizedRouter<br>modifier"}
+
+        subgraph "EVM-sourced<br>(vetting authority)"
             vetInitialRouter
             vetRouter
             unvetRouter
@@ -398,8 +401,7 @@ graph TB
 
         _authorizeRouter["_authorizeRouter (internal)"]
 
-        subgraph "Agoric-sourced (authorized router)"
-            CHECK_ROUTER@{shape: text, label: "check isAuthorizedRouter<br>(msg.sender)"}
+        subgraph "Agoric controller-sourced<br>(authorized router)"
             authorizeRouter["authorizeRouter<br>override IRemoteAccountFactory"]
             deauthorizeRouter["deauthorizeRouter<br>override IRemoteAccountFactory"]
             confirmVettingAuthorityTransfer["confirmVettingAuthorityTransfer<br>override IRemoteAccountFactory"]
@@ -431,46 +433,48 @@ graph TB
     getRouterStatus -->|reads| _routerStatus
 
     %% EVM-sourced operations (vetting authority)
+    vetInitialRouter -->|"modifier"| onlyVettingAuthority
     vetInitialRouter -->|"[1] guard"| numberOfAuthorizedRouters
     vetInitialRouter -->|"[2] calls"| vetRouter
     vetInitialRouter -->|"[3] calls"| _authorizeRouter
 
-    vetRouter -->|"[1]"| CHECK_VA
-    vetRouter -->|"[2] updates"| _routerStatus
+    vetRouter -->|"modifier"| onlyVettingAuthority
+    vetRouter -->|"[1] updates"| _routerStatus
     vetRouter -->|emit| RouterVetted
 
-    unvetRouter -->|"[1]"| CHECK_VA
-    unvetRouter -->|"[2] updates"| _routerStatus
+    unvetRouter -->|"modifier"| onlyVettingAuthority
+    unvetRouter -->|"[1] updates"| _routerStatus
     unvetRouter -->|emit| RouterUnvetted
 
-    proposeVettingAuthorityTransfer -->|"[1]"| CHECK_VA
-    proposeVettingAuthorityTransfer -->|"[2] updates"| _pendingVettingAuthority
+    proposeVettingAuthorityTransfer -->|"modifier"| onlyVettingAuthority
+    proposeVettingAuthorityTransfer -->|"[1] updates"| _pendingVettingAuthority
     proposeVettingAuthorityTransfer -->|emit| VettingAuthorityTransferProposed
 
-    CHECK_VA -->|checks| vettingAuthority
+    onlyVettingAuthority -->|checks| vettingAuthority
 
     %% Agoric-sourced operations (authorized router)
-    authorizeRouter -->|"[1]"| CHECK_ROUTER
-    authorizeRouter -->|"[2] calls"| _authorizeRouter
+    authorizeRouter -->|"modifier"| onlyAuthorizedRouter
+    authorizeRouter -->|"[1] calls"| _authorizeRouter
 
     _authorizeRouter -->|"[1] updates"| _routerStatus
     _authorizeRouter -->|"[2] increments"| numberOfAuthorizedRouters
     _authorizeRouter -->|emit| RouterAuthorized
 
-    deauthorizeRouter -->|"[1]"| CHECK_ROUTER
+    deauthorizeRouter -->|"modifier"| onlyAuthorizedRouter
+    deauthorizeRouter -->|"[1] not self-check"| deauthorizeRouter
     deauthorizeRouter -->|"[2] updates"| _routerStatus
     deauthorizeRouter -->|"[3] decrements"| numberOfAuthorizedRouters
     deauthorizeRouter -->|emit| RouterDeauthorized
 
-    confirmVettingAuthorityTransfer -->|"[1]"| CHECK_ROUTER
-    confirmVettingAuthorityTransfer -->|"[2] checks"| _pendingVettingAuthority
-    confirmVettingAuthorityTransfer -->|"[3] updates"| vettingAuthority
+    confirmVettingAuthorityTransfer -->|"modifier"| onlyAuthorizedRouter
+    confirmVettingAuthorityTransfer -->|"[1] checks"| _pendingVettingAuthority
+    confirmVettingAuthorityTransfer -->|"[2] updates"| vettingAuthority
     confirmVettingAuthorityTransfer -->|emit| VettingAuthorityTransferred
 
-    CHECK_ROUTER -->|calls| isAuthorizedRouter
+    onlyAuthorizedRouter -->|calls| isAuthorizedRouter
 
 
-    class isAuthorizedRouter,getRouterStatus,CHECK_VA,CHECK_ROUTER readonly
+    class isAuthorizedRouter,getRouterStatus,onlyVettingAuthority,onlyAuthorizedRouter readonly
     class vetInitialRouter,vetRouter,unvetRouter,proposeVettingAuthorityTransfer evm
     class authorizeRouter,deauthorizeRouter,confirmVettingAuthorityTransfer controller
     class _authorizeRouter internal
@@ -491,6 +495,8 @@ graph TB
 
 **Key Components (Router & Vetting Authority Administration)**:
 
+- **onlyVettingAuthority**: Shared modifier enforcing `msg.sender == vettingAuthority` for EVM-side administrative entrypoints
+- **onlyAuthorizedRouter**: Shared modifier enforcing `isAuthorizedRouter(msg.sender)` for Agoric-controlled administrative entrypoints
 - **vetInitialRouter**: Vets and authorizes the very first router (vetting authority only, no previous router). This initializes the factory.
 - **vetRouter**: Marks a router as vetted (vetting authority only)
 - **authorizeRouter**: Authorizes a vetted router (authorized router only)
@@ -783,8 +789,8 @@ graph TB
 - **RemoteAccountAxelarRouter `_execute`**: Validate `sourceChain` against immutable hash
 - **RemoteAccountAxelarRouter admin instructions**: Validate the source address as the factory principal (ensures only the portfolio manager can manage routers or redeem signed permits)
 - **RemoteAccountFactory `provideRemoteAccount`**: Validates remote account address derives from the principal account string
-- **RemoteAccountFactory `vetRouter`/`unvetRouter`**: Only the vetting authority can call these
-- **RemoteAccountFactory `authorizeRouter`/`deauthorizeRouter`**: Only an already-authorized router can call these (preventing unauthorized routers from self-authorizing)
+- **RemoteAccountFactory `onlyVettingAuthority` modifier**: Centralizes `msg.sender == vettingAuthority` enforcement for vetting-authority entrypoints
+- **RemoteAccountFactory `onlyAuthorizedRouter` modifier**: Centralizes `isAuthorizedRouter(msg.sender)` enforcement for router-controlled entrypoints, preventing unauthorized routers from self-authorizing
 - **RemoteAccountFactory `deauthorizeRouter`**: A router cannot deauthorize itself
 - **RemoteAccount `executeCalls`**: Validates that the caller is an authorized router via `factory.isAuthorizedRouter(msg.sender)`
 

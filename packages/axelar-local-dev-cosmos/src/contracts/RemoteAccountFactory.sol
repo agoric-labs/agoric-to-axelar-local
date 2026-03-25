@@ -71,6 +71,20 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
     address public vettingAuthority;
     address private _pendingVettingAuthority;
 
+    modifier onlyAuthorizedRouter() {
+        if (!isAuthorizedRouter(msg.sender)) {
+            revert UnauthorizedCaller(msg.sender);
+        }
+        _;
+    }
+
+    modifier onlyVettingAuthority() {
+        if (msg.sender != vettingAuthority) {
+            revert UnauthorizedCaller(msg.sender);
+        }
+        _;
+    }
+
     /**
      * @param factoryPrincipalCaip2_ The caip2 of the principal for this RemoteAccountFactory
      * @param factoryPrincipalAccount_ The address of the principal for this RemoteAccountFactory
@@ -272,10 +286,7 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
      * @dev Only the vetting authority can vet routers. Vetting does not authorize the router.
      * @param router The router address to vet
      */
-    function vetRouter(address router) public {
-        if (msg.sender != vettingAuthority) {
-            revert UnauthorizedCaller(msg.sender);
-        }
+    function vetRouter(address router) public onlyVettingAuthority {
         if (_routerStatus[router] == RouterStatus.Unknown) {
             _routerStatus[router] = RouterStatus.Vetted;
             emit RouterVetted(router);
@@ -288,11 +299,10 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
      *      Reverts if the factory is already initialized (any router authorized).
      * @param router The router address to vet and authorize
      */
-    function vetInitialRouter(address router) external {
+    function vetInitialRouter(address router) external onlyVettingAuthority {
         if (numberOfAuthorizedRouters > 0) {
             revert UnauthorizedCaller(msg.sender);
         }
-        // This will check that the caller is authorized.
         vetRouter(router);
         _authorizeRouter(router);
     }
@@ -302,10 +312,7 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
      * @dev Only an authorized router can authorize other routers. Router must be vetted first.
      * @param router The router address to authorize
      */
-    function authorizeRouter(address router) external override {
-        if (!isAuthorizedRouter(msg.sender)) {
-            revert UnauthorizedCaller(msg.sender);
-        }
+    function authorizeRouter(address router) external override onlyAuthorizedRouter {
         _authorizeRouter(router);
     }
 
@@ -332,8 +339,8 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
      * @dev Only an authorized router different from the sender can deauthorize
      * @param router The router address to deauthorize
      */
-    function deauthorizeRouter(address router) external override {
-        if (router == msg.sender || !isAuthorizedRouter(msg.sender)) {
+    function deauthorizeRouter(address router) external override onlyAuthorizedRouter {
+        if (router == msg.sender) {
             revert UnauthorizedCaller(msg.sender);
         }
         RouterStatus status = _routerStatus[router];
@@ -351,10 +358,7 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
      * @dev Only the vetting authority can unvet. Router must be deauthorized first.
      * @param router The router address to unvet
      */
-    function unvetRouter(address router) external {
-        if (msg.sender != vettingAuthority) {
-            revert UnauthorizedCaller(msg.sender);
-        }
+    function unvetRouter(address router) external onlyVettingAuthority {
         RouterStatus status = _routerStatus[router];
         if (status != RouterStatus.Vetted) {
             if (status == RouterStatus.Unknown) {
@@ -373,10 +377,9 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
      *      become the new vetting authority.
      * @param newVettingAuthority The address of the new vetting authority
      */
-    function proposeVettingAuthorityTransfer(address newVettingAuthority) external {
-        if (msg.sender != vettingAuthority) {
-            revert UnauthorizedCaller(msg.sender);
-        }
+    function proposeVettingAuthorityTransfer(
+        address newVettingAuthority
+    ) external onlyVettingAuthority {
         _pendingVettingAuthority = newVettingAuthority;
         emit VettingAuthorityTransferProposed(msg.sender, newVettingAuthority);
     }
@@ -387,10 +390,9 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
      *      previously proposed address.
      * @param newVettingAuthority The address of the new vetting authority (must be proposed first)
      */
-    function confirmVettingAuthorityTransfer(address newVettingAuthority) external override {
-        if (!isAuthorizedRouter(msg.sender)) {
-            revert UnauthorizedCaller(msg.sender);
-        }
+    function confirmVettingAuthorityTransfer(
+        address newVettingAuthority
+    ) external override onlyAuthorizedRouter {
         if (newVettingAuthority != _pendingVettingAuthority || newVettingAuthority == address(0)) {
             revert InvalidVettingAuthority(newVettingAuthority, _pendingVettingAuthority);
         }
