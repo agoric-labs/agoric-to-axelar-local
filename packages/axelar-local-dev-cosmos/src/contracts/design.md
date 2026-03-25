@@ -363,6 +363,11 @@ graph TB
 
 ```mermaid
 graph TB
+    classDef evm fill:#ffe6e6,stroke:#c66,color:#111
+    classDef controller fill:#e6f4ff,stroke:#4b88a2,color:#111
+    classDef internal fill:#fff0e6,stroke:#c99246,color:#111
+    classDef readonly fill:#eef6e8,stroke:#6f8a63,color:#111
+
     subgraph IRemoteAccountFactory
         IRemoteAccountFactory_isAuthorizedRouter[isAuthorizedRouter]
         IRemoteAccountFactory_authorizeRouter[authorizeRouter]
@@ -464,15 +469,14 @@ graph TB
 
     CHECK_ROUTER -->|calls| isAuthorizedRouter
 
-    style isAuthorizedRouter fill:#ffe6e6
-    style vetInitialRouter fill:#ffe6e6
-    style vetRouter fill:#ffe6e6
-    style authorizeRouter fill:#ffe6e6
-    style _authorizeRouter fill:#fff0e6
-    style deauthorizeRouter fill:#ffe6e6
-    style unvetRouter fill:#ffe6e6
-    style proposeVettingAuthorityTransfer fill:#ffe6e6
-    style confirmVettingAuthorityTransfer fill:#ffe6e6
+
+    class isAuthorizedRouter,getRouterStatus,CHECK_VA,CHECK_ROUTER readonly
+    class vetInitialRouter,vetRouter,unvetRouter,proposeVettingAuthorityTransfer evm
+    class authorizeRouter,deauthorizeRouter,confirmVettingAuthorityTransfer controller
+    class _authorizeRouter internal
+    class LEGEND_EVM evm
+    class LEGEND_CONTROLLER controller
+    class LEGEND_INTERNAL internal
 ```
 
 **Key Components (Remote Account Operations)**:
@@ -494,6 +498,107 @@ graph TB
 - **unvetRouter**: Unvets a vetted router (vetting authority only)
 - **proposeVettingAuthorityTransfer**: Proposes a new vetting authority (current vetting authority only)
 - **confirmVettingAuthorityTransfer**: Confirms the pending vetting authority transfer (authorized router only)
+
+## Router State Machine
+
+```mermaid
+stateDiagram-v2
+    classDef evm fill:#ffe6e6,stroke:#c66,color:#111
+    classDef controller fill:#e6f4ff,stroke:#4b88a2,color:#111
+    classDef stable fill:#eef6e8,stroke:#6f8a63,color:#111
+
+    [*] --> Unknown
+
+    state "EVM action<br/>vetRouter(router)" as EVMVet
+    state "EVM action<br/>vetInitialRouter(router)" as EVMBootstrap
+    state "Controller action<br/>authorizeRouter(router)" as ControllerAuthorize
+    state "Controller action<br/>deauthorizeRouter(router)" as ControllerDeauthorize
+    state "EVM action<br/>unvetRouter(router)" as EVMUnvet
+
+    Unknown --> EVMVet
+    EVMVet --> Vetted: RouterVetted
+
+    Unknown --> EVMBootstrap
+    EVMBootstrap --> Authorized: bootstrap = vet + authorize
+
+    Vetted --> ControllerAuthorize
+    ControllerAuthorize --> Authorized: RouterAuthorized
+
+    Authorized --> ControllerDeauthorize
+    ControllerDeauthorize --> Vetted: RouterDeauthorized
+
+    Vetted --> EVMUnvet
+    EVMUnvet --> Unknown: RouterUnvetted
+
+    class Unknown,Vetted,Authorized stable
+    class EVMVet,EVMBootstrap,EVMUnvet evm
+    class ControllerAuthorize,ControllerDeauthorize controller
+
+    note right of Unknown
+        Router is neither vetted nor authorized.
+        isAuthorizedRouter(router) == false
+    end note
+
+    note right of Vetted
+        Router code is approved but cannot operate accounts.
+        isAuthorizedRouter(router) == false
+    end note
+
+    note right of Authorized
+        Router is vetted and operational.
+        isAuthorizedRouter(router) == true
+    end note
+```
+
+**State Transition Notes**:
+
+- `vetInitialRouter` is a bootstrap-only shortcut from `Unknown` to `Authorized`; internally it performs `vetRouter` then `_authorizeRouter`.
+- `authorizeRouter` only changes state when the router is already `Vetted`; calling it for an already `Authorized` router is idempotent.
+- `deauthorizeRouter` only changes state when the router is currently `Authorized`; calling it for `Vetted` or `Unknown` is a no-op.
+- `unvetRouter` only changes state when the router is currently `Vetted`; calling it for `Unknown` is a no-op, and calling it for `Authorized` reverts.
+
+## Vetting Authority Transfer State Machine
+
+```mermaid
+stateDiagram-v2
+    classDef evm fill:#ffe6e6,stroke:#c66,color:#111
+    classDef controller fill:#e6f4ff,stroke:#4b88a2,color:#111
+    classDef stable fill:#eef6e8,stroke:#6f8a63,color:#111
+
+    [*] --> NoPendingTransfer
+
+    state "No pending transfer<br/>\_pendingVettingAuthority = address(0)<br>vettingAuthority = initialAuthority\_ / newAuthority" as NoPendingTransfer
+    state "EVM action<br/>proposeVettingAuthorityTransfer(newAuthority)" as EVMPropose
+    state "Pending transfer<br/>_pendingVettingAuthority = newAuthority" as PendingTransfer
+    state "Controller action<br/>confirmVettingAuthorityTransfer(newAuthority)" as ControllerConfirm
+
+    NoPendingTransfer --> EVMPropose
+    EVMPropose --> PendingTransfer: VettingAuthorityTransferProposed
+
+    PendingTransfer --> ControllerConfirm
+    ControllerConfirm --> NoPendingTransfer: VettingAuthorityTransferred
+
+    class NoPendingTransfer,PendingTransfer stable
+    class EVMPropose evm
+    class ControllerConfirm controller
+
+    note right of NoPendingTransfer
+        vettingAuthority is active.
+        No transfer is awaiting confirmation.
+    end note
+
+    note right of PendingTransfer
+        Current vettingAuthority is unchanged.
+        Only the exact pending address can be confirmed.
+    end note
+```
+
+**Transfer Notes**:
+
+- The transfer is two-step by design: the current vetting authority proposes, and an already-authorized router confirms.
+- Proposal alone does not change `vettingAuthority`; it only sets `_pendingVettingAuthority`.
+- Confirmation must name the exact pending address and cannot confirm the zero address.
+- Once confirmed, the pending value is cleared, so any later transfer requires a fresh proposal.
 
 ## Data Flow: Factory deployment and initial router setup
 
