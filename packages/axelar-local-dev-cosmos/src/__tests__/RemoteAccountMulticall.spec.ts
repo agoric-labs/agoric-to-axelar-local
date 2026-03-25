@@ -303,7 +303,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         expect(decodedError?.name).to.equal('AddressMismatch');
     });
 
-    it('should enable vetted router and allow it to operate accounts', async () => {
+    it('should authorize vetted router and allow it to operate accounts', async () => {
         // Deploy a new router
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         const newRouter = await RouterContract.deploy(
@@ -317,9 +317,9 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         // Vet the new router via the current router's owner
         await factory.getFunction('vetRouter')(newRouter.target);
 
-        // Enable the new router via GMP from factory principal
+        // Authorize the new router via GMP from factory principal
         (
-            await route(portfolioContractAccount).doEnableRouter({
+            await route(portfolioContractAccount).doAuthorizeRouter({
                 router: newRouter.target as `0x${string}`,
             })
         ).expectOperationSuccess();
@@ -342,15 +342,15 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         receipt3.expectOperationSuccess();
         expect(await multicallTarget.getValue()).to.equal(999n);
 
-        // Old router is still enabled and can still operate alongside new router
+        // Old router is still authorized and can still operate alongside new router
         const anotherLCA = 'agoric1anotherportfolio123456789abcdefg';
-        const receiptStillEnabled = await route(anotherLCA).doRemoteAccountExecute({
+        const receiptStillAuthorized = await route(anotherLCA).doRemoteAccountExecute({
             multiCalls: [],
         });
-        receiptStillEnabled.expectOperationSuccess();
+        receiptStillAuthorized.expectOperationSuccess();
     });
 
-    it('should allow enabled experimental router to operate alongside main router', async () => {
+    it('should allow authorized experimental router to operate alongside main router', async () => {
         // Deploy experimental router
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         const expRouter = await RouterContract.deploy(
@@ -361,10 +361,10 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         );
         await expRouter.waitForDeployment();
 
-        // Vet and enable the experimental router
+        // Vet and authorize the experimental router
         await factory.getFunction('vetRouter')(expRouter.target);
         (
-            await route(portfolioContractAccount).doEnableRouter({
+            await route(portfolioContractAccount).doAuthorizeRouter({
                 router: expRouter.target as `0x${string}`,
             })
         ).expectOperationSuccess();
@@ -381,16 +381,16 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         (await route(mainLCA).doRemoteAccountExecute({ multiCalls: [] })).expectOperationSuccess();
     });
 
-    it('should reject enabling an un-vetted router', async () => {
-        // Try to enable an un-vetted address
-        const receipt = await route(portfolioContractAccount).doEnableRouter({
+    it('should reject authorizing an un-vetted router', async () => {
+        // Try to authorize an un-vetted address
+        const receipt = await route(portfolioContractAccount).doAuthorizeRouter({
             router: addr1.address as `0x${string}`,
         });
         const decodedError = receipt.parseOperationError(factory.interface);
         expect(decodedError?.name).to.equal('RouterNotVetted');
     });
 
-    it('should reject enableRouter from non-factory-principal', async () => {
+    it('should reject authorizeRouter from non-factory-principal', async () => {
         // Deploy and vet a target router
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         const targetRouter = await RouterContract.deploy(
@@ -402,8 +402,8 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         await targetRouter.waitForDeployment();
         await factory.getFunction('vetRouter')(targetRouter.target);
 
-        // Try enableRouter from a non-principal source (portfolioLCA resolves to account address, not factory)
-        const receipt = await route(portfolioLCA).doEnableRouter({
+        // Try authorizeRouter from a non-principal source (portfolioLCA resolves to account address, not factory)
+        const receipt = await route(portfolioLCA).doAuthorizeRouter({
             router: targetRouter.target as `0x${string}`,
         });
         const decodedError = receipt.parseOperationError(router.interface);

@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import { AxelarExecutable } from '@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol';
 import { IRemoteAccountFactory } from './interfaces/IRemoteAccountFactory.sol';
 import { IRemoteAccount, ContractCall } from './interfaces/IRemoteAccount.sol';
-import { IRemoteAccountRouter, IPermit2, DepositPermit, ProvideRemoteAccountInstruction, RemoteAccountExecuteInstruction, EnableRouterInstruction, DisableRouterInstruction, ConfirmVettingAuthorityInstruction } from './interfaces/IRemoteAccountRouter.sol';
+import { IRemoteAccountRouter, IPermit2, DepositPermit, ProvideRemoteAccountInstruction, RemoteAccountExecuteInstruction, AuthorizeRouterInstruction, DeauthorizeRouterInstruction, ConfirmVettingAuthorityInstruction } from './interfaces/IRemoteAccountRouter.sol';
 
 /**
  * @title RemoteAccountAxelarRouter
@@ -12,19 +12,19 @@ import { IRemoteAccountRouter, IPermit2, DepositPermit, ProvideRemoteAccountInst
  * @dev Handles account creation, deposits, and multicalls atomically.
  *      Remote accounts delegate authorization to the factory that deployed them:
  *      any caller authorized by the factory can operate any accounts it created.
- *      This enables O(1) router migration — updating router status in the
+ *      This supports O(1) router migration — updating router status in the
  *      factory instantly updates the caller authorization for all accounts.
  *
- *      The factory maintains a vetted/enabled router map for two-factor
+ *      The factory maintains a vetted/authorized router map for two-factor
  *      authorization:
- *      - Vetting: the factory's vetting authority can vet or revoke routers
+ *      - Vetting: the factory's vetting authority can vet or unvet routers
  *        via direct calls
- *      - Enabling (operational switch): the Agoric chain principal can
- *        enable or disable vetted routers via GMP messages
+ *      - Authorization (operational switch): the Agoric chain principal can
+ *        authorize or deauthorize vetted routers via GMP messages
  *
  *      Migration to a new router is done in 2 steps:
- *      1. the vetting authority vets and the principal enables the new router
- *      2. the principal optionally disables the old router via GMP
+ *      1. the vetting authority vets and the principal authorizes the new router
+ *      2. the principal optionally deauthorizes the old router via GMP
  */
 contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
     IRemoteAccountFactory public immutable override factory;
@@ -129,8 +129,8 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
         if (
             selector != RemoteAccountAxelarRouter.processRemoteAccountExecuteInstruction.selector &&
             selector != RemoteAccountAxelarRouter.processProvideRemoteAccountInstruction.selector &&
-            selector != RemoteAccountAxelarRouter.processEnableRouterInstruction.selector &&
-            selector != RemoteAccountAxelarRouter.processDisableRouterInstruction.selector &&
+            selector != RemoteAccountAxelarRouter.processAuthorizeRouterInstruction.selector &&
+            selector != RemoteAccountAxelarRouter.processDeauthorizeRouterInstruction.selector &&
             selector != RemoteAccountAxelarRouter.processConfirmVettingAuthorityInstruction.selector
         ) {
             revert InvalidInstructionSelector(selector);
@@ -232,7 +232,7 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
         // resolver to observe/trace transactions.
         // Note that the second argument of all functions is an address: either the
         // expected remote account address or the factory address (for admin
-        // operations like EnableRouter, DisableRouter, ConfirmVettingAuthority).
+        // operations like AuthorizeRouter, DeauthorizeRouter, ConfirmVettingAuthority).
         // It is included in the emitted OperationResult event.
 
         bytes4 selector = bytes4(payload[:4]);
@@ -372,18 +372,18 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
     }
 
     /**
-     * @notice Process an enable router instruction
+     * @notice Process an authorize router instruction
      * @dev This is an external function which can only be called by this contract.
-     *      Only the factory's principal can enable routers via GMP.
+     *      Only the factory's principal can authorize routers via GMP.
      *      The router must be vetted first.
      * @param sourceAddress The principal account address of the factory
      * @param factoryAddress The expected factory address
-     * @param instruction The decoded EnableRouterInstruction
+     * @param instruction The decoded AuthorizeRouterInstruction
      */
-    function processEnableRouterInstruction(
+    function processAuthorizeRouterInstruction(
         string calldata sourceAddress,
         address factoryAddress,
-        EnableRouterInstruction calldata instruction
+        AuthorizeRouterInstruction calldata instruction
     ) external override {
         require(msg.sender == address(this));
 
@@ -392,22 +392,22 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
         }
         factory.verifyFactoryPrincipalAccount(sourceAddress);
 
-        factory.enableRouter(instruction.router);
+        factory.authorizeRouter(instruction.router);
     }
 
     /**
-     * @notice Process a disable router instruction
+     * @notice Process a deauthorize router instruction
      * @dev This is an external function which can only be called by this contract.
-     *      Only the factory's principal can disable routers via GMP.
-     *      The current router cannot disable itself.
+     *      Only the factory's principal can deauthorize routers via GMP.
+     *      The current router cannot deauthorize itself.
      * @param sourceAddress The principal account address of the factory
      * @param factoryAddress The expected factory address
-     * @param instruction The decoded DisableRouterInstruction
+     * @param instruction The decoded DeauthorizeRouterInstruction
      */
-    function processDisableRouterInstruction(
+    function processDeauthorizeRouterInstruction(
         string calldata sourceAddress,
         address factoryAddress,
-        DisableRouterInstruction calldata instruction
+        DeauthorizeRouterInstruction calldata instruction
     ) external override {
         require(msg.sender == address(this));
 
@@ -416,6 +416,6 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
         }
         factory.verifyFactoryPrincipalAccount(sourceAddress);
 
-        factory.disableRouter(instruction.router);
+        factory.deauthorizeRouter(instruction.router);
     }
 }

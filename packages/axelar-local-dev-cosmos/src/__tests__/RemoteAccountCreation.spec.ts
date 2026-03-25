@@ -164,7 +164,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         ).to.be.revertedWithCustomError(factory, 'InvalidAccountAtAddress');
     });
 
-    it('should allow enabled router to create and operate accounts', async () => {
+    it('should allow authorized router to create and operate accounts', async () => {
         // Deploy a second router
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         const secondRouter = await RouterContract.deploy(
@@ -178,18 +178,18 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         // Vet the second router via the current router (factory owner)
         await factory.getFunction('vetRouter')(secondRouter.target);
 
-        // Enable the second router via GMP from factory principal
-        const enableReceipt = await route(portfolioContractAccount).doEnableRouter({
+        // Authorize the second router via GMP from factory principal
+        const authorizeReceipt = await route(portfolioContractAccount).doAuthorizeRouter({
             router: secondRouter.target as `0x${string}`,
         });
-        enableReceipt.expectOperationSuccess();
+        authorizeReceipt.expectOperationSuccess();
 
         // Verify the second router is authorized
         expect(await factory.getFunction('isAuthorizedRouter')(secondRouter.target)).to.equal(true);
 
         // Second router can create and operate accounts
         const secondRoute = routed(secondRouter, routeConfig);
-        const newLCA = 'agoric1enabledroutertest123456789abcde';
+        const newLCA = 'agoric1authorizedroutertest123456789ab';
         const receipt = await secondRoute(newLCA).doRemoteAccountExecute({ multiCalls: [] });
         receipt.expectOperationSuccess();
     });

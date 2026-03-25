@@ -15,17 +15,17 @@ import { RemoteAccount } from './RemoteAccount.sol';
  *      The factory uses the EIP-1167 minimal proxy pattern to deploy
  *      the RemoteAccount contracts as "clones", which delegate all calls to a
  *      pre-deployed RemoteAccount implementation contract.
- *      Remote accounts delegate authorization to this factory: any enabled
+ *      Remote accounts delegate authorization to this factory: any authorized
  *      router can execute calls on any account created by this factory.
- *      The factory maintains a vetted/enabled router map to support
+ *      The factory maintains a vetted/authorized router map to support
  *      transitioning to updated routers, while enforcing a 2-factor mechanism
  *      for authorizing new routers.
  */
 contract RemoteAccountFactory is IRemoteAccountFactory {
     enum RouterStatus {
-        Unknown, // Could be potentially revoked
+        Unknown, // Could be potentially unvetted
         Vetted,
-        Enabled // Authorized to operate on remote accounts
+        Authorized // Authorized to operate on remote accounts
     }
 
     error InvalidImplementation(address implementation);
@@ -33,7 +33,7 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
     error RouterNotVetted(address router);
 
     event RouterVetted(address indexed router);
-    event RouterRevoked(address indexed router);
+    event RouterUnvetted(address indexed router);
 
     event VettingAuthorityTransferProposed(
         address indexed currentVettingAuthority,
@@ -61,12 +61,12 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
 
     mapping(address => RouterStatus) private _routerStatus;
 
-    /// @notice The address authorized to vet and revoke routers.
-    /// @dev The vetting authority cannot enable or disable routers, only a
-    //       currently enabled router can. A router cannot be revoked if it is
-    //       still enabled.
+    /// @notice The address authorized to vet and unvet routers.
+    /// @dev The vetting authority cannot authorize or deauthorize routers, only a
+    //       currently authorized router can. A router cannot be unvetted if it is
+    //       still authorized.
     //       Similarly, changing the vetting authority requires the current
-    //       authority to propose a new address, and an enabled router to
+    //       authority to propose a new address, and an authorized router to
     //       confirm the change.
     address public vettingAuthority;
     address private _pendingVettingAuthority;
@@ -76,7 +76,7 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
      * @param factoryPrincipalAccount_ The address of the principal for this RemoteAccountFactory
      * @param implementation_ The address of the pre-deployed RemoteAccount implementation contract.
      *        This implementation must have its initializers disabled to ensure it is inert.
-     * @param initialVettingAuthority_ The initial address authorized to vet and revoke routers
+     * @param initialVettingAuthority_ The initial address authorized to vet and unvet routers
      */
     constructor(
         string memory factoryPrincipalCaip2_,
@@ -249,12 +249,12 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
 
     /**
      * @notice Check if a caller is authorized to operate on remote accounts
-     * @dev Returns true if the caller is an enabled router.
+     * @dev Returns true if the caller is an authorized router.
      * @param caller The address to check
      * @return True if the caller is authorized
      */
     function isAuthorizedRouter(address caller) public view override returns (bool) {
-        return _routerStatus[caller] == RouterStatus.Enabled;
+        return _routerStatus[caller] == RouterStatus.Authorized;
     }
 
     /**
@@ -269,7 +269,7 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
 
     /**
      * @notice Mark a router address as vetted (code-approved)
-     * @dev Only the vetting authority can vet routers. Vetting does not enable the router.
+     * @dev Only the vetting authority can vet routers. Vetting does not authorize the router.
      * @param router The router address to vet
      */
     function vetRouter(address router) public {
@@ -283,10 +283,10 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
     }
 
     /**
-     * @notice Vet and enable the initial router
+     * @notice Vet and authorize the initial router
      * @dev Only the vetting authority can authorize the initial router.
      *      Reverts if the factory is already initialized (any router authorized).
-     * @param router The router address to vet and enable
+     * @param router The router address to vet and authorize
      */
     function vetInitialRouter(address router) external {
         if (numberOfAuthorizedRouters > 0) {
@@ -294,64 +294,64 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
         }
         // This will check that the caller is authorized.
         vetRouter(router);
-        _enableRouter(router);
+        _authorizeRouter(router);
     }
 
     /**
-     * @notice Enable a vetted router to operate on remote accounts
-     * @dev Only an enabled router can enable other routers. Router must be vetted first.
-     * @param router The router address to enable
+     * @notice Authorize a vetted router to operate on remote accounts
+     * @dev Only an authorized router can authorize other routers. Router must be vetted first.
+     * @param router The router address to authorize
      */
-    function enableRouter(address router) external override {
+    function authorizeRouter(address router) external override {
         if (!isAuthorizedRouter(msg.sender)) {
             revert UnauthorizedCaller(msg.sender);
         }
-        _enableRouter(router);
+        _authorizeRouter(router);
     }
 
     /**
-     * @notice Enable a vetted router to operate on remote accounts
+     * @notice Authorize a vetted router to operate on remote accounts
      * @dev The internal caller must ensure the caller is authorized. Router must be vetted first.
-     * @param router The router address to enable
+     * @param router The router address to authorize
      */
-    function _enableRouter(address router) internal {
+    function _authorizeRouter(address router) internal {
         RouterStatus status = _routerStatus[router];
         if (status != RouterStatus.Vetted) {
-            if (status == RouterStatus.Enabled) {
+            if (status == RouterStatus.Authorized) {
                 return;
             }
             revert RouterNotVetted(router);
         }
-        _routerStatus[router] = RouterStatus.Enabled;
+        _routerStatus[router] = RouterStatus.Authorized;
         numberOfAuthorizedRouters += 1;
-        emit RouterEnabled(router, numberOfAuthorizedRouters);
+        emit RouterAuthorized(router, numberOfAuthorizedRouters);
     }
 
     /**
-     * @notice Disable an enabled router
-     * @dev Only an enabled router different from the sender can disable
-     * @param router The router address to disable
+     * @notice Deauthorize an authorized router
+     * @dev Only an authorized router different from the sender can deauthorize
+     * @param router The router address to deauthorize
      */
-    function disableRouter(address router) external override {
+    function deauthorizeRouter(address router) external override {
         if (router == msg.sender || !isAuthorizedRouter(msg.sender)) {
             revert UnauthorizedCaller(msg.sender);
         }
         RouterStatus status = _routerStatus[router];
-        if (status != RouterStatus.Enabled) {
+        if (status != RouterStatus.Authorized) {
             assert(status == RouterStatus.Vetted || status == RouterStatus.Unknown);
             return;
         }
         _routerStatus[router] = RouterStatus.Vetted;
         numberOfAuthorizedRouters -= 1;
-        emit RouterDisabled(router, numberOfAuthorizedRouters);
+        emit RouterDeauthorized(router, numberOfAuthorizedRouters);
     }
 
     /**
-     * @notice Revoke vetting from a router
-     * @dev Only the vetting authority can revoke. Router must be disabled first.
-     * @param router The router address to revoke
+     * @notice Unvet a router
+     * @dev Only the vetting authority can unvet. Router must be deauthorized first.
+     * @param router The router address to unvet
      */
-    function revokeRouter(address router) external {
+    function unvetRouter(address router) external {
         if (msg.sender != vettingAuthority) {
             revert UnauthorizedCaller(msg.sender);
         }
@@ -363,13 +363,13 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
             revert RouterNotVetted(router);
         }
         delete _routerStatus[router];
-        emit RouterRevoked(router);
+        emit RouterUnvetted(router);
     }
 
     /**
      * @notice Propose transfer of vetting authority to a new address
      * @dev Only the current vetting authority can propose a new address.
-     *      The proposed address must be confirmed via an enabled router to
+     *      The proposed address must be confirmed via an authorized router to
      *      become the new vetting authority.
      * @param newVettingAuthority The address of the new vetting authority
      */
@@ -383,7 +383,7 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
 
     /**
      * @notice Confirm transfer of vetting authority to the proposed address
-     * @dev Only an enabled router can confirm. The address must match the
+     * @dev Only an authorized router can confirm. The address must match the
      *      previously proposed address.
      * @param newVettingAuthority The address of the new vetting authority (must be proposed first)
      */

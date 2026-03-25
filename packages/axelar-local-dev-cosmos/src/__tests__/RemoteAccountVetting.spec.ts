@@ -114,9 +114,9 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         ).to.be.revertedWithCustomError(factory, 'UnauthorizedCaller');
     });
 
-    // ==================== Enabling ====================
+    // ==================== Authorization ====================
 
-    it('should enable a vetted router via GMP and emit RouterEnabled', async () => {
+    it('should authorize a vetted router via GMP and emit RouterAuthorized', async () => {
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         const newRouter = await RouterContract.deploy(
             axelarGatewayMock.target,
@@ -135,8 +135,8 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
             initialAuthorizedRouters,
         );
 
-        // Enable via GMP from factory principal
-        const receipt = await route(portfolioContractAccount).doEnableRouter({
+        // Authorize via GMP from factory principal
+        const receipt = await route(portfolioContractAccount).doAuthorizeRouter({
             router: newRouter.target as `0x${string}`,
         });
         receipt.expectOperationSuccess();
@@ -148,17 +148,17 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         );
     });
 
-    it('should reject enabling an un-vetted router', async () => {
+    it('should reject authorizing an un-vetted router', async () => {
         const unvetted = addr1.address;
 
-        const receipt = await route(portfolioContractAccount).doEnableRouter({
+        const receipt = await route(portfolioContractAccount).doAuthorizeRouter({
             router: unvetted as `0x${string}`,
         });
         const decodedError = receipt.parseOperationError(factory.interface);
         expect(decodedError?.name).to.equal('RouterNotVetted');
     });
 
-    it('should reject enableRouter from non-factory-principal', async () => {
+    it('should reject authorizeRouter from non-factory-principal', async () => {
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         const newRouter = await RouterContract.deploy(
             axelarGatewayMock.target,
@@ -172,16 +172,16 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         // Non-principal LCA resolves to a remote account address (not factory),
         // so the router rejects with UnauthorizedCaller before reaching the principal check
         const nonPrincipalLCA = 'agoric1notprincipal12345678901234abcde';
-        const receipt = await route(nonPrincipalLCA).doEnableRouter({
+        const receipt = await route(nonPrincipalLCA).doAuthorizeRouter({
             router: newRouter.target as `0x${string}`,
         });
         const decodedError = receipt.parseOperationError(router.interface);
         expect(decodedError?.name).to.equal('UnauthorizedCaller');
     });
 
-    // ==================== Disabling ====================
+    // ==================== Deauthorization ====================
 
-    it('should disable an enabled router via GMP', async () => {
+    it('should deauthorize an authorized router via GMP', async () => {
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         const newRouter = await RouterContract.deploy(
             axelarGatewayMock.target,
@@ -193,10 +193,10 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
 
         const initialAuthorizedRouters = await factory.getFunction('numberOfAuthorizedRouters')();
 
-        // Vet and enable
+        // Vet and authorize
         await factory.getFunction('vetRouter')(newRouter.target);
         (
-            await route(portfolioContractAccount).doEnableRouter({
+            await route(portfolioContractAccount).doAuthorizeRouter({
                 router: newRouter.target as `0x${string}`,
             })
         ).expectOperationSuccess();
@@ -205,8 +205,8 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
             initialAuthorizedRouters + 1n,
         );
 
-        // Disable via GMP
-        const receipt = await route(portfolioContractAccount).doDisableRouter({
+        // Deauthorize via GMP
+        const receipt = await route(portfolioContractAccount).doDeauthorizeRouter({
             router: newRouter.target as `0x${string}`,
         });
         receipt.expectOperationSuccess();
@@ -218,20 +218,20 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         );
     });
 
-    it('should reject disableRouter from non-factory-principal', async () => {
+    it('should reject deauthorizeRouter from non-factory-principal', async () => {
         // Non-principal LCA resolves to a remote account address (not factory),
         // so the router rejects with UnauthorizedCaller
         const nonPrincipalLCA = 'agoric1notprincipal12345678901234abcde';
-        const receipt = await route(nonPrincipalLCA).doDisableRouter({
+        const receipt = await route(nonPrincipalLCA).doDeauthorizeRouter({
             router: addr1.address as `0x${string}`,
         });
         const decodedError = receipt.parseOperationError(router.interface);
         expect(decodedError?.name).to.equal('UnauthorizedCaller');
     });
 
-    // ==================== Revoking ====================
+    // ==================== Unvetting ====================
 
-    it('should revoke a disabled router and keep vet / enable / disable / revoke idempotent', async () => {
+    it('should unvet a deauthorized router and keep vet / authorize / deauthorize / unvet idempotent', async () => {
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         const newRouter = await RouterContract.deploy(
             axelarGatewayMock.target,
@@ -258,9 +258,9 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
             initialAuthorizedRouters,
         );
 
-        // Enable is idempotent
+        // Authorize is idempotent
         (
-            await route(portfolioContractAccount).doEnableRouter({
+            await route(portfolioContractAccount).doAuthorizeRouter({
                 router: newRouter.target as `0x${string}`,
             })
         ).expectOperationSuccess();
@@ -270,7 +270,7 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         );
 
         (
-            await route(portfolioContractAccount).doEnableRouter({
+            await route(portfolioContractAccount).doAuthorizeRouter({
                 router: newRouter.target as `0x${string}`,
             })
         ).expectOperationSuccess();
@@ -279,9 +279,9 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
             initialAuthorizedRouters + 1n,
         );
 
-        // Disable is idempotent
+        // Deauthorize is idempotent
         (
-            await route(portfolioContractAccount).doDisableRouter({
+            await route(portfolioContractAccount).doDeauthorizeRouter({
                 router: newRouter.target as `0x${string}`,
             })
         ).expectOperationSuccess();
@@ -291,7 +291,7 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         );
 
         (
-            await route(portfolioContractAccount).doDisableRouter({
+            await route(portfolioContractAccount).doDeauthorizeRouter({
                 router: newRouter.target as `0x${string}`,
             })
         ).expectOperationSuccess();
@@ -300,23 +300,23 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
             initialAuthorizedRouters,
         );
 
-        // Revoke is idempotent
-        await expect(factory.getFunction('revokeRouter')(newRouter.target))
-            .to.emit(factory, 'RouterRevoked')
+        // Unvet is idempotent
+        await expect(factory.getFunction('unvetRouter')(newRouter.target))
+            .to.emit(factory, 'RouterUnvetted')
             .withArgs(newRouter.target);
         expect(await factory.getFunction('isAuthorizedRouter')(newRouter.target)).to.equal(false);
         expect(await factory.getFunction('numberOfAuthorizedRouters')()).to.equal(
             initialAuthorizedRouters,
         );
 
-        await factory.getFunction('revokeRouter')(newRouter.target);
+        await factory.getFunction('unvetRouter')(newRouter.target);
         expect(await factory.getFunction('isAuthorizedRouter')(newRouter.target)).to.equal(false);
         expect(await factory.getFunction('numberOfAuthorizedRouters')()).to.equal(
             initialAuthorizedRouters,
         );
     });
 
-    it('should reject revoking a router that is still enabled', async () => {
+    it('should reject unvetting a router that is still authorized', async () => {
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         const newRouter = await RouterContract.deploy(
             axelarGatewayMock.target,
@@ -326,23 +326,23 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         );
         await newRouter.waitForDeployment();
 
-        // Vet and enable
+        // Vet and authorize
         await factory.getFunction('vetRouter')(newRouter.target);
         (
-            await route(portfolioContractAccount).doEnableRouter({
+            await route(portfolioContractAccount).doAuthorizeRouter({
                 router: newRouter.target as `0x${string}`,
             })
         ).expectOperationSuccess();
 
-        // Try to revoke without disabling first
+        // Try to unvet without deauthorizing first
         await expect(
-            factory.getFunction('revokeRouter')(newRouter.target),
+            factory.getFunction('unvetRouter')(newRouter.target),
         ).to.be.revertedWithCustomError(factory, 'RouterNotVetted');
     });
 
-    it('should reject revokeRouter from non-vetting-authority', async () => {
+    it('should reject unvetRouter from non-vetting-authority', async () => {
         await expect(
-            factory.connect(addr1).getFunction('revokeRouter')(addr1.address),
+            factory.connect(addr1).getFunction('unvetRouter')(addr1.address),
         ).to.be.revertedWithCustomError(factory, 'UnauthorizedCaller');
     });
 
@@ -356,7 +356,7 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         expect(await factory.getFunction('isAuthorizedRouter')(addr1.address)).to.equal(false);
     });
 
-    it('should return true for enabled router and false after disabling', async () => {
+    it('should return true for authorized router and false after deauthorizing', async () => {
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         const newRouter = await RouterContract.deploy(
             axelarGatewayMock.target,
@@ -373,17 +373,17 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         await factory.getFunction('vetRouter')(newRouter.target);
         expect(await factory.getFunction('isAuthorizedRouter')(newRouter.target)).to.equal(false);
 
-        // Enable — now authorized
+        // Authorize — now authorized
         (
-            await route(portfolioContractAccount).doEnableRouter({
+            await route(portfolioContractAccount).doAuthorizeRouter({
                 router: newRouter.target as `0x${string}`,
             })
         ).expectOperationSuccess();
         expect(await factory.getFunction('isAuthorizedRouter')(newRouter.target)).to.equal(true);
 
-        // Disable — no longer authorized
+        // Deauthorize — no longer authorized
         (
-            await route(portfolioContractAccount).doDisableRouter({
+            await route(portfolioContractAccount).doDeauthorizeRouter({
                 router: newRouter.target as `0x${string}`,
             })
         ).expectOperationSuccess();
@@ -392,7 +392,7 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
 
     // ==================== Full lifecycle ====================
 
-    it('should support full vet → enable → operate → disable → revoke lifecycle', async () => {
+    it('should support full vet → authorize → operate → deauthorize → unvet lifecycle', async () => {
         const RouterContract = await ethers.getContractFactory('RemoteAccountAxelarRouter');
         const expRouter = await RouterContract.deploy(
             axelarGatewayMock.target,
@@ -405,9 +405,9 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         // 1. Vet (vetting authority)
         await factory.getFunction('vetRouter')(expRouter.target);
 
-        // 2. Enable (Agoric chain via GMP)
+        // 2. Authorize (Agoric chain via GMP)
         (
-            await route(portfolioContractAccount).doEnableRouter({
+            await route(portfolioContractAccount).doAuthorizeRouter({
                 router: expRouter.target as `0x${string}`,
             })
         ).expectOperationSuccess();
@@ -417,9 +417,9 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         const lca = 'agoric1lifecycletest12345678901234abcde';
         (await expRoute(lca).doRemoteAccountExecute({ multiCalls: [] })).expectOperationSuccess();
 
-        // 4. Disable (Agoric chain via GMP)
+        // 4. Deauthorize (Agoric chain via GMP)
         (
-            await route(portfolioContractAccount).doDisableRouter({
+            await route(portfolioContractAccount).doDeauthorizeRouter({
                 router: expRouter.target as `0x${string}`,
             })
         ).expectOperationSuccess();
@@ -435,15 +435,15 @@ describe('RemoteAccountAxelarRouter - Vetting and Authorization', () => {
         const decodedError = failReceipt.parseOperationError(factory.interface);
         expect(decodedError?.name).to.equal('UnauthorizedCaller');
 
-        // 5. Revoke (vetting authority)
-        await factory.getFunction('revokeRouter')(expRouter.target);
+        // 5. Unvet (vetting authority)
+        await factory.getFunction('unvetRouter')(expRouter.target);
 
-        // Cannot re-enable without vetting again
-        const reEnableReceipt = await route(portfolioContractAccount).doEnableRouter({
+        // Cannot re-authorize without vetting again
+        const reAuthorizeReceipt = await route(portfolioContractAccount).doAuthorizeRouter({
             router: expRouter.target as `0x${string}`,
         });
-        const reEnableError = reEnableReceipt.parseOperationError(factory.interface);
-        expect(reEnableError?.name).to.equal('RouterNotVetted');
+        const reAuthorizeError = reAuthorizeReceipt.parseOperationError(factory.interface);
+        expect(reAuthorizeError?.name).to.equal('RouterNotVetted');
     });
 
     // ==================== Vetting Authority Transfer ====================

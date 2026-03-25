@@ -73,7 +73,7 @@ graph TB
     LCAn --> AXL
     AXL -->|_execute| PR
     PR -->|provideRemoteAccount| RAF
-    PR -->|"enableRouter |<br>disableRouter |<br>confirmVettingAuthorityTransfer"| RAF
+    PR -->|"authorizeRouter |<br>deauthorizeRouter |<br>confirmVettingAuthorityTransfer"| RAF
     RAF ==>|creates| RA1
     RAF ==>|creates| RA2
     RAF ==>|creates| RAn
@@ -84,7 +84,7 @@ graph TB
     PR -->|executeCalls| RA2
     PR -->|executeCalls| RAn
     PR -.->|permitWitnessTransferFrom| P2
-    VA -->|"vetRouter |<br>revokeRouter |<br>proposeVettingAuthorityTransfer"| RAF
+    VA -->|"vetRouter |<br>unvetRouter |<br>proposeVettingAuthorityTransfer"| RAF
     IMP -->|checks caller| RAF
     IMP -->|call| PROTO
 
@@ -115,7 +115,7 @@ graph TB
         IRemoteAccountRouter_permit2["permit2(): IPermit2"]
         IRemoteAccountRouter_processProvideRemoteAccountInstruction[processProvideRemoteAccountInstruction]
         IRemoteAccountRouter_processRemoteAccountExecuteInstruction[processRemoteAccountExecuteInstruction]
-        IRemoteAccountRouter_adminInstructions["processEnableRouterInstruction<br>processDisableRouterInstruction<br>processConfirmVettingAuthorityInstruction"]
+        IRemoteAccountRouter_adminInstructions["processAuthorizeRouterInstruction<br>processDeauthorizeRouterInstruction<br>processConfirmVettingAuthorityInstruction"]
         %% events
         OperationResult@{shape: flag}
     end
@@ -130,13 +130,13 @@ graph TB
         processProvideRemoteAccountInstruction_self@{shape: comment, label: "require self-call"}
         processRemoteAccountExecuteInstruction["processRemoteAccountExecuteInstruction<br>override IRemoteAccountRouter"]
         processRemoteAccountExecuteInstruction_self@{shape: comment, label: "require self-call"}
-        adminInstructions["processEnableRouterInstruction |<br>processDisableRouterInstruction |<br>processConfirmVettingAuthorityInstruction"]
+        adminInstructions["processAuthorizeRouterInstruction |<br>processDeauthorizeRouterInstruction |<br>processConfirmVettingAuthorityInstruction"]
         adminInstructions_self@{shape: comment, label: "require self-call"}
         VERIFY_FACTORY@{shape: text, label: "verify factory address<br>and principal"}
         DEP@{shape: text, label: "Permit2 Integration"}
         PROV@{shape: text, label: "account creation/<br>verification"}
         MULTI@{shape: text, label: "account use"}
-        ADMIN_CALL@{shape: text, label: "factory admin call<br>(enableRouter |<br>disableRouter |<br>confirmVettingAuthorityTransfer)"}
+        ADMIN_CALL@{shape: text, label: "factory admin call<br>(authorizeRouter |<br>deauthorizeRouter |<br>confirmVettingAuthorityTransfer)"}
         subgraph state
             factory@{shape: stored-data, label: "factory: IRemoteAccountFactory<br>override IRemoteAccountRouter"}
             permit2@{shape: stored-data, label: "permit2: IPermit2<br>override IRemoteAccountRouter"}
@@ -191,7 +191,7 @@ graph TB
 - **\_execute**: Validates source chain, selector, and common decoded payload arguments before dispatching
 - **processProvideRemoteAccountInstruction**: Atomically redeems an optional deposit permit and provisions/verifies a RemoteAccount via the factory
 - **processRemoteAccountExecuteInstruction**: Atomically provisions/verifies a RemoteAccount and executes its multicall batch
-- **processEnableRouterInstruction / processDisableRouterInstruction / processConfirmVettingAuthorityInstruction**: Admin instructions that verify the factory principal, then call the corresponding factory method
+- **processAuthorizeRouterInstruction / processDeauthorizeRouterInstruction / processConfirmVettingAuthorityInstruction**: Admin instructions that verify the factory principal, then call the corresponding factory method
 - **Permit2 Integration**: Transfers tokens to RemoteAccount via Permit2 signature-based transfers
 - **account creation/verification**: Creates or verifies RemoteAccount via factory
 - **account use**: Instructs RemoteAccount to execute arbitrary multicalls
@@ -310,7 +310,7 @@ graph TB
             factoryPrincipalAccount@{shape: stored-data}
             _principalSalt@{shape: stored-data}
             implementation@{shape: stored-data}
-            _routerStatus@{shape: stored-data, label: "_routerStatus: mapping<br>(Unknown | Vetted | Enabled)"}
+            _routerStatus@{shape: stored-data, label: "_routerStatus: mapping<br>(Unknown | Vetted | Authorized)"}
         end
     end
 
@@ -365,14 +365,14 @@ graph TB
 graph TB
     subgraph IRemoteAccountFactory
         IRemoteAccountFactory_isAuthorizedRouter[isAuthorizedRouter]
-        IRemoteAccountFactory_enableRouter[enableRouter]
-        IRemoteAccountFactory_disableRouter[disableRouter]
+        IRemoteAccountFactory_authorizeRouter[authorizeRouter]
+        IRemoteAccountFactory_deauthorizeRouter[deauthorizeRouter]
         IRemoteAccountFactory_confirmVettingAuthorityTransfer[confirmVettingAuthorityTransfer]
         %% events
         RouterVetted@{shape: flag}
-        RouterEnabled@{shape: flag}
-        RouterDisabled@{shape: flag}
-        RouterRevoked@{shape: flag}
+        RouterAuthorized@{shape: flag}
+        RouterDeauthorized@{shape: flag}
+        RouterUnvetted@{shape: flag}
         VettingAuthorityTransferProposed@{shape: flag}
         VettingAuthorityTransferred@{shape: flag}
     end
@@ -387,22 +387,22 @@ graph TB
             CHECK_VA@{shape: text, label: "check msg.sender ==<br>vettingAuthority"}
             vetInitialRouter
             vetRouter
-            revokeRouter
+            unvetRouter
             proposeVettingAuthorityTransfer
         end
 
-        _enableRouter["_enableRouter (internal)"]
+        _authorizeRouter["_authorizeRouter (internal)"]
 
-        subgraph "Agoric-sourced (enabled router)"
+        subgraph "Agoric-sourced (authorized router)"
             CHECK_ROUTER@{shape: text, label: "check isAuthorizedRouter<br>(msg.sender)"}
-            enableRouter["enableRouter<br>override IRemoteAccountFactory"]
-            disableRouter["disableRouter<br>override IRemoteAccountFactory"]
+            authorizeRouter["authorizeRouter<br>override IRemoteAccountFactory"]
+            deauthorizeRouter["deauthorizeRouter<br>override IRemoteAccountFactory"]
             confirmVettingAuthorityTransfer["confirmVettingAuthorityTransfer<br>override IRemoteAccountFactory"]
         end
 
         subgraph state
             numberOfAuthorizedRouters@{shape: stored-data}
-            _routerStatus@{shape: stored-data, label: "_routerStatus: mapping<br>(Unknown | Vetted | Enabled)"}
+            _routerStatus@{shape: stored-data, label: "_routerStatus: mapping<br>(Unknown | Vetted | Authorized)"}
             vettingAuthority@{shape: stored-data}
             _pendingVettingAuthority@{shape: stored-data}
         end
@@ -416,9 +416,9 @@ graph TB
     START --> getRouterStatus
     START --> vetInitialRouter
     START --> vetRouter
-    START --> enableRouter
-    START --> disableRouter
-    START --> revokeRouter
+    START --> authorizeRouter
+    START --> deauthorizeRouter
+    START --> unvetRouter
     START --> proposeVettingAuthorityTransfer
     START --> confirmVettingAuthorityTransfer
 
@@ -428,15 +428,15 @@ graph TB
     %% EVM-sourced operations (vetting authority)
     vetInitialRouter -->|"[1] guard"| numberOfAuthorizedRouters
     vetInitialRouter -->|"[2] calls"| vetRouter
-    vetInitialRouter -->|"[3] calls"| _enableRouter
+    vetInitialRouter -->|"[3] calls"| _authorizeRouter
 
     vetRouter -->|"[1]"| CHECK_VA
     vetRouter -->|"[2] updates"| _routerStatus
     vetRouter -->|emit| RouterVetted
 
-    revokeRouter -->|"[1]"| CHECK_VA
-    revokeRouter -->|"[2] updates"| _routerStatus
-    revokeRouter -->|emit| RouterRevoked
+    unvetRouter -->|"[1]"| CHECK_VA
+    unvetRouter -->|"[2] updates"| _routerStatus
+    unvetRouter -->|emit| RouterUnvetted
 
     proposeVettingAuthorityTransfer -->|"[1]"| CHECK_VA
     proposeVettingAuthorityTransfer -->|"[2] updates"| _pendingVettingAuthority
@@ -444,18 +444,18 @@ graph TB
 
     CHECK_VA -->|checks| vettingAuthority
 
-    %% Agoric-sourced operations (enabled router)
-    enableRouter -->|"[1]"| CHECK_ROUTER
-    enableRouter -->|"[2] calls"| _enableRouter
+    %% Agoric-sourced operations (authorized router)
+    authorizeRouter -->|"[1]"| CHECK_ROUTER
+    authorizeRouter -->|"[2] calls"| _authorizeRouter
 
-    _enableRouter -->|"[1] updates"| _routerStatus
-    _enableRouter -->|"[2] increments"| numberOfAuthorizedRouters
-    _enableRouter -->|emit| RouterEnabled
+    _authorizeRouter -->|"[1] updates"| _routerStatus
+    _authorizeRouter -->|"[2] increments"| numberOfAuthorizedRouters
+    _authorizeRouter -->|emit| RouterAuthorized
 
-    disableRouter -->|"[1]"| CHECK_ROUTER
-    disableRouter -->|"[2] updates"| _routerStatus
-    disableRouter -->|"[3] decrements"| numberOfAuthorizedRouters
-    disableRouter -->|emit| RouterDisabled
+    deauthorizeRouter -->|"[1]"| CHECK_ROUTER
+    deauthorizeRouter -->|"[2] updates"| _routerStatus
+    deauthorizeRouter -->|"[3] decrements"| numberOfAuthorizedRouters
+    deauthorizeRouter -->|emit| RouterDeauthorized
 
     confirmVettingAuthorityTransfer -->|"[1]"| CHECK_ROUTER
     confirmVettingAuthorityTransfer -->|"[2] checks"| _pendingVettingAuthority
@@ -467,10 +467,10 @@ graph TB
     style isAuthorizedRouter fill:#ffe6e6
     style vetInitialRouter fill:#ffe6e6
     style vetRouter fill:#ffe6e6
-    style enableRouter fill:#ffe6e6
-    style _enableRouter fill:#fff0e6
-    style disableRouter fill:#ffe6e6
-    style revokeRouter fill:#ffe6e6
+    style authorizeRouter fill:#ffe6e6
+    style _authorizeRouter fill:#fff0e6
+    style deauthorizeRouter fill:#ffe6e6
+    style unvetRouter fill:#ffe6e6
     style proposeVettingAuthorityTransfer fill:#ffe6e6
     style confirmVettingAuthorityTransfer fill:#ffe6e6
 ```
@@ -483,17 +483,17 @@ graph TB
 - **\_verifyRemoteAccountAddress**: Enforces principal-to-address derivation before creation/verification
 - **\_getRemoteAccountAddress**: Rejects the factory principal account (prevents treating factory as a remote account)
 - **\_createRemoteAccount**: Core deterministic clone deployment + factory reference initialization
-- **isAuthorizedRouter**: Checks if a caller is an enabled router
+- **isAuthorizedRouter**: Checks if a caller is an authorized router
 
 **Key Components (Router & Vetting Authority Administration)**:
 
-- **vetInitialRouter**: Vets and enables the very first router (vetting authority only, no previous router). This initializes the factory.
+- **vetInitialRouter**: Vets and authorizes the very first router (vetting authority only, no previous router). This initializes the factory.
 - **vetRouter**: Marks a router as vetted (vetting authority only)
-- **enableRouter**: Enables a vetted router (enabled router only)
-- **disableRouter**: Disables an enabled router (enabled router only, not self)
-- **revokeRouter**: Revokes a vetted router (vetting authority only)
+- **authorizeRouter**: Authorizes a vetted router (authorized router only)
+- **deauthorizeRouter**: Deauthorizes an authorized router (authorized router only, not self)
+- **unvetRouter**: Unvets a vetted router (vetting authority only)
 - **proposeVettingAuthorityTransfer**: Proposes a new vetting authority (current vetting authority only)
-- **confirmVettingAuthorityTransfer**: Confirms the pending vetting authority transfer (enabled router only)
+- **confirmVettingAuthorityTransfer**: Confirms the pending vetting authority transfer (authorized router only)
 
 ## Data Flow: Factory deployment and initial router setup
 
@@ -522,7 +522,7 @@ sequenceDiagram
     V->>RAF: vetInitialRouter(router)
     RAF->>RAF: require numberOfAuthorizedRouters == 0
     RAF->>RAF: vetRouter(router) — checks vettingAuthority
-    RAF->>RAF: _enableRouter(router)
+    RAF->>RAF: _authorizeRouter(router)
     RAF->>RAF: numberOfAuthorizedRouters = 1
 ```
 
@@ -530,7 +530,7 @@ sequenceDiagram
 
 - The factory constructor does not accept an "initial router" parameter and instead, requires an initialization step (`vetInitialRouter`) from the vetting authority. This avoids creating a circular dependency when constructing the factory and the first router.
 - The vetting authority address is required at construction of the factory. This is to ensure any CREATE2 based deployments cannot be squatted.
-- `vetInitialRouter` is a one-shot bootstrap: it reverts once any router has been authorized (`numberOfAuthorizedRouters > 0`). Subsequent routers follow the normal vet → enable lifecycle via GMP. It's also not possible to revert back to 0 authorized routers.
+- `vetInitialRouter` is a one-shot bootstrap: it reverts once any router has been authorized (`numberOfAuthorizedRouters > 0`). Subsequent routers follow the normal vet → authorize lifecycle via GMP. It's also not possible to revert back to 0 authorized routers.
 
 ## Data Flow: Account creation and use
 
@@ -545,7 +545,7 @@ sequenceDiagram
     participant DEFI as DeFi Protocol
 
     Note right of PM: using portfolio LCA
-    PM->>AXL: send ProvideRemoteAccountInstruction |<br>RemoteAccountExecuteInstruction |<br>EnableRouterInstruction |<br>DisableRouterInstruction |<br>ConfirmVettingAuthorityInstruction
+    PM->>AXL: send ProvideRemoteAccountInstruction |<br>RemoteAccountExecuteInstruction |<br>AuthorizeRouterInstruction |<br>DeauthorizeRouterInstruction |<br>ConfirmVettingAuthorityInstruction
     AXL->>PR: _execute(sourceChain,<br>sourceAddress, payload)
 
     PR->>PR: validate source chain<br>and payload shape
@@ -589,12 +589,12 @@ sequenceDiagram
                     DEFI-->>RA: result
                 end
             end
-        else processEnableRouterInstruction
+        else processAuthorizeRouterInstruction
             PR->>RAF: verifyFactoryPrincipalAccount(sourceAddress)
-            PR->>RAF: enableRouter(instruction.router)
-        else processDisableRouterInstruction
+            PR->>RAF: authorizeRouter(instruction.router)
+        else processDeauthorizeRouterInstruction
             PR->>RAF: verifyFactoryPrincipalAccount(sourceAddress)
-            PR->>RAF: disableRouter(instruction.router)
+            PR->>RAF: deauthorizeRouter(instruction.router)
         else processConfirmVettingAuthorityInstruction
             PR->>RAF: verifyFactoryPrincipalAccount(sourceAddress)
             PR->>RAF: confirmVettingAuthorityTransfer(instruction.authority)
@@ -620,12 +620,12 @@ sequenceDiagram
     - For `processRemoteAccountExecuteInstruction`:
         1. RemoteAccountAxelarRouter provides account (creating if necessary)
         2. If calls for RemoteAccount exist, RemoteAccountAxelarRouter forwards them; RemoteAccount verifies the caller is an authorized router via the factory, then executes them
-    - For `processEnableRouterInstruction`:
+    - For `processAuthorizeRouterInstruction`:
         1. RemoteAccountAxelarRouter verifies the factory principal matches the source address
-        2. RemoteAccountAxelarRouter enables a vetted router on the factory
-    - For `processDisableRouterInstruction`:
+        2. RemoteAccountAxelarRouter authorizes a vetted router on the factory
+    - For `processDeauthorizeRouterInstruction`:
         1. RemoteAccountAxelarRouter verifies the factory principal matches the source address
-        2. RemoteAccountAxelarRouter disables an enabled router on the factory
+        2. RemoteAccountAxelarRouter deauthorizes an authorized router on the factory
     - For `processConfirmVettingAuthorityInstruction`:
         1. RemoteAccountAxelarRouter verifies the factory principal matches the source address
         2. RemoteAccountAxelarRouter confirms the pending vetting authority transfer on the factory
@@ -637,18 +637,18 @@ sequenceDiagram
 graph TB
     Axelar
     VA["Vetting Authority<br/>(EVM multisig)"]
-    ROUTER1[RemoteAccountAxelarRouter v1<br/>enabled]
-    ROUTER2[RemoteAccountAxelarRouter v2<br/>vetted, not yet enabled]
+    ROUTER1[RemoteAccountAxelarRouter v1<br/>authorized]
+    ROUTER2[RemoteAccountAxelarRouter v2<br/>vetted, not yet authorized]
     RAF[RemoteAccountFactory]
     RA[RemoteAccount]
 
     Axelar -->|_execute| ROUTER1
 
-    VA -->|"vetRouter |<br>revokeRouter |<br>proposeVettingAuthorityTransfer"| RAF
+    VA -->|"vetRouter |<br>unvetRouter |<br>proposeVettingAuthorityTransfer"| RAF
 
     ROUTER1 ==>|executeCalls| RA
 
-    ROUTER1 -->|"enableRouter |<br>disableRouter |<br>confirmVettingAuthorityTransfer"| RAF
+    ROUTER1 -->|"authorizeRouter |<br>deauthorizeRouter |<br>confirmVettingAuthorityTransfer"| RAF
 
     RAF ==>|creates & initializes| RA
 
@@ -663,24 +663,24 @@ graph TB
 
 **Transitive Ownership**:
 
-- RemoteAccountFactory maintains a router authorization map with statuses: Unknown, Vetted, Enabled
-- RemoteAccount delegates authorization to its factory: any enabled router can execute calls on any account
-- Router migrations are O(1): enabling a new router instantly authorizes it for all accounts
+- RemoteAccountFactory maintains a router authorization map with statuses: Unknown, Vetted, Authorized
+- RemoteAccount delegates authorization to its factory: any authorized router can execute calls on any account
+- Router migrations are O(1): authorizing a new router instantly authorizes it for all accounts
 
 **Two-Factor Router Authorization**:
 
-- **Vetting** (EVM-side): The factory's vetting authority (e.g. multisig) can vet or revoke routers via direct calls
-- **Enabling** (Agoric-side): The factory's principal can enable or disable vetted routers via GMP messages through an enabled router
-- A router must be both vetted and enabled to operate on remote accounts
+- **Vetting** (EVM-side): The factory's vetting authority (e.g. multisig) can vet or unvet routers via direct calls
+- **Authorization** (Agoric-side): The factory's principal can authorize or deauthorize vetted routers via GMP messages through an authorized router
+- A router must be both vetted and authorized to operate on remote accounts
 
 **Security Checks**:
 
 - **RemoteAccountAxelarRouter `_execute`**: Validate `sourceChain` against immutable hash
 - **RemoteAccountAxelarRouter admin instructions**: Validate the source address as the factory principal (ensures only the portfolio manager can manage routers or redeem signed permits)
 - **RemoteAccountFactory `provideRemoteAccount`**: Validates remote account address derives from the principal account string
-- **RemoteAccountFactory `vetRouter`/`revokeRouter`**: Only the vetting authority can call these
-- **RemoteAccountFactory `enableRouter`/`disableRouter`**: Only an already-enabled router can call these (preventing unauthorized routers from self-enabling)
-- **RemoteAccountFactory `disableRouter`**: A router cannot disable itself
+- **RemoteAccountFactory `vetRouter`/`unvetRouter`**: Only the vetting authority can call these
+- **RemoteAccountFactory `authorizeRouter`/`deauthorizeRouter`**: Only an already-authorized router can call these (preventing unauthorized routers from self-authorizing)
+- **RemoteAccountFactory `deauthorizeRouter`**: A router cannot deauthorize itself
 - **RemoteAccount `executeCalls`**: Validates that the caller is an authorized router via `factory.isAuthorizedRouter(msg.sender)`
 
 ## Deployment
@@ -715,9 +715,9 @@ sequenceDiagram
     EVM_DEPLOYER->>ROUTERn: deploy(gateway, sourceChain, factory=RAF, permit2)
     VA->>RAF: vetRouter(ROUTERn)
 
-    Note over PM,RA: Enable new router (via GMP)
-    PM->>ROUTER1: [via Axelar] processEnableRouterInstruction(ROUTERn)
-    ROUTER1->>RAF: enableRouter(ROUTERn)
+    Note over PM,RA: Authorize new router (via GMP)
+    PM->>ROUTER1: [via Axelar] processAuthorizeRouterInstruction(ROUTERn)
+    ROUTER1->>RAF: authorizeRouter(ROUTERn)
 
     Note over PM,RA: Both routers now operational
     PM->>ROUTERn: [via Axelar] processRemoteAccountExecuteInstruction
@@ -725,14 +725,14 @@ sequenceDiagram
     RAF-->>RA: create/validate
     ROUTERn->>RA: executeCalls
 
-    Note over PM,RA: Optionally disable old router (via GMP)
-    PM->>ROUTERn: [via Axelar] processDisableRouterInstruction(ROUTER1)
-    ROUTERn->>RAF: disableRouter(ROUTER1)
+    Note over PM,RA: Optionally deauthorize old router (via GMP)
+    PM->>ROUTERn: [via Axelar] processDeauthorizeRouterInstruction(ROUTER1)
+    ROUTERn->>RAF: deauthorizeRouter(ROUTER1)
 ```
 
 **Migration Features**:
 
-- **O(1) migration**: Enabling a new router instantly authorizes it for all existing accounts — no per-account ownership transfer needed
+- **O(1) migration**: Authorizing a new router instantly authorizes it for all existing accounts — no per-account ownership transfer needed
 - **Non-disruptive**: Old and new routers can coexist during migration
 - **Two-factor safety**: Router changes require agreement from both the vetting authority (EVM) and the factory principal (Agoric)
 - **Flexible**: RemoteAccount addresses remain constant across router upgrades

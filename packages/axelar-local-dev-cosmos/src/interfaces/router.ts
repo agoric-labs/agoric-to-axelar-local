@@ -81,26 +81,26 @@ export type RemoteAccountExecuteInstruction = AbiParameterToPrimitiveType<{
     components: typeof RemoteAccountExecuteInstructionComponents;
 }>;
 
-export const enableRouterInstructionComponents = [
+export const authorizeRouterInstructionComponents = [
     {
         name: 'router',
         type: 'address',
     },
 ] as const satisfies AbiParameter[];
-export type EnableRouterInstruction = AbiParameterToPrimitiveType<{
+export type AuthorizeRouterInstruction = AbiParameterToPrimitiveType<{
     type: 'tuple';
-    components: typeof enableRouterInstructionComponents;
+    components: typeof authorizeRouterInstructionComponents;
 }>;
 
-export const disableRouterInstructionComponents = [
+export const deauthorizeRouterInstructionComponents = [
     {
         name: 'router',
         type: 'address',
     },
 ] as const satisfies AbiParameter[];
-export type DisableRouterInstruction = AbiParameterToPrimitiveType<{
+export type DeauthorizeRouterInstruction = AbiParameterToPrimitiveType<{
     type: 'tuple';
-    components: typeof disableRouterInstructionComponents;
+    components: typeof deauthorizeRouterInstructionComponents;
 }>;
 
 export const confirmVettingAuthorityInstructionComponents = [
@@ -135,21 +135,21 @@ export const processRemoteAccountExecuteInstructionInputs = [
     },
 ] as const satisfies AbiParameter[];
 
-export const processEnableRouterInstructionInputs = [
+export const processAuthorizeRouterInstructionInputs = [
     ...routerProcessSharedInputComponents,
     {
         name: 'instruction',
         type: 'tuple',
-        components: enableRouterInstructionComponents,
+        components: authorizeRouterInstructionComponents,
     },
 ] as const satisfies AbiParameter[];
 
-export const processDisableRouterInstructionInputs = [
+export const processDeauthorizeRouterInstructionInputs = [
     ...routerProcessSharedInputComponents,
     {
         name: 'instruction',
         type: 'tuple',
-        components: disableRouterInstructionComponents,
+        components: deauthorizeRouterInstructionComponents,
     },
 ] as const satisfies AbiParameter[];
 
@@ -208,15 +208,15 @@ export const remoteAccountAxelarRouterABI = [
     },
     {
         type: 'function',
-        name: 'processEnableRouterInstruction',
-        inputs: processEnableRouterInstructionInputs,
+        name: 'processAuthorizeRouterInstruction',
+        inputs: processAuthorizeRouterInstructionInputs,
         outputs: [],
         stateMutability: 'nonpayable',
     },
     {
         type: 'function',
-        name: 'processDisableRouterInstruction',
-        inputs: processDisableRouterInstructionInputs,
+        name: 'processDeauthorizeRouterInstruction',
+        inputs: processDeauthorizeRouterInstructionInputs,
         outputs: [],
         stateMutability: 'nonpayable',
     },

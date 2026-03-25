@@ -30,11 +30,11 @@ struct RemoteAccountExecuteInstruction {
     ContractCall[] multiCalls;
 }
 
-struct EnableRouterInstruction {
+struct AuthorizeRouterInstruction {
     address router;
 }
 
-struct DisableRouterInstruction {
+struct DeauthorizeRouterInstruction {
     address router;
 }
 
@@ -72,16 +72,16 @@ interface IRemoteAccountRouter {
         RemoteAccountExecuteInstruction calldata instruction
     ) external;
 
-    function processEnableRouterInstruction(
+    function processAuthorizeRouterInstruction(
         string calldata sourceAddress,
         address factoryAddress,
-        EnableRouterInstruction calldata instruction
+        AuthorizeRouterInstruction calldata instruction
     ) external;
 
-    function processDisableRouterInstruction(
+    function processDeauthorizeRouterInstruction(
         string calldata sourceAddress,
         address factoryAddress,
-        DisableRouterInstruction calldata instruction
+        DeauthorizeRouterInstruction calldata instruction
     ) external;
 
     function processConfirmVettingAuthorityInstruction(

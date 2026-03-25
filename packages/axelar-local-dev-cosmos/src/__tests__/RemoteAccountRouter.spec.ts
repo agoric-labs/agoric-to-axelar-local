@@ -369,9 +369,9 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
         ).to.be.reverted;
     });
 
-    it('should reject direct external call to processEnableRouterInstruction', async () => {
+    it('should reject direct external call to processAuthorizeRouterInstruction', async () => {
         await expect(
-            router.processEnableRouterInstruction(portfolioLCA, factory.target, {
+            router.processAuthorizeRouterInstruction(portfolioLCA, factory.target, {
                 router: addr1.address,
             }),
         ).to.be.reverted;

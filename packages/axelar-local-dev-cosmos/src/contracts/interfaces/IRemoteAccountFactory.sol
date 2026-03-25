@@ -11,8 +11,8 @@ interface IRemoteAccountFactory {
 
     event RemoteAccountCreated(address indexed accountAddress, string principalAccount);
 
-    event RouterEnabled(address indexed router, uint256 numberOfAuthorizedRouters);
-    event RouterDisabled(address indexed router, uint256 numberOfAuthorizedRouters);
+    event RouterAuthorized(address indexed router, uint256 numberOfAuthorizedRouters);
+    event RouterDeauthorized(address indexed router, uint256 numberOfAuthorizedRouters);
 
     function factoryPrincipalCaip2() external view returns (string memory);
 
@@ -38,9 +38,9 @@ interface IRemoteAccountFactory {
 
     function numberOfAuthorizedRouters() external view returns (uint256);
 
-    function enableRouter(address router) external;
+    function authorizeRouter(address router) external;
 
-    function disableRouter(address router) external;
+    function deauthorizeRouter(address router) external;
 
     function confirmVettingAuthorityTransfer(address newVettingAuthority) external;
 }
