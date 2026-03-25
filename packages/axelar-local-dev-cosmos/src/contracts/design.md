@@ -226,7 +226,6 @@ graph TB
         CALL["process call<br>instruction"]
         subgraph state
             factory_ref@{shape: stored-data, label: "factory: address"}
-            principalAccount_ref@{shape: stored-data, label: "principalAccount: string"}
         end
     end
 
@@ -246,7 +245,6 @@ graph TB
     CTOR -->|calls| _disableInitializers
     initialize -->|modifier| initializer
     initialize -->|sets| factory_ref
-    initialize -->|sets| principalAccount_ref
     executeCalls -->|"[1]"| AUTH_CHECK
     executeCalls -->|"[2] value > 0"| Received
     executeCalls -->|"[3] loops"| CALL
@@ -265,7 +263,7 @@ graph TB
 
 **Key Components**:
 
-- **initialize**: One-time factory and `principalAccount` initialization for clone instances
+- **initialize**: One-time factory initialization for clone instances
 - **receive**: Accepts native token transfers and emits `Received`
 - **executeCalls**: Calls `factory.checkAuthorizedRouter(msg.sender)`, then atomically executes array of contract calls with per-call reporting
 
@@ -343,7 +341,7 @@ graph TB
 
     _createRemoteAccount -->|calls| cloneDeterministic
     cloneDeterministic -->|"CREATE2"| RAn
-    _createRemoteAccount -->|"initialize(factory, principalAccount)"| RAn
+    _createRemoteAccount -->|"initialize(factory)"| RAn
     _createRemoteAccount -->|"emit"| RemoteAccountCreated
 
     getRemoteAccountAddress -->|calls| _getRemoteAccountAddress
@@ -682,7 +680,7 @@ sequenceDiagram
                 RAF->>RAF: verify address
             else
                 RAF->>RA: cloneDeterministic
-                RAF->>RA: initialize(factory, principalAccount)
+                RAF->>RA: initialize(factory)
             end
         else processRemoteAccountExecuteInstruction
             Note over PR,RA: provide account
@@ -691,7 +689,7 @@ sequenceDiagram
                 RAF->>RAF: verify address
             else
                 RAF->>RA: cloneDeterministic
-                RAF->>RA: initialize(factory, principalAccount)
+                RAF->>RA: initialize(factory)
             end
 
             Note over PR,RA: make calls
