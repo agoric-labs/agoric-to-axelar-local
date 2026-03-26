@@ -10,13 +10,11 @@ const { INFURA_KEY, PRIVATE_KEY, ETHERSCAN_API_KEY } = process.env;
 const testnets = {
   fuji: {
     url: "https://api.avax-test.network/ext/bc/C/rpc",
-    gasPrice: 25_000_000_000, // 25 gwei
     chainId: 43113,
     accounts: [`0x${PRIVATE_KEY}`],
   },
   "eth-sepolia": {
     url: "https://ethereum-sepolia-rpc.publicnode.com",
-    gasPrice: 20000000000, // 20 Gwei
     chainId: 11155111,
     accounts: [`0x${PRIVATE_KEY}`],
   },
