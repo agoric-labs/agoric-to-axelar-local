@@ -162,24 +162,11 @@ case "$contract" in
         # networks currently share the same value.
         AXELAR_SOURCE_CHAIN="agoric"
 
-        echo ""
-        echo "========================================="
-        echo "Deploying RemoteAccountAxelarRouter..."
-        echo "========================================="
-        echo "Using RemoteAccountFactory: $REMOTE_ACCOUNT_FACTORY"
-        echo "Using Axelar Source Chain: $AXELAR_SOURCE_CHAIN"
-
         GATEWAY_CONTRACT="$GATEWAY" \
             AXELAR_SOURCE_CHAIN="$AXELAR_SOURCE_CHAIN" \
             FACTORY_CONTRACT="$REMOTE_ACCOUNT_FACTORY" \
             PERMIT2_CONTRACT="$PERMIT2" \
-            npx hardhat ignition deploy "./ignition/modules/deployPortfolioRouter.ts" --network "$network" --verify
-        # Vet router after deployment
-        GATEWAY_CONTRACT="$GATEWAY" \
-            AXELAR_SOURCE_CHAIN="$AXELAR_SOURCE_CHAIN" \
-            FACTORY_CONTRACT="$REMOTE_ACCOUNT_FACTORY" \
-            PERMIT2_CONTRACT="$PERMIT2" \
-            npx hardhat run "./scripts/deployAndVetPortfolioRouter.mts" --network "$network"
+            npx hardhat run "./scripts/deployPortfolioRouter.ts" --network "$network"
         ;;
     *)
         echo "Error: Invalid contract type '$contract'"

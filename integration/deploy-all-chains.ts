@@ -289,11 +289,13 @@ const deployToAllChains = async (
   console.log(`Continue on Error: ${continueOnError}`);
   console.log("═══════════════════════════════════════════════════════════\n");
 
-  // CREATE2 deployments (via CreateX) produce nonce-independent addresses,
+  // CreateX deployments (CREATE2/CREATE3) produce nonce-independent addresses,
   // so nonce synchronization is unnecessary and skipped.
-  if (contract === "remoteAccountFactory") {
+  const isCreateX =
+    contract === "remoteAccountFactory" || contract === "portfolioRouter";
+  if (isCreateX) {
     console.log(
-      "\n⏭️  Skipping nonce synchronization (CREATE2 deployment is nonce-independent)\n",
+      "\n⏭️  Skipping nonce synchronization (CreateX deployment is nonce-independent)\n",
     );
   } else {
     // Sync nonces before deployment
@@ -337,12 +339,11 @@ const deployToAllChains = async (
     }
   } else {
     // Deploy to chains sequentially.
-    // For nonce-dependent (non-CREATE2) deployments, deploy ETH first because
+    // For nonce-dependent (non-CreateX) deployments, deploy ETH first because
     // gas spikes can cause failures — better to fail early so we can sync nonces.
-    // For CREATE2 deployments, ordering doesn't matter and failures on one chain
+    // For CreateX deployments, ordering doesn't matter and failures on one chain
     // don't affect others, so we continue past failures.
-    const isCreate2 = contract === "remoteAccountFactory";
-    const sortedChains = isCreate2
+    const sortedChains = isCreateX
       ? [...chains]
       : [...chains].sort((a, b) => {
           if (a === "eth") return -1;
@@ -355,9 +356,9 @@ const deployToAllChains = async (
       results.push(result);
 
       if (!result.success) {
-        if (isCreate2) {
+        if (isCreateX) {
           console.warn(
-            `\n⚠️  Deployment failed on ${chain}, continuing (CREATE2 is idempotent)...`,
+            `\n⚠️  Deployment failed on ${chain}, continuing (CreateX is idempotent)...`,
           );
         } else {
           console.error(
