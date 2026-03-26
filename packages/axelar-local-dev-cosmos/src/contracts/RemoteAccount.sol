@@ -33,11 +33,13 @@ contract RemoteAccount is Initializable, IRemoteAccount {
      *      deploying this contract using proxies must call this function on
      *      each clone after deploying it.
      * @param factory_ The factory that deployed this clone
+     * @param principalAccount The principal account string this clone represents
      */
-    function initialize(address factory_) external initializer {
+    function initialize(address factory_, string calldata principalAccount) external initializer {
         assert(factory == address(0));
         require(factory_ != address(0));
         factory = factory_;
+        emit Initialized(factory_, principalAccount);
     }
 
     /**

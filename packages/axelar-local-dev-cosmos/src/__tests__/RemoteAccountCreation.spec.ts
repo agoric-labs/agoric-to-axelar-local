@@ -100,6 +100,13 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const expectedAccountAddress = await route(portfolioLCA).getRemoteAccountAddress();
         const account = await ethers.getContractAt('RemoteAccount', expectedAccountAddress);
         expect(await account.factory()).to.equal(factory.target);
+
+        // Verify the Initialized event was emitted with the correct principal
+        const logs = receipt.parseLogs(account.interface);
+        const initializedEvent = logs.find((l) => l.name === 'Initialized');
+        expect(initializedEvent, 'Initialized event not found').to.not.equal(undefined);
+        expect(initializedEvent!.args.factory).to.equal(factory.target);
+        expect(initializedEvent!.args.principalAccount).to.equal(portfolioLCA);
     });
 
     it('should be idempotent - providing same account twice succeeds', async () => {
@@ -199,10 +206,9 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const account = await ethers.getContractAt('RemoteAccount', implementationAddress);
 
         // Try to call initialize on the implementation contract
-        await expect(account.initialize(addr1.address)).to.be.revertedWithCustomError(
-            account,
-            'InvalidInitialization',
-        );
+        await expect(
+            account.initialize(addr1.address, 'agoric1test'),
+        ).to.be.revertedWithCustomError(account, 'InvalidInitialization');
     });
 
     it('should disallow re-initializing a clone', async () => {
@@ -214,7 +220,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountCreation', () => {
         const account = await ethers.getContractAt('RemoteAccount', accountAddress);
 
         // Try to call initialize again on the clone
-        await expect(account.initialize(addr1.address)).to.be.revertedWithCustomError(
+        await expect(account.initialize(addr1.address, lca)).to.be.revertedWithCustomError(
             account,
             'InvalidInitialization',
         );
