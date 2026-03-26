@@ -151,18 +151,10 @@ case "$contract" in
             ;;
         esac
 
-        echo ""
-        echo "========================================="
-        echo "Deploying RemoteAccount and RemoteAccountFactory..."
-        echo "========================================="
-        echo "Using owner type: $owner_type"
-        echo "Using Principal CAIP2: $PRINCIPAL_CAIP2"
-        echo "Using Principal Account: $PRINCIPAL_ACCOUNT"
-        echo "Using Vetting Authority: $VETTING_AUTHORITY"
         PRINCIPAL_CAIP2="$PRINCIPAL_CAIP2" \
             PRINCIPAL_ACCOUNT="$PRINCIPAL_ACCOUNT" \
             VETTING_AUTHORITY="$VETTING_AUTHORITY" \
-            npx hardhat ignition deploy "./ignition/modules/deployRemoteAccountFactory.ts" --network "$network" --verify
+            npx hardhat run "./scripts/deployRemoteAccountFactory.ts" --network "$network"
         ;;
 
     portfolioRouter)
