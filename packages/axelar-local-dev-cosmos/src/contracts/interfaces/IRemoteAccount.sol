@@ -23,6 +23,8 @@ struct ContractCall {
 }
 
 interface IRemoteAccount {
+    event Initialized(address indexed factory, string principalAccount);
+
     event Received(address indexed sender, uint256 amount);
 
     event ContractCallSuccess(
