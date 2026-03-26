@@ -212,6 +212,7 @@ graph TB
     subgraph IRemoteAccount
         IRemoteAccount_executeCalls[executeCalls]
         %% events
+        Initialized@{shape: flag}
         Received@{shape: flag}
         ContractCallSuccess@{shape: flag}
     end
@@ -245,6 +246,7 @@ graph TB
     CTOR -->|calls| _disableInitializers
     initialize -->|modifier| initializer
     initialize -->|sets| factory_ref
+    initialize -->|"emit"| Initialized
     executeCalls -->|"[1]"| AUTH_CHECK
     executeCalls -->|"[2] value > 0"| Received
     executeCalls -->|"[3] loops"| CALL
@@ -263,7 +265,7 @@ graph TB
 
 **Key Components**:
 
-- **initialize**: One-time factory initialization for clone instances
+- **initialize**: One-time factory initialization for clone instances, emits `Initialized` with factory address and principal account
 - **receive**: Accepts native token transfers and emits `Received`
 - **executeCalls**: Calls `factory.checkAuthorizedRouter(msg.sender)`, then atomically executes array of contract calls with per-call reporting
 
@@ -341,7 +343,7 @@ graph TB
 
     _createRemoteAccount -->|calls| cloneDeterministic
     cloneDeterministic -->|"CREATE2"| RAn
-    _createRemoteAccount -->|"initialize(factory)"| RAn
+    _createRemoteAccount -->|"initialize(factory, principalAccount)"| RAn
     _createRemoteAccount -->|"emit"| RemoteAccountCreated
 
     getRemoteAccountAddress -->|calls| _getRemoteAccountAddress
@@ -680,7 +682,7 @@ sequenceDiagram
                 RAF->>RAF: verify address
             else
                 RAF->>RA: cloneDeterministic
-                RAF->>RA: initialize(factory)
+                RAF->>RA: initialize(factory, principalAccount)
             end
         else processRemoteAccountExecuteInstruction
             Note over PR,RA: provide account
@@ -689,7 +691,7 @@ sequenceDiagram
                 RAF->>RAF: verify address
             else
                 RAF->>RA: cloneDeterministic
-                RAF->>RA: initialize(factory)
+                RAF->>RA: initialize(factory, principalAccount)
             end
 
             Note over PR,RA: make calls
