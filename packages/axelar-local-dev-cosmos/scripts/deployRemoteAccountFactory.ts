@@ -2,7 +2,7 @@ import '@nomicfoundation/hardhat-ethers';
 import { Contract } from 'ethers';
 import { ethers, network, run } from 'hardhat';
 
-const { concat, getAddress, isAddress, keccak256, toUtf8Bytes, zeroPadValue } = ethers;
+const { concat, getAddress, isAddress, keccak256, zeroPadValue } = ethers;
 
 // see https://github.com/pcaversaccio/createx?tab=readme-ov-file#createx-deployments
 const CREATEX_ADDRESS = '0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed';
@@ -18,18 +18,19 @@ const CREATEX_ABI = [
 ];
 
 /**
- * Build a 32-byte CreateX salt
+ * Build a 32-byte CreateX salt derived from the initCode.
+ * This ensures the salt changes whenever the bytecode or constructor args change.
  */
-const buildPermissionedSalt = (deployer: string, label: string): string => {
+const buildPermissionedSalt = (deployer: string, initCode: string): string => {
     const normalizedDeployer = getAddress(deployer).slice(2).toLowerCase();
-    const labelHash = keccak256(toUtf8Bytes(label)).slice(2);
-    const suffix = labelHash.slice(0, 22); // 11 bytes = 22 hex chars
+    const initCodeHash = keccak256(initCode).slice(2);
+    const suffix = initCodeHash.slice(0, 22); // 11 bytes = 22 hex chars
 
     /**
      * Permissioned salt layout:
      * - 20 bytes: deployer address
      * - 1 byte: permission marker (00)
-     * - 11 bytes: label-derived suffix
+     * - 11 bytes: initCode-derived suffix
      */
     const salt = `0x${normalizedDeployer}00${suffix}`;
     if (salt.length !== 66) {
@@ -172,7 +173,7 @@ const main = async () => {
     // Step 1: RemoteAccount (implementation)
     console.log('RemoteAccount (implementation):');
     const RemoteAccountCF = await ethers.getContractFactory('RemoteAccount');
-    const implRawSalt = buildPermissionedSalt(deployerAddress, 'RemoteAccountImpl');
+    const implRawSalt = buildPermissionedSalt(deployerAddress, RemoteAccountCF.bytecode);
     const implResult = await deployViaCreateX({
         createX,
         deployer: deployerAddress,
@@ -193,10 +194,7 @@ const main = async () => {
     if (!factoryDeployTx.data) {
         throw new Error('Failed to encode RemoteAccountFactory initCode');
     }
-    const factoryRawSalt = buildPermissionedSalt(
-        deployerAddress,
-        `RemoteAccountFactory_${implResult.address}`,
-    );
+    const factoryRawSalt = buildPermissionedSalt(deployerAddress, factoryDeployTx.data);
     const factoryResult = await deployViaCreateX({
         createX,
         deployer: deployerAddress,
