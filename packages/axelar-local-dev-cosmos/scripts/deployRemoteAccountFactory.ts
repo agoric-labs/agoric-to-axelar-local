@@ -120,6 +120,8 @@ const deployViaCreateX = async ({
                 `${label}: address mismatch — expected ${expectedAddress}, got ${actualAddress}`,
             );
         }
+    } else {
+        console.warn(`  ⚠ ${label}: ContractCreation event not found in receipt logs`);
     }
 
     console.log(`  ${label}: ${expectedAddress} (deployed, tx ${receipt.hash})`);
