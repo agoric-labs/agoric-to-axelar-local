@@ -354,11 +354,17 @@ const deployToAllChains = async (
       const result = await deployToChain(chain, contract, ownerType);
       results.push(result);
 
-      if (!result.success && !isCreate2) {
-        console.error(
-          "\n❌ Deployment failed. Stopping sequential deployment.",
-        );
-        break;
+      if (!result.success) {
+        if (isCreate2) {
+          console.warn(
+            `\n⚠️  Deployment failed on ${chain}, continuing (CREATE2 is idempotent)...`,
+          );
+        } else {
+          console.error(
+            "\n❌ Deployment failed. Stopping sequential deployment.",
+          );
+          break;
+        }
       }
     }
   }
