@@ -34,12 +34,12 @@ const vetRouter = async (routerAddress: string, factoryAddress: string): Promise
     } else if (numberOfRouters > 0n) {
         console.log('  Vetting router (not initial — must be enabled through an existing router).');
         const vetTx = await factory.vetRouter(routerAddress);
-        const vetReceipt = await vetTx.wait();
+        const vetReceipt = await vetTx.wait(5);
         console.log(`  vetRouter tx: ${vetReceipt.hash} (status: ${vetReceipt.status})`);
     } else {
         console.log('  Vetting and enabling initial router.');
         const vetTx = await factory.vetInitialRouter(routerAddress);
-        const vetReceipt = await vetTx.wait();
+        const vetReceipt = await vetTx.wait(5);
         console.log(`  vetInitialRouter tx: ${vetReceipt.hash} (status: ${vetReceipt.status})`);
     }
 };
