@@ -13,22 +13,27 @@ import {
 
 const main = async () => {
     const { PRINCIPAL_CAIP2, PRINCIPAL_ACCOUNT, VETTING_AUTHORITY } = process.env;
-    if (!PRINCIPAL_CAIP2 || !PRINCIPAL_ACCOUNT || !VETTING_AUTHORITY) {
-        throw new Error('Missing env: PRINCIPAL_CAIP2, PRINCIPAL_ACCOUNT, or VETTING_AUTHORITY');
+    if (!PRINCIPAL_CAIP2 || !PRINCIPAL_ACCOUNT) {
+        throw new Error('Missing env: PRINCIPAL_CAIP2 or PRINCIPAL_ACCOUNT');
     }
-    if (!isAddress(VETTING_AUTHORITY)) {
+    if (VETTING_AUTHORITY && !isAddress(VETTING_AUTHORITY)) {
         throw new Error(`Invalid VETTING_AUTHORITY: ${VETTING_AUTHORITY}`);
     }
 
     const [deployer] = await ethers.getSigners();
     const deployerAddress = await deployer.getAddress();
+    const vettingAuthority = VETTING_AUTHORITY || deployerAddress;
     const { chainId } = await ethers.provider.getNetwork();
 
     console.log(`\nCreateX CREATE2 Deploy — ${network.name} (${chainId})`);
     console.log(`  Deployer:          ${deployerAddress}`);
     console.log(`  Principal CAIP2:   ${PRINCIPAL_CAIP2}`);
     console.log(`  Principal Account: ${PRINCIPAL_ACCOUNT}`);
-    console.log(`  Vetting Authority: ${VETTING_AUTHORITY}\n`);
+    if (!VETTING_AUTHORITY) {
+        console.log(`  Vetting Authority: ${vettingAuthority} (defaulting to deployer)`);
+    } else {
+        console.log(`  Vetting Authority: ${vettingAuthority}`);
+    }
 
     await validateCreateX();
     const createX = getCreateX(deployer);
@@ -53,7 +58,7 @@ const main = async () => {
         PRINCIPAL_CAIP2,
         PRINCIPAL_ACCOUNT,
         implResult.address,
-        VETTING_AUTHORITY,
+        vettingAuthority,
     );
     if (!factoryDeployTx.data) {
         throw new Error('Failed to encode RemoteAccountFactory initCode');
@@ -77,12 +82,7 @@ const main = async () => {
     });
     await verifyOnExplorer({
         address: factoryResult.address,
-        constructorArgs: [
-            PRINCIPAL_CAIP2,
-            PRINCIPAL_ACCOUNT,
-            implResult.address,
-            VETTING_AUTHORITY,
-        ],
+        constructorArgs: [PRINCIPAL_CAIP2, PRINCIPAL_ACCOUNT, implResult.address, vettingAuthority],
         contract: 'src/contracts/RemoteAccountFactory.sol:RemoteAccountFactory',
     });
 };
