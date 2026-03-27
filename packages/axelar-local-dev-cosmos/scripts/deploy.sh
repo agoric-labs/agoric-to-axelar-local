@@ -39,7 +39,7 @@ if [[ $# -lt 2 ]]; then
     echo ""
     echo "Environment Variables:"
     echo "  REMOTE_ACCOUNT_FACTORY - Required for portfolioRouter: previously deployed factory address"
-    echo "  VETTING_AUTHORITY      - Required for remoteAccountFactory: address that can vet new routers"
+    echo "  VETTING_AUTHORITY      - Optional for remoteAccountFactory: address that can vet new routers (defaults to deployer)"
     exit 0
 fi
 
