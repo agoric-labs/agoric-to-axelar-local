@@ -155,7 +155,7 @@ export const verifyOnExplorer = async ({
     contract: string;
 }): Promise<void> => {
     try {
-        await run('verify:verify', { address, constructorArgs, contract });
+        await run('verify:verify', { address, constructorArguments: constructorArgs, contract });
         console.log(`  Verified ${contract}`);
     } catch (error: any) {
         const msg: string = error.message ?? '';
