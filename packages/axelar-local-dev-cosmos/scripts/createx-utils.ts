@@ -99,6 +99,19 @@ const computeExpectedAddress = async (
 
 export const deployViaCreateX = async (args: DeployViaCreateXArgs): Promise<DeployResult> => {
     const { createX, deployer, rawSalt, initCode, label, mode } = args;
+
+    if (mode === 'create3') {
+        // Enforce permissioned salt for Create3: deployer address (bytes 0–19) + 0x00 marker (byte 20).
+        // This prevents redeployment to the same address by a different deployer.
+        const saltDeployer = rawSalt.slice(2, 42).toLowerCase();
+        const markerByte = rawSalt.slice(42, 44);
+        if (saltDeployer !== deployer.toLowerCase().slice(2) || markerByte !== '00') {
+            throw new Error(
+                `${label}: Create3 requires a permissioned salt (deployer prefix + 0x00 marker)`,
+            );
+        }
+    }
+
     const expectedAddress = await computeExpectedAddress(
         createX,
         deployer,
