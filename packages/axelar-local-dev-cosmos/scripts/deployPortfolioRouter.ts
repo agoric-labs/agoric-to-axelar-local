@@ -88,10 +88,13 @@ const main = async () => {
     if (!routerDeployTx.data) {
         throw new Error('Failed to encode RemoteAccountAxelarRouter initCode');
     }
-    // Use bytecode only (not full initCode) so the salt is chain-independent.
-    // Constructor args include the gateway address which differs per chain,
-    // but CREATE3 address depends only on deployer + salt, not initCode.
-    const rawSalt = buildPermissionedSalt(deployerAddress, RouterCF.bytecode);
+    // Hash bytecode + arguments under our control (source chain, factory).
+    // Omit external arguments (gateway, permit2) that vary per chain.
+    const saltInput = ethers.solidityPacked(
+        ['bytes', 'string', 'address'],
+        [RouterCF.bytecode, AXELAR_SOURCE_CHAIN, FACTORY_CONTRACT],
+    );
+    const rawSalt = buildPermissionedSalt(deployerAddress, saltInput);
     const routerResult = await deployViaCreateX({
         createX,
         deployer: deployerAddress,

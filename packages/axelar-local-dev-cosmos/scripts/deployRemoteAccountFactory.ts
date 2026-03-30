@@ -41,7 +41,7 @@ const main = async () => {
     // Step 1: RemoteAccount (implementation)
     console.log('RemoteAccount (implementation):');
     const RemoteAccountCF = await ethers.getContractFactory('RemoteAccount');
-    const implRawSalt = buildSalt(PRINCIPAL_ACCOUNT);
+    const implRawSalt = buildSalt(`${PRINCIPAL_ACCOUNT}:RemoteAccount`);
     const implResult = await deployViaCreateX({
         createX,
         deployer: deployerAddress,
@@ -63,7 +63,7 @@ const main = async () => {
     if (!factoryDeployTx.data) {
         throw new Error('Failed to encode RemoteAccountFactory initCode');
     }
-    const factoryRawSalt = buildSalt(PRINCIPAL_ACCOUNT);
+    const factoryRawSalt = buildSalt(`${PRINCIPAL_ACCOUNT}:RemoteAccountFactory`);
     const factoryResult = await deployViaCreateX({
         createX,
         deployer: deployerAddress,
