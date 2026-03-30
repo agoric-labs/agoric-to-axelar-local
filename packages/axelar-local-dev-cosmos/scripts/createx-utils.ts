@@ -43,11 +43,38 @@ export const buildPermissionedSalt = (deployer: string, hashInput: string): stri
 };
 
 /**
- * Replicate CreateX's `_guard` for the permissioned-salt case.
+ * Build a 32-byte CreateX unpermissioned salt.
+ * First 20 bytes are zero (cross-chain safe, any deployer can use).
+ * Remaining 12 bytes are derived from the hash of `hashInput`.
+ */
+export const buildSalt = (hashInput: string): string => {
+    const inputHash = keccak256(hashInput).slice(2);
+    const suffix = inputHash.slice(0, 24); // 12 bytes = 24 hex chars
+    const salt = `0x${'00'.repeat(20)}${suffix}`;
+    if (salt.length !== 66) {
+        throw new Error(`Invalid salt length: ${salt}`);
+    }
+    return salt;
+};
+
+/**
+ * Replicate CreateX's `_guard` logic.
+ * - Zero-prefixed salt (bytes 0–19 all zero): returned as-is (unpermissioned).
+ * - Deployer-prefixed + 0x00 marker (byte 20): hashed with deployer (permissioned).
+ * - Deployer-prefixed + non-0x00 marker: returned as-is.
  */
 const computeGuardedSalt = (deployer: string, rawSalt: string): string => {
-    const deployerWord = zeroPadValue(deployer, 32);
-    return keccak256(concat([deployerWord, rawSalt]));
+    const saltPrefix = rawSalt.slice(2, 42).toLowerCase();
+    const isZeroPrefixed = saltPrefix === '00'.repeat(20);
+    if (isZeroPrefixed) {
+        return rawSalt;
+    }
+    const markerByte = rawSalt.slice(42, 44);
+    if (markerByte === '00') {
+        const deployerWord = zeroPadValue(deployer, 32);
+        return keccak256(concat([deployerWord, rawSalt]));
+    }
+    return rawSalt;
 };
 
 export const validateCreateX = async (): Promise<void> => {

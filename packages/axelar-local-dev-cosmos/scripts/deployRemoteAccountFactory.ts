@@ -4,7 +4,7 @@ import { ethers, network } from 'hardhat';
 const { isAddress } = ethers;
 
 import {
-    buildPermissionedSalt,
+    buildSalt,
     deployViaCreateX,
     getCreateX,
     validateCreateX,
@@ -41,7 +41,7 @@ const main = async () => {
     // Step 1: RemoteAccount (implementation)
     console.log('RemoteAccount (implementation):');
     const RemoteAccountCF = await ethers.getContractFactory('RemoteAccount');
-    const implRawSalt = buildPermissionedSalt(deployerAddress, RemoteAccountCF.bytecode);
+    const implRawSalt = buildSalt(PRINCIPAL_ACCOUNT);
     const implResult = await deployViaCreateX({
         createX,
         deployer: deployerAddress,
@@ -63,7 +63,7 @@ const main = async () => {
     if (!factoryDeployTx.data) {
         throw new Error('Failed to encode RemoteAccountFactory initCode');
     }
-    const factoryRawSalt = buildPermissionedSalt(deployerAddress, factoryDeployTx.data);
+    const factoryRawSalt = buildSalt(PRINCIPAL_ACCOUNT);
     const factoryResult = await deployViaCreateX({
         createX,
         deployer: deployerAddress,
