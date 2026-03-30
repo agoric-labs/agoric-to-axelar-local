@@ -109,6 +109,22 @@ export const deployViaCreateX = async (args: DeployViaCreateXArgs): Promise<Depl
 
     const existingCode = await ethers.provider.getCode(expectedAddress);
     if (existingCode !== '0x') {
+        if (mode === 'create3') {
+            // For Create3, the address depends only on deployer + salt (not bytecode),
+            // so a wrong salt could collide with a previously deployed different contract.
+            // Simulate constructor execution to get expected runtime bytecode (including immutables)
+            // and compare against what's on-chain.
+            const expectedRuntimeCode = await ethers.provider.call({ data: initCode });
+            const existingCodeHash = keccak256(existingCode);
+            const expectedCodeHash = keccak256(expectedRuntimeCode);
+            if (existingCodeHash !== expectedCodeHash) {
+                throw new Error(
+                    `${label}: runtime bytecode mismatch at ${expectedAddress}\n` +
+                        `  expected code hash: ${expectedCodeHash}\n` +
+                        `  on-chain code hash: ${existingCodeHash}`,
+                );
+            }
+        }
         console.log(`  ${label}: ${expectedAddress} (exists, skipped)`);
         return { address: expectedAddress, alreadyDeployed: true };
     }
