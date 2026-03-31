@@ -150,10 +150,12 @@ export const deployViaCreateX = async (args: DeployViaCreateXArgs): Promise<Depl
     const existingCode = await ethers.provider.getCode(expectedAddress);
     if (existingCode !== '0x') {
         if (mode === 'create3') {
-            // For Create3, the address depends only on deployer + salt (not bytecode),
-            // so a wrong salt could collide with a previously deployed different contract.
-            // Simulate constructor execution to get expected runtime bytecode (including immutables)
-            // and compare against what's on-chain.
+            // Create3 addresses are bytecode-independent, so verify the on-chain
+            // contract matches by simulating constructor execution and comparing
+            // runtime bytecode. Note: this confirms identical bytecode and immutables
+            // but cannot detect differing constructor args that only affect storage.
+            // Permissioned salts bound to the deployer limit this risk; callers
+            // should also include identity-bearing constructor args in the salt input.
             const expectedRuntimeCode = await ethers.provider.call({ data: initCode });
             const existingCodeHash = keccak256(existingCode);
             const expectedCodeHash = keccak256(expectedRuntimeCode);
