@@ -44,13 +44,13 @@ export const buildPermissionedSalt = (deployer: string, hashInput: string): stri
 
 /**
  * Build a 32-byte CreateX unpermissioned salt.
- * First 20 bytes are zero (cross-chain safe, any deployer can use).
- * Remaining 12 bytes are derived from the keccak256 hash of `input` (UTF-8 encoded).
+ * Layout: 20 zero bytes (unpermissioned) + 0x00 marker + 11-byte hash suffix.
+ * The suffix is derived from the keccak256 hash of `input` (UTF-8 encoded).
  */
 export const buildSalt = (input: string): string => {
     const inputHash = keccak256(toUtf8Bytes(input)).slice(2);
-    const suffix = inputHash.slice(0, 24); // 12 bytes = 24 hex chars
-    const salt = `0x${'00'.repeat(20)}${suffix}`;
+    const suffix = inputHash.slice(0, 22); // 11 bytes = 22 hex chars
+    const salt = `0x${'00'.repeat(20)}00${suffix}`;
     if (salt.length !== 66) {
         throw new Error(`Invalid salt length: ${salt}`);
     }
@@ -58,23 +58,33 @@ export const buildSalt = (input: string): string => {
 };
 
 /**
- * Replicate CreateX's `_guard` logic.
- * - Zero-prefixed salt (bytes 0–19 all zero): returned as-is (unpermissioned).
- * - Deployer-prefixed + 0x00 marker (byte 20): hashed with deployer (permissioned).
- * - Deployer-prefixed + non-0x00 marker: returned as-is.
+ * Replicate CreateX's `_guard` logic for address pre-computation.
+ * Only the 0x00 marker byte is supported (no cross-chain redeploy protection).
+ * See https://github.com/pcaversaccio/createx?tab=readme-ov-file#permissioned-deploy-protection-and-cross-chain-redeploy-protection
  */
 const computeGuardedSalt = (deployer: string, rawSalt: string): string => {
     const saltPrefix = rawSalt.slice(2, 42).toLowerCase();
+    const normalizedDeployer = deployer.toLowerCase().slice(2);
+    const isDeployerPrefixed = saltPrefix === normalizedDeployer;
     const isZeroPrefixed = saltPrefix === '00'.repeat(20);
-    if (isZeroPrefixed) {
-        return rawSalt;
+
+    if (!isDeployerPrefixed && !isZeroPrefixed) {
+        throw new Error(
+            `Invalid salt prefix: first 20 bytes must be deployer address or zero address`,
+        );
     }
+
     const markerByte = rawSalt.slice(42, 44);
-    if (markerByte === '00') {
+    if (markerByte !== '00') {
+        throw new Error(`Unsupported marker byte 0x${markerByte} in salt (only 0x00 is supported)`);
+    }
+
+    if (isDeployerPrefixed) {
         const deployerWord = zeroPadValue(deployer, 32);
         return keccak256(concat([deployerWord, rawSalt]));
     }
-    return rawSalt;
+    // Unpermissioned: keccak256(abi.encode(salt))
+    return keccak256(rawSalt);
 };
 
 export const validateCreateX = async (): Promise<void> => {
