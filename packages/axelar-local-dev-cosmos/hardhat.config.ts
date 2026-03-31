@@ -99,6 +99,18 @@ const config: HardhatUserConfig = {
         },
       },
       {
+        version: "0.8.23",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 10000,
+            details: {
+              yul: true,
+            },
+          },
+        },
+      },
+      {
         version: "0.8.9",
         settings: {
           optimizer: {

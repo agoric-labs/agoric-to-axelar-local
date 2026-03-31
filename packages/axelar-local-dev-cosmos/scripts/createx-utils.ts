@@ -62,7 +62,7 @@ export const buildSalt = (input: string): string => {
  * Only the 0x00 marker byte is supported (no cross-chain redeploy protection).
  * See https://github.com/pcaversaccio/createx?tab=readme-ov-file#permissioned-deploy-protection-and-cross-chain-redeploy-protection
  */
-const computeGuardedSalt = (deployer: string, rawSalt: string): string => {
+export const computeGuardedSalt = (deployer: string, rawSalt: string): string => {
     const saltPrefix = rawSalt.slice(2, 42).toLowerCase();
     const normalizedDeployer = deployer.toLowerCase().slice(2);
     const isDeployerPrefixed = saltPrefix === normalizedDeployer;

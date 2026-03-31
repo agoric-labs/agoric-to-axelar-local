@@ -24,7 +24,7 @@
     "relayWithTokens": "ts-node scripts/runner.ts relayWithTokens",
     "testWallet": "ts-node scripts/runner.ts testWallet",
     "testFactory": "ts-node scripts/runner.ts testFactory",
-    "test:proxy": "hardhat test src/__tests__/Factory.spec.ts src/__tests__/DepositFactory.spec.ts src/__tests__/RemoteAccountCreation.spec.ts src/__tests__/RemoteAccountMulticall.spec.ts src/__tests__/RemoteAccountDeposit.spec.ts src/__tests__/RemoteAccountRouter.spec.ts src/__tests__/RemoteAccountVetting.spec.ts",
+    "test:proxy": "hardhat test src/__tests__/Factory.spec.ts src/__tests__/DepositFactory.spec.ts src/__tests__/RemoteAccountCreation.spec.ts src/__tests__/RemoteAccountMulticall.spec.ts src/__tests__/RemoteAccountDeposit.spec.ts src/__tests__/RemoteAccountRouter.spec.ts src/__tests__/RemoteAccountVetting.spec.ts src/__tests__/CreateXGuard.spec.ts",
     "coverage:proxy": "npx hardhat coverage --testfiles src/__tests__/Factory.spec.ts",
     "verify": "./scripts/verify.sh",
     "deploy": "./scripts/deploy.sh"
@@ -66,6 +66,7 @@
     "@types/node-fetch": "^2.6.5",
     "@updated-axelar-network/axelar-gmp-sdk-solidity": "npm:@axelar-network/axelar-gmp-sdk-solidity@^6.0.6",
     "chai-as-promised": "^7.1.2",
+    "createx-factory": "github:pcaversaccio/createx",
     "dotenv": "^16.5.0",
     "ethers": "^5.6.5",
     "hardhat": "^2.23.0",
