@@ -2,7 +2,7 @@ import '@nomicfoundation/hardhat-ethers';
 import { Contract } from 'ethers';
 import { ethers, network, run } from 'hardhat';
 
-const { concat, getAddress, keccak256, zeroPadValue } = ethers;
+const { concat, getAddress, keccak256, toUtf8Bytes, zeroPadValue } = ethers;
 
 // see https://github.com/pcaversaccio/createx?tab=readme-ov-file#createx-deployments
 export const CREATEX_ADDRESS = '0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed';
@@ -45,10 +45,10 @@ export const buildPermissionedSalt = (deployer: string, hashInput: string): stri
 /**
  * Build a 32-byte CreateX unpermissioned salt.
  * First 20 bytes are zero (cross-chain safe, any deployer can use).
- * Remaining 12 bytes are derived from the hash of `hashInput`.
+ * Remaining 12 bytes are derived from the keccak256 hash of `input` (UTF-8 encoded).
  */
-export const buildSalt = (hashInput: string): string => {
-    const inputHash = keccak256(hashInput).slice(2);
+export const buildSalt = (input: string): string => {
+    const inputHash = keccak256(toUtf8Bytes(input)).slice(2);
     const suffix = inputHash.slice(0, 24); // 12 bytes = 24 hex chars
     const salt = `0x${'00'.repeat(20)}${suffix}`;
     if (salt.length !== 66) {
