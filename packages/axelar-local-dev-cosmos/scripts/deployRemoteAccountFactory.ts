@@ -4,6 +4,7 @@ import { ethers, network } from 'hardhat';
 const { isAddress } = ethers;
 
 import {
+    buildPermissionedSalt,
     buildSalt,
     deployViaCreateX,
     getCreateX,
@@ -25,7 +26,7 @@ const main = async () => {
     const vettingAuthority = VETTING_AUTHORITY || deployerAddress;
     const { chainId } = await ethers.provider.getNetwork();
 
-    console.log(`\nCreateX CREATE2 Deploy — ${network.name} (${chainId})`);
+    console.log(`\nCreateX CREATE3 Deploy — ${network.name} (${chainId})`);
     console.log(`  Deployer:          ${deployerAddress}`);
     console.log(`  Principal CAIP2:   ${PRINCIPAL_CAIP2}`);
     console.log(`  Principal Account: ${PRINCIPAL_ACCOUNT}`);
@@ -63,14 +64,18 @@ const main = async () => {
     if (!factoryDeployTx.data) {
         throw new Error('Failed to encode RemoteAccountFactory initCode');
     }
-    const factoryRawSalt = buildSalt(PRINCIPAL_ACCOUNT);
+    const factorySaltInput = ethers.solidityPacked(
+        ['bytes', 'address', 'string'],
+        [FactoryCF.bytecode, implResult.address, PRINCIPAL_ACCOUNT],
+    );
+    const factoryRawSalt = buildPermissionedSalt(deployerAddress, factorySaltInput);
     const factoryResult = await deployViaCreateX({
         createX,
         deployer: deployerAddress,
         rawSalt: factoryRawSalt,
         initCode: factoryDeployTx.data,
         label: 'RemoteAccountFactory',
-        mode: 'create2',
+        mode: 'create3',
     });
 
     // Verification — always attempt, even for already-deployed contracts,
