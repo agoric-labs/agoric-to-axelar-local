@@ -56,7 +56,7 @@ describe('CreateX _guard replication', () => {
 
         for (const input of inputs) {
             it(`matches _guard for input: ${input.slice(0, 40)}...`, async () => {
-                const rawSalt = buildSalt(input);
+                const rawSalt = buildSalt(ethers.solidityPacked(['string'], [input]));
                 const tsGuarded = computeGuardedSalt(deployerAddress, rawSalt);
                 const solGuarded = await harness.exposedGuard(rawSalt);
                 expect(tsGuarded).to.equal(solGuarded);
@@ -66,7 +66,7 @@ describe('CreateX _guard replication', () => {
 
     describe('salt structure validation', () => {
         it('buildSalt produces correct layout: 20 zero bytes + 0x00 marker + 11 bytes', () => {
-            const salt = buildSalt('test');
+            const salt = buildSalt(ethers.solidityPacked(['string'], ['test']));
             // 20 zero bytes (address)
             expect(salt.slice(2, 42)).to.equal('00'.repeat(20));
             // 0x00 marker byte

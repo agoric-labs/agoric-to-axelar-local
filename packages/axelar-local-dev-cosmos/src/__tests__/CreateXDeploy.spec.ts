@@ -43,8 +43,14 @@ describe('CreateX deployment properties', () => {
             const RemoteAccountCF = await ethers.getContractFactory('RemoteAccount');
             const initCode = RemoteAccountCF.bytecode;
 
-            const addr0 = await computeCreate2Address(buildSalt(YMAX0_LCA), initCode);
-            const addr1 = await computeCreate2Address(buildSalt(YMAX1_LCA), initCode);
+            const addr0 = await computeCreate2Address(
+                buildSalt(ethers.solidityPacked(['string'], [YMAX0_LCA])),
+                initCode,
+            );
+            const addr1 = await computeCreate2Address(
+                buildSalt(ethers.solidityPacked(['string'], [YMAX1_LCA])),
+                initCode,
+            );
 
             expect(addr0).to.not.equal(addr1);
         });
@@ -71,8 +77,14 @@ describe('CreateX deployment properties', () => {
                 )
             ).data;
 
-            const addr0 = await computeCreate2Address(buildSalt(YMAX0_LCA), initCode0);
-            const addr1 = await computeCreate2Address(buildSalt(YMAX1_LCA), initCode1);
+            const addr0 = await computeCreate2Address(
+                buildSalt(ethers.solidityPacked(['string'], [YMAX0_LCA])),
+                initCode0,
+            );
+            const addr1 = await computeCreate2Address(
+                buildSalt(ethers.solidityPacked(['string'], [YMAX1_LCA])),
+                initCode1,
+            );
 
             expect(addr0).to.not.equal(addr1);
         });
@@ -136,7 +148,7 @@ describe('CreateX deployment properties', () => {
         it('deploys a contract and finds code at the predicted address', async () => {
             const RemoteAccountCF = await ethers.getContractFactory('RemoteAccount');
             const initCode = RemoteAccountCF.bytecode;
-            const rawSalt = buildSalt('idempotency-test');
+            const rawSalt = buildSalt(ethers.solidityPacked(['string'], ['idempotency-test']));
 
             const expectedAddress = await computeCreate2Address(rawSalt, initCode);
 

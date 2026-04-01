@@ -42,7 +42,7 @@ const main = async () => {
     // Step 1: RemoteAccount (implementation)
     console.log('RemoteAccount (implementation):');
     const RemoteAccountCF = await ethers.getContractFactory('RemoteAccount');
-    const implRawSalt = buildSalt(PRINCIPAL_ACCOUNT);
+    const implRawSalt = buildSalt(ethers.solidityPacked(['string'], [PRINCIPAL_ACCOUNT]));
     const implResult = await deployViaCreateX({
         createX,
         deployer: deployerAddress,
