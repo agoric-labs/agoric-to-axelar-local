@@ -180,21 +180,24 @@ describe('RemoteAccount deployment properties', () => {
             // would be deployed
             const maliciousFactoryResult = await (async () => {
                 const FactoryCF = await ethers.getContractFactory('RemoteAccountFactory');
-                const factoryDeployTx = await FactoryCF.getDeployTransaction(
-                    principalCaip2,
-                    principalAccount,
-                    maliciousImplResult.address, // deploy with the malicious implementation
-                    deployerAddress,
-                );
-                if (!factoryDeployTx.data) {
+                const [factoryDeployTx, saltData] = await Promise.all([
+                    FactoryCF.getDeployTransaction(
+                        principalCaip2,
+                        principalAccount,
+                        maliciousImplResult.address, // deploy with the malicious implementation
+                        deployerAddress,
+                    ),
+                    FactoryCF.getDeployTransaction(
+                        principalCaip2,
+                        principalAccount,
+                        goodImplResult.address, // but compute the salt with the good implementation
+                        ethers.ZeroAddress, // exclude vettingAuthority from salt
+                    ),
+                ]);
+                if (!factoryDeployTx.data || !saltData.data) {
                     throw new Error('Failed to encode RemoteAccountFactory initCode');
                 }
-                const factorySaltInput = ethers.solidityPacked(
-                    ['bytes', 'address', 'string'],
-                    [FactoryCF.bytecode, goodImplResult.address, principalAccount],
-                );
-
-                const factoryRawSalt = buildPermissionedSalt(deployerAddress, factorySaltInput);
+                const factoryRawSalt = buildPermissionedSalt(deployerAddress, saltData.data);
                 const factoryResult = await mineDuring(
                     deployViaCreateX({
                         createX,
@@ -224,6 +227,68 @@ describe('RemoteAccount deployment properties', () => {
 
             expect(error).to.be.an('Error');
             expect(error.message).to.match(/runtime bytecode mismatch/);
+        });
+
+        it('fails if trying to deploy and existing factory has a different principal Caip2', async () => {
+            const principalAccount =
+                'agoric1hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhz8m5l2w5j5h6l4l0';
+            const principalCaip2 = 'cosmos:agoric-3';
+
+            const goodImplResult = await mineDuring(
+                deployRemoteAccountImplementation(createX, deployerAddress, principalAccount),
+            );
+
+            // Manually deploy the factory with the caip2 where the good one
+            // would be deployed
+            const badFactoryResult = await (async () => {
+                const FactoryCF = await ethers.getContractFactory('RemoteAccountFactory');
+                const [factoryDeployTx, saltData] = await Promise.all([
+                    FactoryCF.getDeployTransaction(
+                        'cosmos:agoricdev-25',
+                        principalAccount,
+                        goodImplResult.address,
+                        deployerAddress,
+                    ),
+                    FactoryCF.getDeployTransaction(
+                        principalCaip2,
+                        principalAccount,
+                        goodImplResult.address, // but compute the salt with the good implementation
+                        ethers.ZeroAddress, // exclude vettingAuthority from salt
+                    ),
+                ]);
+                if (!factoryDeployTx.data || !saltData.data) {
+                    throw new Error('Failed to encode RemoteAccountFactory initCode');
+                }
+                const factoryRawSalt = buildPermissionedSalt(deployerAddress, saltData.data);
+                const factoryResult = await mineDuring(
+                    deployViaCreateX({
+                        createX,
+                        deployer: deployerAddress,
+                        rawSalt: factoryRawSalt,
+                        initCode: factoryDeployTx.data,
+                        label: 'RemoteAccountFactory',
+                        mode: 'create3',
+                    }),
+                );
+                return factoryResult;
+            })();
+
+            const error = await mineDuring(
+                deployRemoteAccountFactory(
+                    createX,
+                    deployerAddress,
+                    principalCaip2,
+                    principalAccount,
+                    goodImplResult.address,
+                    deployerAddress,
+                ),
+            ).then(
+                () => undefined,
+                (err) => err,
+            );
+
+            expect(error).to.be.an('Error');
+            expect(error.message).to.match(/has mismatching principal CAIP2/);
         });
 
         it('redeploying with a different implementation address results in a different factory address', async () => {

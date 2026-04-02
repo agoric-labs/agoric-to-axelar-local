@@ -30,20 +30,24 @@ export const deployRemoteAccountFactory = async (
     vettingAuthority: string,
 ) => {
     const FactoryCF = await ethers.getContractFactory('RemoteAccountFactory');
-    const factoryDeployTx = await FactoryCF.getDeployTransaction(
-        principalCaip2,
-        principalAccount,
-        implAddress,
-        vettingAuthority,
-    );
-    if (!factoryDeployTx.data) {
+    const [factoryDeployTx, saltData] = await Promise.all([
+        FactoryCF.getDeployTransaction(
+            principalCaip2,
+            principalAccount,
+            implAddress,
+            vettingAuthority,
+        ),
+        FactoryCF.getDeployTransaction(
+            principalCaip2,
+            principalAccount,
+            implAddress,
+            ethers.ZeroAddress, // exclude vettingAuthority from salt
+        ),
+    ]);
+    if (!factoryDeployTx.data || !saltData.data) {
         throw new Error('Failed to encode RemoteAccountFactory initCode');
     }
-    const factorySaltInput = ethers.solidityPacked(
-        ['bytes', 'address', 'string'],
-        [FactoryCF.bytecode, implAddress, principalAccount],
-    );
-    const factoryRawSalt = buildPermissionedSalt(deployer, factorySaltInput);
+    const factoryRawSalt = buildPermissionedSalt(deployer, saltData.data);
     const factoryResult = await deployViaCreateX({
         createX,
         deployer,
@@ -52,6 +56,43 @@ export const deployRemoteAccountFactory = async (
         label: 'RemoteAccountFactory',
         mode: 'create3',
     });
+    if (factoryResult.alreadyDeployed) {
+        const factory = await ethers.getContractAt('RemoteAccountFactory', factoryResult.address);
+
+        // NB: we don't need to check the implementation address or the principal account because those
+        // are immutable and covered by the bytecode check in deployViaCreateX.
+        // However we do need to check that any state derived from the mutable vetting authority has not
+        // changed beyond the initial deployment state.
+        const [existingPrincipalCaip2, existingVettingAuthority, numberOfAuthorizedRouters] =
+            await Promise.all([
+                factory.factoryPrincipalCaip2(),
+                factory.vettingAuthority(),
+                factory.numberOfAuthorizedRouters(),
+            ]);
+        // XXX: consider making the hash of this an immutable private var to bind it to the bytecode
+        if (existingPrincipalCaip2 !== principalCaip2) {
+            throw new Error(
+                `Factory already deployed at ${factoryResult.address} has mismatching principal CAIP2\n` +
+                    `  expected: ${principalCaip2}\n` +
+                    `  got:      ${existingPrincipalCaip2}`,
+            );
+        }
+        // This is mutable, we expect the deployer to check for inconsistencies
+        if (existingVettingAuthority !== vettingAuthority) {
+            console.warn(
+                `Factory already deployed at ${factoryResult.address} has mismatching vetting authority\n` +
+                    `  expected: ${vettingAuthority}\n` +
+                    `  got:      ${existingVettingAuthority}`,
+            );
+        }
+        if (numberOfAuthorizedRouters !== BigInt(0)) {
+            console.warn(
+                `Factory already deployed at ${factoryResult.address} has existing authorized routers\n` +
+                    `  expected: 0\n` +
+                    `  got:      ${numberOfAuthorizedRouters}`,
+            );
+        }
+    }
 
     return factoryResult;
 };

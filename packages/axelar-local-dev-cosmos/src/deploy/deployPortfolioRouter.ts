@@ -45,22 +45,19 @@ export const deployRemoteAccountAxelarRouter = async (
     permit2: string,
 ) => {
     const RouterCF = await ethers.getContractFactory('RemoteAccountAxelarRouter');
-    const routerDeployTx = await RouterCF.getDeployTransaction(
-        gateway,
-        sourceChain,
-        factory,
-        permit2,
-    );
-    if (!routerDeployTx.data) {
+    const [routerDeployTx, saltData] = await Promise.all([
+        RouterCF.getDeployTransaction(gateway, sourceChain, factory, permit2),
+        RouterCF.getDeployTransaction(
+            ethers.ZeroAddress, // exclude gateway from salt
+            sourceChain,
+            factory,
+            ethers.ZeroAddress, // exclude permit2 from salt
+        ),
+    ]);
+    if (!routerDeployTx.data || !saltData.data) {
         throw new Error('Failed to encode RemoteAccountAxelarRouter initCode');
     }
-    // Hash bytecode + arguments under our control (source chain, factory).
-    // Omit external arguments (gateway, permit2) that vary per chain.
-    const saltInput = ethers.solidityPacked(
-        ['bytes', 'string', 'address'],
-        [RouterCF.bytecode, sourceChain, factory],
-    );
-    const rawSalt = buildPermissionedSalt(deployer, saltInput);
+    const rawSalt = buildPermissionedSalt(deployer, saltData.data);
     const routerResult = await deployViaCreateX({
         createX,
         deployer,
@@ -69,6 +66,8 @@ export const deployRemoteAccountAxelarRouter = async (
         label: 'RemoteAccountAxelarRouter',
         mode: 'create3',
     });
+    // NB: we do not need to check whether an existing deployment state matches our expectations because
+    // the router has no mutable state (all immutable variables are covered by the bytecode check)
 
     return routerResult;
 };
