@@ -52,7 +52,7 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
     /// @notice The account identifier for the factory's principal
     string public factoryPrincipalAccount;
 
-    /// @notice The CAIP-2 salt in only used to bind the byte code to the constructor value
+    /// @notice The CAIP-2 salt is only used to bind the byte code to the constructor value
     bytes32 private immutable _caip2Salt;
     bytes32 private immutable _principalSalt;
     /// @notice The pre-deployed RemoteAccount implementation that all clones delegate to
