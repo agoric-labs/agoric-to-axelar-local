@@ -289,21 +289,31 @@ const deployToAllChains = async (
   console.log(`Continue on Error: ${continueOnError}`);
   console.log("═══════════════════════════════════════════════════════════\n");
 
-  // Sync nonces before deployment
-  const syncResult = await checkAndSyncNonces(chains);
-  if (!syncResult.success) {
-    console.error("❌ Nonce sync failed, aborting deployment.\n");
-    process.exit(1);
-  }
-
-  // Wait for nonce sync transactions to get enough confirmations
-  // Hardhat Ignition requires at least 5 confirmations before deploying
-  if (syncResult.synced) {
+  // CreateX deployments (CREATE2/CREATE3) produce nonce-independent addresses,
+  // so nonce synchronization is unnecessary and skipped.
+  const isCreateX =
+    contract === "remoteAccountFactory" || contract === "portfolioRouter";
+  if (isCreateX) {
     console.log(
-      "⏳ Waiting 60 seconds for nonce sync transactions to confirm...\n",
+      "\n⏭️  Skipping nonce synchronization (CreateX deployment is nonce-independent)\n",
     );
-    await new Promise((resolve) => setTimeout(resolve, 60000));
-    console.log("✅ Ready to deploy\n");
+  } else {
+    // Sync nonces before deployment
+    const syncResult = await checkAndSyncNonces(chains);
+    if (!syncResult.success) {
+      console.error("❌ Nonce sync failed, aborting deployment.\n");
+      process.exit(1);
+    }
+
+    // Wait for nonce sync transactions to get enough confirmations
+    // Hardhat Ignition requires at least 5 confirmations before deploying
+    if (syncResult.synced) {
+      console.log(
+        "⏳ Waiting 60 seconds for nonce sync transactions to confirm...\n",
+      );
+      await new Promise((resolve) => setTimeout(resolve, 60000));
+      console.log("✅ Ready to deploy\n");
+    }
   }
 
   const results: DeployResult[] = [];
@@ -328,25 +338,34 @@ const deployToAllChains = async (
       }
     }
   } else {
-    // Deploy to chains sequentially
-    // Always deploy to eth first, then others
-    // Rationale: ETH deployments can fail due to gas spikes. Better to attempt ETH first.
-    // If it fails, we can sync nonces on other chains for the same address before retrying.
-    const sortedChains = [...chains].sort((a, b) => {
-      if (a === "eth") return -1;
-      if (b === "eth") return 1;
-      return 0;
-    });
+    // Deploy to chains sequentially.
+    // For nonce-dependent (non-CreateX) deployments, deploy ETH first because
+    // gas spikes can cause failures — better to fail early so we can sync nonces.
+    // For CreateX deployments, ordering doesn't matter and failures on one chain
+    // don't affect others, so we continue past failures.
+    const sortedChains = isCreateX
+      ? [...chains]
+      : [...chains].sort((a, b) => {
+          if (a === "eth") return -1;
+          if (b === "eth") return 1;
+          return 0;
+        });
 
     for (const chain of sortedChains) {
       const result = await deployToChain(chain, contract, ownerType);
       results.push(result);
 
       if (!result.success) {
-        console.error(
-          "\n❌ Deployment failed. Stopping sequential deployment.",
-        );
-        break;
+        if (isCreateX) {
+          console.warn(
+            `\n⚠️  Deployment failed on ${chain}, continuing (CreateX is idempotent)...`,
+          );
+        } else {
+          console.error(
+            "\n❌ Deployment failed. Stopping sequential deployment.",
+          );
+          break;
+        }
       }
     }
   }

@@ -29,7 +29,7 @@ on:
         description: Remote account factory address (required for portfolioRouter)
         required: false
       VETTING_AUTHORITY:
-        description: Vetting authority address (required for remoteAccountFactory)
+        description: Vetting authority address for remoteAccountFactory (defaults to deployer)
         required: false
       ALL_CHAINS:
         description: Deploy to all chains
@@ -94,7 +94,7 @@ jobs:
             echo "REMOTE_ACCOUNT_FACTORY is required for portfolioRouter" && exit 1
           fi
           if [ "$CONTRACT_OPTION" = "remoteAccountFactory" ] && [ -z "$VETTING_AUTHORITY" ]; then
-            echo "VETTING_AUTHORITY is required for remoteAccountFactory" && exit 1
+            echo "VETTING_AUTHORITY not set — will default to deployer address"
           fi
 
       - name: Build chain list

@@ -10,13 +10,11 @@ const { INFURA_KEY, PRIVATE_KEY, ETHERSCAN_API_KEY } = process.env;
 const testnets = {
   fuji: {
     url: "https://api.avax-test.network/ext/bc/C/rpc",
-    gasPrice: 225000000000,
     chainId: 43113,
     accounts: [`0x${PRIVATE_KEY}`],
   },
   "eth-sepolia": {
     url: "https://ethereum-sepolia-rpc.publicnode.com",
-    gasPrice: 20000000000, // 20 Gwei
     chainId: 11155111,
     accounts: [`0x${PRIVATE_KEY}`],
   },
@@ -52,7 +50,6 @@ const mainnets = {
     url: "https://api.avax.network/ext/bc/C/rpc",
     chainId: 43114,
     accounts: [PRIVATE_KEY as string],
-    gasPrice: 225_000_000_000, // 225 gwei in wei
   },
   // Source: https://docs.base.org/docs/network-information
   base: {
@@ -91,6 +88,18 @@ const config: HardhatUserConfig = {
     compilers: [
       {
         version: "0.8.26",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 10000,
+            details: {
+              yul: true,
+            },
+          },
+        },
+      },
+      {
+        version: "0.8.23",
         settings: {
           optimizer: {
             enabled: true,
