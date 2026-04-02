@@ -3,14 +3,11 @@ import { ethers, network } from 'hardhat';
 
 const { isAddress } = ethers;
 
+import { getCreateX, validateCreateX, verifyOnExplorer } from '../src/deploy/createx-utils.ts';
 import {
-    buildPermissionedSalt,
-    buildSalt,
-    deployViaCreateX,
-    getCreateX,
-    validateCreateX,
-    verifyOnExplorer,
-} from './createx-utils.ts';
+    deployRemoteAccountFactory,
+    deployRemoteAccountImplementation,
+} from '../src/deploy/deployRemoteAccountFactory.ts';
 
 const main = async () => {
     const { PRINCIPAL_CAIP2, PRINCIPAL_ACCOUNT, VETTING_AUTHORITY } = process.env;
@@ -41,42 +38,22 @@ const main = async () => {
 
     // Step 1: RemoteAccount (implementation)
     console.log('RemoteAccount (implementation):');
-    const RemoteAccountCF = await ethers.getContractFactory('RemoteAccount');
-    const implRawSalt = buildSalt(ethers.solidityPacked(['string'], [PRINCIPAL_ACCOUNT]));
-    const implResult = await deployViaCreateX({
+    const implResult = await deployRemoteAccountImplementation(
         createX,
-        deployer: deployerAddress,
-        rawSalt: implRawSalt,
-        initCode: RemoteAccountCF.bytecode,
-        label: 'RemoteAccount',
-        mode: 'create2',
-    });
+        deployerAddress,
+        PRINCIPAL_ACCOUNT,
+    );
 
     // Step 2: RemoteAccountFactory
     console.log('RemoteAccountFactory:');
-    const FactoryCF = await ethers.getContractFactory('RemoteAccountFactory');
-    const factoryDeployTx = await FactoryCF.getDeployTransaction(
+    const factoryResult = await deployRemoteAccountFactory(
+        createX,
+        deployerAddress,
         PRINCIPAL_CAIP2,
         PRINCIPAL_ACCOUNT,
         implResult.address,
         vettingAuthority,
     );
-    if (!factoryDeployTx.data) {
-        throw new Error('Failed to encode RemoteAccountFactory initCode');
-    }
-    const factorySaltInput = ethers.solidityPacked(
-        ['bytes', 'address', 'string'],
-        [FactoryCF.bytecode, implResult.address, PRINCIPAL_ACCOUNT],
-    );
-    const factoryRawSalt = buildPermissionedSalt(deployerAddress, factorySaltInput);
-    const factoryResult = await deployViaCreateX({
-        createX,
-        deployer: deployerAddress,
-        rawSalt: factoryRawSalt,
-        initCode: factoryDeployTx.data,
-        label: 'RemoteAccountFactory',
-        mode: 'create3',
-    });
 
     // Verification — always attempt, even for already-deployed contracts,
     // so a previous deploy whose verification failed can be retried.

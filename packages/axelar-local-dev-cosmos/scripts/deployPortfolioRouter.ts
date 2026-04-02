@@ -3,46 +3,8 @@ import { ethers, network } from 'hardhat';
 
 const { isAddress } = ethers;
 
-import {
-    buildPermissionedSalt,
-    deployViaCreateX,
-    getCreateX,
-    validateCreateX,
-    verifyOnExplorer,
-} from './createx-utils.ts';
-
-const vetRouter = async (routerAddress: string, factoryAddress: string): Promise<void> => {
-    const [deployer] = await ethers.getSigners();
-    const factory = await ethers.getContractAt('RemoteAccountFactory', factoryAddress);
-
-    const [status, numberOfRouters, vettingAuthority] = await Promise.all([
-        factory.getRouterStatus(routerAddress),
-        factory.numberOfAuthorizedRouters(),
-        factory.vettingAuthority(),
-    ]);
-
-    console.log(`\nPost-deployment vetting:`);
-    console.log(`  Router:            ${routerAddress}`);
-    console.log(`  Status in factory: ${status}`);
-    console.log(`  Authorized routers: ${numberOfRouters}`);
-    console.log(`  Vetting authority: ${vettingAuthority}`);
-
-    if (status !== 0n) {
-        console.log('  Router status already set, skipping vetting.');
-    } else if (vettingAuthority !== deployer.address) {
-        console.warn('  Deployer is not the vetting authority. Skipping vetting.');
-    } else if (numberOfRouters > 0n) {
-        console.log('  Vetting router (not initial — must be enabled through an existing router).');
-        const vetTx = await factory.vetRouter(routerAddress);
-        const vetReceipt = await vetTx.wait(5);
-        console.log(`  vetRouter tx: ${vetReceipt.hash} (status: ${vetReceipt.status})`);
-    } else {
-        console.log('  Vetting and enabling initial router.');
-        const vetTx = await factory.vetInitialRouter(routerAddress);
-        const vetReceipt = await vetTx.wait(5);
-        console.log(`  vetInitialRouter tx: ${vetReceipt.hash} (status: ${vetReceipt.status})`);
-    }
-};
+import { getCreateX, validateCreateX, verifyOnExplorer } from '../src/deploy/createx-utils.ts';
+import { deployRemoteAccountAxelarRouter, vetRouter } from '../src/deploy/deployPortfolioRouter.ts';
 
 const main = async () => {
     const { GATEWAY_CONTRACT, AXELAR_SOURCE_CHAIN, FACTORY_CONTRACT, PERMIT2_CONTRACT } =
@@ -78,31 +40,14 @@ const main = async () => {
 
     // Deploy RemoteAccountAxelarRouter via CREATE3
     console.log('RemoteAccountAxelarRouter:');
-    const RouterCF = await ethers.getContractFactory('RemoteAccountAxelarRouter');
-    const routerDeployTx = await RouterCF.getDeployTransaction(
+    const routerResult = await deployRemoteAccountAxelarRouter(
+        createX,
+        deployerAddress,
         GATEWAY_CONTRACT,
         AXELAR_SOURCE_CHAIN,
         FACTORY_CONTRACT,
         PERMIT2_CONTRACT,
     );
-    if (!routerDeployTx.data) {
-        throw new Error('Failed to encode RemoteAccountAxelarRouter initCode');
-    }
-    // Hash bytecode + arguments under our control (source chain, factory).
-    // Omit external arguments (gateway, permit2) that vary per chain.
-    const saltInput = ethers.solidityPacked(
-        ['bytes', 'string', 'address'],
-        [RouterCF.bytecode, AXELAR_SOURCE_CHAIN, FACTORY_CONTRACT],
-    );
-    const rawSalt = buildPermissionedSalt(deployerAddress, saltInput);
-    const routerResult = await deployViaCreateX({
-        createX,
-        deployer: deployerAddress,
-        rawSalt,
-        initCode: routerDeployTx.data,
-        label: 'RemoteAccountAxelarRouter',
-        mode: 'create3',
-    });
 
     // Verification
     await verifyOnExplorer({

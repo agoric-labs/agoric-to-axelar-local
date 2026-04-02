@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 
-import { buildSalt, buildPermissionedSalt, computeGuardedSalt } from '../../scripts/createx-utils';
+import { buildSalt, buildPermissionedSalt, computeGuardedSalt } from '../deploy/createx-utils';
 
 describe('CreateX _guard replication', () => {
     let harness: any;

@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 import '@nomicfoundation/hardhat-chai-matchers';
 
-import { buildSalt, buildPermissionedSalt, computeGuardedSalt } from '../../scripts/createx-utils';
+import { buildSalt, buildPermissionedSalt, computeGuardedSalt } from '../deploy/createx-utils';
 
 /**
  * Tests for CreateX deployment properties that were previously verified
@@ -56,6 +56,7 @@ describe('CreateX deployment properties', () => {
         });
 
         it('ymax0 and ymax1 LCAs yield different RemoteAccountFactory addresses', async () => {
+            // Note we no longer use Create2 for the factory
             // Use a dummy impl address — what matters is the salt differs
             const dummyImpl = ethers.ZeroAddress;
             const FactoryCF = await ethers.getContractFactory('RemoteAccountFactory');
