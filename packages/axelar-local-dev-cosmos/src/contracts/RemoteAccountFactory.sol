@@ -48,13 +48,21 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
     // Store the principal details of this factory purely for reference
     // Immutable, but cannot be declaratively marked as such because they are strings
     /// @notice The CAIP-2 chain identifier for the factory's principal
-    string public factoryPrincipalCaip2;
+    string private _factoryPrincipalCaip2;
     /// @notice The account identifier for the factory's principal
     string public factoryPrincipalAccount;
 
+    /// @notice The CAIP-2 salt in only used to bind the byte code to the constructor value
+    bytes32 private immutable _caip2Salt;
     bytes32 private immutable _principalSalt;
     /// @notice The pre-deployed RemoteAccount implementation that all clones delegate to
     address public immutable implementation;
+
+    /// @notice The CAIP-2 chain identifier for the factory's principal
+    function factoryPrincipalCaip2() external view override returns (string memory) {
+        require(_caip2Salt != bytes32(0)); // Force CAIP-2 salt to be in bytecode
+        return _factoryPrincipalCaip2;
+    }
 
     /// @notice The number of routers currently authorized to operate remote accounts created by this factory
     uint256 public numberOfAuthorizedRouters;
@@ -96,8 +104,9 @@ contract RemoteAccountFactory is IRemoteAccountFactory {
         address implementation_,
         address initialVettingAuthority_
     ) {
-        factoryPrincipalCaip2 = factoryPrincipalCaip2_;
+        _factoryPrincipalCaip2 = factoryPrincipalCaip2_;
         factoryPrincipalAccount = factoryPrincipalAccount_;
+        _caip2Salt = keccak256(bytes(factoryPrincipalCaip2_));
         _principalSalt = keccak256(bytes(factoryPrincipalAccount_)); // _getSalt(factoryPrincipalAccount_);
         implementation = implementation_;
 

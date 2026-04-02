@@ -288,7 +288,7 @@ describe('RemoteAccount deployment properties', () => {
             );
 
             expect(error).to.be.an('Error');
-            expect(error.message).to.match(/has mismatching principal CAIP2/);
+            expect(error.message).to.match(/runtime bytecode mismatch/);
         });
 
         it('redeploying with a different implementation address results in a different factory address', async () => {
