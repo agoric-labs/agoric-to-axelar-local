@@ -172,25 +172,65 @@ contract RemoteAccountAxelarRouter is AxelarExecutable, IRemoteAccountRouter {
         // which are better than quickly treating it as a failed operation,
         // requiring the end-user to take action and sign a new intent.
         if (!success && gasAfter <= (gasBefore / 7)) {
-            if (result.length == 0) {
+            uint256 resultLength = result.length;
+            if (resultLength == 0) {
                 // The call likely ran out of gas without RemoteAccount interception
                 revert SubcallOutOfGas();
             }
 
-            if (bytes4(result) == IRemoteAccount.ContractCallFailed.selector) {
-                // Prepend 28 bytes of zeros to 'complete' the custom error selector into a 32-byte word.
-                // This allows abi.decode to treat the selector as the first argument.
-                bytes memory paddedData = abi.encodePacked(new bytes(28), result);
+            // This failure came with a result from which we might be able to
+            // read a reason. Try to decode it as a ContractCallFailed error:
+            // | offset | description        | size (bytes) |
+            // |-------:|--------------------|--------------|
+            // |      0 | selector           |  4
+            // |        | <start of params>
+            // |      4 | targetAddress      | 32
+            // |     36 | callSelector       | 32
+            // |     68 | callIndex          | 32
+            // |    100 | offset to reason   | 32
+            // |        | <start of dynamic param encodings>
+            // |        | <start of enc(reason)>
+            // |    132 | reason byte length | 32
+            // |    164 | reason contents    | <variable>
+            if (
+                bytes4(result) == IRemoteAccount.ContractCallFailed.selector && resultLength >= 164
+            ) {
+                // reasonLengthPosition is the offset of enc(reason) relative to
+                // the start of result (including the 32-byte length slot).
+                uint256 reasonLengthPosition;
+                assembly ('memory-safe') {
+                    reasonLengthPosition := add(
+                        // The position of offset-to-reason in result is 0x20
+                        // (size of result's initial 32-byte length slot) + 100
+                        // = 0x84. Per above, this value is expected to be
+                        // 132 - 4 = 0x80.
+                        mload(add(result, 0x84)),
+                        // The *value* of offset-to-reason is relative to
+                        // start-of-params and must therefore be increased to
+                        // account for result's length slot and the 4-byte
+                        // selector.
+                        0x24
+                    )
+                }
 
-                // Now we decode including the error selector as the first argument.
-                (, , , , bytes memory reason) = abi.decode(
-                    paddedData,
-                    (bytes4, address, bytes4, uint224, bytes)
-                );
+                // Check if result is long enough to contain a uint256 at
+                // reasonLengthPosition. This is logically
+                // `sizeof result >= reasonLengthPosition + 32`, but
+                // `result.length` excludes the 32-byte length slot so the
+                // resulting `32 + result.length >= reasonLengthPosition + 32`
+                // can be reduced to eliminate addition on both sides.
+                if (resultLength >= reasonLengthPosition) {
+                    uint256 reasonLength;
+                    assembly ('memory-safe') {
+                        reasonLength := mload(add(result, reasonLengthPosition))
+                    }
 
-                if (reason.length == 0) {
-                    // The call made by RemoteAccount likely ran out of gas
-                    revert SubcallOutOfGas();
+                    // If we just read a length of 0, assume that the
+                    // corresponding empty reason indicates that the call made
+                    // by RemoteAccount ran out of gas.
+                    if (reasonLength == 0) {
+                        revert SubcallOutOfGas();
+                    }
                 }
             }
         }
