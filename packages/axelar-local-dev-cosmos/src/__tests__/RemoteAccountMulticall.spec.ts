@@ -177,15 +177,12 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         const multiCalls: ContractCall[] = [multicallContract.alwaysReverts()];
 
         const receipt = await route(portfolioLCA).doRemoteAccountExecute({ multiCalls });
-        const errorEvent = receipt.expectOperationFailure();
-        const RemoteAccount = await ethers.getContractFactory('RemoteAccount');
-        const decoded = RemoteAccount.interface.parseError(errorEvent.args.reason);
-        expect(decoded?.name).to.equal('ContractCallFailed');
-        expect(decoded?.args.target).to.equal(multiCalls[0].target);
-        expect(decoded?.args.selector).to.equal(multiCalls[0].data.slice(0, 10));
-        expect(decoded?.args.callIndex).to.equal(0);
+        const decoded = receipt.expectContractCallFailed();
+        expect(decoded.args.target).to.equal(multiCalls[0].target);
+        expect(decoded.args.selector).to.equal(multiCalls[0].data.slice(0, 10));
+        expect(decoded.args.callIndex).to.equal(0);
         const error = new Error('Synthetic call failure');
-        Object.assign(error, { data: decoded?.args.reason });
+        Object.assign(error, { data: decoded.args.reason });
         await expect(Promise.reject(error)).to.be.revertedWith('Multicall: intentional revert');
     });
 
@@ -233,13 +230,10 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         ];
 
         const receipt = await route(portfolioLCA).doRemoteAccountExecute({ multiCalls });
-        const errorEvent = receipt.expectOperationFailure();
-        const RemoteAccount = await ethers.getContractFactory('RemoteAccount');
-        const decoded = RemoteAccount.interface.parseError(errorEvent.args.reason);
-        expect(decoded?.name).to.equal('ContractCallFailed');
-        expect(decoded?.args.callIndex).to.equal(0);
+        const decoded = receipt.expectContractCallFailed();
+        expect(decoded.args.callIndex).to.equal(0);
         // Empty reason because the subcall ran out of gas
-        expect(decoded?.args.reason).to.equal('0x');
+        expect(decoded.args.reason).to.equal('0x');
     });
 
     it('should send value to a payable method', async () => {
