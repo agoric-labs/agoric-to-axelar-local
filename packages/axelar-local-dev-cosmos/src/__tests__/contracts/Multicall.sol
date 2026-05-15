@@ -21,9 +21,13 @@ contract Multicall {
     function getValue() public view returns (uint256) {
         return value;
     }
+
     // Intended only for use in testing.
-    function alwaysReverts() public pure {
-        revert('Multicall: intentional revert');
+    function revertWith(string calldata message) public pure {
+        if (bytes(message).length == 0) {
+            revert();
+        }
+        revert(message);
     }
 
     // Intended only for use in testing.

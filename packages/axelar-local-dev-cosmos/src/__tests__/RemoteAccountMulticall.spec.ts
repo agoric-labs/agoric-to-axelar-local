@@ -174,16 +174,20 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
     });
 
     it('should emit failure when multicall reverts', async () => {
-        const multiCalls: ContractCall[] = [multicallContract.alwaysReverts()];
+        const revertMessage = 'Multicall: intentional revert';
+        const multiCalls: ContractCall[] = [
+            multicallContract.setValue(0n),
+            multicallContract.revertWith(revertMessage),
+        ];
 
         const receipt = await route(portfolioLCA).doRemoteAccountExecute({ multiCalls });
         const decoded = receipt.expectContractCallFailed();
-        expect(decoded.args.target).to.equal(multiCalls[0].target);
-        expect(decoded.args.selector).to.equal(multiCalls[0].data.slice(0, 10));
-        expect(decoded.args.callIndex).to.equal(0);
+        expect(decoded.args.target).to.equal(multiCalls[1].target);
+        expect(decoded.args.selector).to.equal(multiCalls[1].data.slice(0, 10));
+        expect(decoded.args.callIndex).to.equal(1);
         const error = new Error('Synthetic call failure');
         Object.assign(error, { data: decoded.args.reason });
-        await expect(Promise.reject(error)).to.be.revertedWith('Multicall: intentional revert');
+        await expect(Promise.reject(error)).to.be.revertedWith(revertMessage);
     });
 
     it('should revert all calls when second call in batch fails', async () => {
@@ -197,7 +201,7 @@ describe('RemoteAccountAxelarRouter - RemoteAccountMulticall', () => {
         // Batch: first call sets value to 999, second call reverts
         const multiCalls: ContractCall[] = [
             multicallContract.setValue(999n),
-            multicallContract.alwaysReverts(),
+            multicallContract.revertWith('some error'),
         ];
 
         const receipt = await route(portfolioLCA).doRemoteAccountExecute({ multiCalls });

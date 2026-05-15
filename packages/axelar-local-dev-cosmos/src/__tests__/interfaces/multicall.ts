@@ -16,11 +16,11 @@ export const multicallAbi = [
         stateMutability: 'nonpayable',
     },
     {
-        name: 'alwaysReverts',
+        name: 'revertWith',
         type: 'function',
-        inputs: [],
+        inputs: [{ name: 'message', type: 'string' }],
         outputs: [],
-        stateMutability: 'nonpayable',
+        stateMutability: 'pure',
     },
     {
         name: 'burnGas',
