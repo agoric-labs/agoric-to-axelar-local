@@ -266,6 +266,53 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
         await expect(receipt).to.be.revertedWithCustomError(router, 'SubcallOutOfGas');
     });
 
+    it('should emit error result when nested subcall fails with reason and low gas', async () => {
+        const lca = 'agoric1nestedfail1234567890abcdefghijklmn';
+        const heavyCall: ContractCall = mc.burnGas(10000n);
+
+        // Step 1: Pre-create the account so factory.provideRemoteAccount is cheap (verify-only)
+        const setupReceipt = await route(lca).doRemoteAccountExecute({ multiCalls: [] });
+        setupReceipt.expectOperationSuccess();
+
+        // Step 2: Build a multicall with burnGas and a simple call to estimate
+        // the gas usage using a real transaction since gas estimation is not precise
+        // enough.
+        const estimateReceipt = await route(lca).doRemoteAccountExecute({
+            multiCalls: [heavyCall, mc.setValue(1n)],
+        });
+        estimateReceipt.expectOperationSuccess();
+        const gasEstimate = estimateReceipt.receipt!.gasUsed;
+
+        const routeWithEstimatedGas = route(lca, {
+            async doExecute(commandId, sourceChain, sourceAddress, payload) {
+                return this.execute(commandId, sourceChain, sourceAddress, payload, {
+                    // Give 10% extra gas so the 63/64ths forwarded avoid OOG in burnGas
+                    // While staying under the 85% low gas heuristics.
+                    gasLimit: (gasEstimate * 11n) / 10n,
+                });
+            },
+        });
+
+        // Step 3: Execute with sufficient gas but placing an empty revert after
+        // burnGas, establishing a baseline for triggering the OOG heuristic.
+        const receiptOOG = await routeWithEstimatedGas.doRemoteAccountExecute({
+            multiCalls: [heavyCall, mc.revertWith('')],
+        });
+        await expect(receiptOOG).to.be.revertedWithCustomError(router, 'SubcallOutOfGas');
+
+        // Step 4: Execute with the same gas but a non-empty revert reason, which
+        // should fail with ContractCallFailed (not OOG) and include the reason.
+        const revertMessage = 'some error';
+        const receiptFail = await routeWithEstimatedGas.doRemoteAccountExecute({
+            multiCalls: [heavyCall, mc.revertWith(revertMessage)],
+        });
+        const decoded = receiptFail.expectContractCallFailed();
+        expect(decoded.args.callIndex).to.equal(1);
+        const error = new Error('Synthetic call failure');
+        Object.assign(error, { data: decoded.args.reason });
+        await expect(Promise.reject(error)).to.be.revertedWith(revertMessage);
+    });
+
     it('should revert with SubcallOutOfGas when self-call OOGs before nested calls', async () => {
         const lca = 'agoric1subcallooghard12345678901234abcde';
 
