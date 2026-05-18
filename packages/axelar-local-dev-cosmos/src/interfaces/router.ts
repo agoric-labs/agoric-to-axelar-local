@@ -279,6 +279,16 @@ export const remoteAccountABI = [
         outputs: [],
         stateMutability: 'nonpayable',
     },
+    {
+        type: 'error',
+        name: 'ContractCallFailed',
+        inputs: [
+            { name: 'target', type: 'address' },
+            { name: 'selector', type: 'bytes4' },
+            { name: 'callIndex', type: 'uint32' },
+            { name: 'reason', type: 'bytes' },
+        ],
+    },
 ] as const satisfies Abi;
 
 /**

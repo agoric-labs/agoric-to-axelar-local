@@ -8,13 +8,15 @@ import {
 } from 'viem';
 import { expect, use as chaiUse } from 'chai';
 import { ethers, network } from 'hardhat';
-import { Contract, Interface, TransactionReceipt, TransactionResponse } from 'ethers';
+import type { AbiCoder, Contract, TransactionReceipt, TransactionResponse } from 'ethers';
+import { Interface } from 'ethers';
 
 import {
     remoteAccountAxelarRouterABI,
     RouterInstruction,
     RouterOperationPayload,
     SupportedOperations,
+    remoteAccountABI,
 } from '../../interfaces/router';
 import { gmpRouterContract, padTxId, predictRemoteAccountAddress } from '../../utils/router';
 
@@ -231,6 +233,8 @@ const nextTxId = () => {
     return txId;
 };
 
+const remoteAccountInterface = new Interface(remoteAccountABI);
+
 export type ParsedLog = { name: string; args: Record<string, any> };
 const parseLogs = (
     receipt: TransactionReceipt | null,
@@ -292,6 +296,17 @@ const makeReceiptHelper = ({
         return event!;
     };
 
+    const parseOperationError = (contractInterface: Interface = router.interface) => {
+        const event = expectOperationFailure();
+        return contractInterface.parseError(event.args.reason);
+    };
+
+    const expectContractCallFailed = () => {
+        const error = parseOperationError(remoteAccountInterface);
+        expect(error?.name).to.equal('ContractCallFailed');
+        return error!;
+    };
+
     return {
         receipt,
         error,
@@ -306,10 +321,8 @@ const makeReceiptHelper = ({
         getOperationResult,
         expectOperationSuccess,
         expectOperationFailure,
-        parseOperationError(contractInterface: Interface = router.interface) {
-            const event = expectOperationFailure();
-            return contractInterface.parseError(event.args.reason);
-        },
+        expectContractCallFailed,
+        parseOperationError,
     };
 };
 
@@ -357,7 +370,7 @@ export const routed = (
         owner: { address: string; signMessage: (msg: Uint8Array) => Promise<string> };
         portfolioContractAccount: string;
         AxelarGateway: Contract;
-        abiCoder: { encode: (types: string[], values: unknown[]) => string };
+        abiCoder: AbiCoder;
     },
 ) => {
     return (

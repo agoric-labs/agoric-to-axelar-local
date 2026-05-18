@@ -15,6 +15,8 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
     let axelarGatewayMock: Contract;
     let factory: Contract, router: Contract, permit2Mock: Contract;
     let multicallTarget: Contract;
+    const mcContract = makeEvmContract(multicallAbi);
+    let mc: ReturnType<typeof contractWithCallMetadata<typeof mcContract>>;
 
     const abiCoder = new ethers.AbiCoder();
 
@@ -84,6 +86,11 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
 
         const MulticallFactory = await ethers.getContractFactory('Multicall');
         multicallTarget = await MulticallFactory.deploy();
+
+        mc = contractWithCallMetadata(
+            mcContract,
+            multicallTarget.target.toString() as `0x${string}`,
+        );
     });
 
     it('should reject invalid source chain', async () => {
@@ -222,48 +229,6 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
     });
 
     it('should revert with SubcallOutOfGas when nested subcall runs out of gas', async () => {
-        const lca = 'agoric1oogtest12345678901234567890abcde';
-
-        // Step 1: Create the account so factory.provideRemoteAccountis cheap (verify-only)
-        const setupReceipt = await route(lca).doRemoteAccountExecute({ multiCalls: [] });
-        setupReceipt.expectOperationSuccess();
-
-        // Step 2: Build a heavy multicall — 100 SSTORE calls to a Multicall target.
-        // This makes the self-call body expensive, ensuring it runs out of gas
-        // when the transaction gas limit is constrained.
-        const mc = contractWithCallMetadata(
-            makeEvmContract(multicallAbi),
-            multicallTarget.target.toString() as `0x${string}`,
-        );
-        const heavyCalls: ContractCall[] = Array.from({ length: 100 }, (_, i) =>
-            mc.setValue(BigInt(i)),
-        );
-
-        const receipt = await route(lca, {
-            async doExecute(commandId, sourceChain, sourceAddress, payload) {
-                // Estimate the gas needed for a successful execution of the heavy multicall
-                const gasEstimate = await this.execute.estimateGas(
-                    commandId,
-                    sourceChain,
-                    sourceAddress,
-                    payload,
-                );
-
-                // Provide 55% of the estimate — the outer _execute has enough gas to complete,
-                // but the self-call's forwarded 63/64ths is insufficient for the 100 SSTORE calls.
-                // The self-call OOGs and returns empty revert data. The router emits
-                // OperationResult with success=false so observers can detect the failure.
-                // Note: The SubcallOutOfGas heuristic does not fire here
-                return this.execute(commandId, sourceChain, sourceAddress, payload, {
-                    gasLimit: (gasEstimate * 55n) / 100n,
-                });
-            },
-        }).doRemoteAccountExecute({ multiCalls: heavyCalls });
-
-        expect(receipt).to.be.revertedWithCustomError(router, 'SubcallOutOfGas');
-    });
-
-    it('should revert with SubcallOutOfGas when a single nested call OOGs inside the target contract', async () => {
         const lca = 'agoric1nestedoog1234567890abcdefghijklmn';
 
         // Step 1: Pre-create the account so factory.provideRemoteAccount is cheap (verify-only)
@@ -274,10 +239,6 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
         // is expensive inside the target contract.
         // RemoteAccount.executeCalls only iterates once, so the OOG must happen
         // inside the Multicall.burnGas call itself, not in RemoteAccount's loop.
-        const mc = contractWithCallMetadata(
-            makeEvmContract(multicallAbi),
-            multicallTarget.target.toString() as `0x${string}`,
-        );
         const heavyCalls: ContractCall[] = [mc.burnGas(500n)];
 
         const receipt = await route(lca, {
@@ -289,7 +250,7 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
                     payload,
                 );
 
-                // Provide 55% of the estimate. The router and RemoteAccount frames
+                // Provide 75% of the estimate. The router and RemoteAccount frames
                 // have enough gas to run, but the single burnGas(500) call inside
                 // the target contract exhausts the remaining forwarded gas.
                 // RemoteAccount catches the failed call and reverts with
@@ -297,18 +258,65 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
                 // router's OOG heuristic detects (Branch 2: ContractCallFailed
                 // with empty reason).
                 return this.execute(commandId, sourceChain, sourceAddress, payload, {
-                    gasLimit: (gasEstimate * 55n) / 100n,
+                    gasLimit: (gasEstimate * 75n) / 100n,
                 });
             },
         }).doRemoteAccountExecute({ multiCalls: heavyCalls });
 
-        expect(receipt).to.be.revertedWithCustomError(router, 'SubcallOutOfGas');
+        await expect(receipt).to.be.revertedWithCustomError(router, 'SubcallOutOfGas');
+    });
+
+    it('should emit error result when nested subcall fails with reason and low gas', async () => {
+        const lca = 'agoric1nestedfail1234567890abcdefghijklmn';
+        const heavyCall: ContractCall = mc.burnGas(10000n);
+
+        // Step 1: Pre-create the account so factory.provideRemoteAccount is cheap (verify-only)
+        const setupReceipt = await route(lca).doRemoteAccountExecute({ multiCalls: [] });
+        setupReceipt.expectOperationSuccess();
+
+        // Step 2: Build a multicall with burnGas and a simple call to estimate
+        // the gas usage using a real transaction since gas estimation is not precise
+        // enough.
+        const estimateReceipt = await route(lca).doRemoteAccountExecute({
+            multiCalls: [heavyCall, mc.setValue(1n)],
+        });
+        estimateReceipt.expectOperationSuccess();
+        const gasEstimate = estimateReceipt.receipt!.gasUsed;
+
+        const routeWithEstimatedGas = route(lca, {
+            async doExecute(commandId, sourceChain, sourceAddress, payload) {
+                return this.execute(commandId, sourceChain, sourceAddress, payload, {
+                    // Give 10% extra gas so the 63/64ths forwarded avoid OOG in burnGas
+                    // While staying under the 85% low gas heuristics.
+                    gasLimit: (gasEstimate * 11n) / 10n,
+                });
+            },
+        });
+
+        // Step 3: Execute with sufficient gas but placing an empty revert after
+        // burnGas, establishing a baseline for triggering the OOG heuristic.
+        const receiptOOG = await routeWithEstimatedGas.doRemoteAccountExecute({
+            multiCalls: [heavyCall, mc.revertWith('')],
+        });
+        await expect(receiptOOG).to.be.revertedWithCustomError(router, 'SubcallOutOfGas');
+
+        // Step 4: Execute with the same gas but a non-empty revert reason, which
+        // should fail with ContractCallFailed (not OOG) and include the reason.
+        const revertMessage = 'some error';
+        const receiptFail = await routeWithEstimatedGas.doRemoteAccountExecute({
+            multiCalls: [heavyCall, mc.revertWith(revertMessage)],
+        });
+        const decoded = receiptFail.expectContractCallFailed();
+        expect(decoded.args.callIndex).to.equal(1);
+        const error = new Error('Synthetic call failure');
+        Object.assign(error, { data: decoded.args.reason });
+        await expect(Promise.reject(error)).to.be.revertedWith(revertMessage);
     });
 
     it('should revert with SubcallOutOfGas when self-call OOGs before nested calls', async () => {
         const lca = 'agoric1subcallooghard12345678901234abcde';
 
-        // Step 1: Pre-create the account so factory.provideRemoteAccountfollows the cheap
+        // Step 1: Pre-create the account so factory.provideRemoteAccount follows the cheap
         // verify path on subsequent calls.
         const setupReceipt = await route(lca).doRemoteAccountExecute({ multiCalls: [] });
         setupReceipt.expectOperationSuccess();
@@ -318,10 +326,6 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
         // validates all dynamic offsets and lengths at function entry, BEFORE any
         // user code or external calls run. This shifts the gas bottleneck into
         // the self-call, enabling the SubcallOutOfGas heuristic to fire.
-        const mc = contractWithCallMetadata(
-            makeEvmContract(multicallAbi),
-            multicallTarget.target.toString() as `0x${string}`,
-        );
         const heavyCalls: ContractCall[] = Array.from({ length: 500 }, (_, i) =>
             mc.setValue(BigInt(i)),
         );
@@ -348,7 +352,7 @@ describe('RemoteAccountAxelarRouter - RouterBehavior', () => {
             },
         }).doRemoteAccountExecute({ multiCalls: heavyCalls });
 
-        expect(receipt).to.be.revertedWithCustomError(router, 'SubcallOutOfGas');
+        await expect(receipt).to.be.revertedWithCustomError(router, 'SubcallOutOfGas');
     });
 
     it('should reject direct external call to processRemoteAccountExecuteInstruction', async () => {
