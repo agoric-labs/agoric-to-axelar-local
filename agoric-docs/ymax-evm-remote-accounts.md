@@ -64,21 +64,19 @@ Ymax therefore treats each EVM Remote Account as a stable object. Everything els
 
 ## Remote Accounts: per-portfolio asset ownership on EVM chains
 
-The important property of a Remote Account is not just that it exists on an EVM chain. It is that its address is derived from the Agoric Ymax contract instance and the portfolio account it represents.
+Remote Accounts are deployed as [EIP-1167](https://eips.ethereum.org/EIPS/eip-1167) minimal proxy contracts, allowing each account to reuse a shared implementation while still having its own address. These separate deployments also make it easy for users to identify and verify the contract holding their portfolio's assets on each EVM chain.
 
-To achieve that, Remote Accounts are created by a factory contract with their addresses deterministically derived from:
+Each Remote Account has a predictable address that is deterministically derived from inputs that bind it to a specific Ymax portfolio account:
 
-- the Remote Account factory address;
+- the Remote Account factory address, which namespaces Remote Accounts to a specific Ymax contract instance;
 
 - the immutable Remote Account implementation address;
 
-- the Agoric portfolio account address.
+- the Ymax portfolio Agoric account address, which separates one portfolio's assets from another's.
 
-An Agoric account address alone is not sufficient to identify an account as belonging to a Ymax portfolio. That responsibility falls to the factory, which serves as the root contract provisioning Remote Accounts for a specific Agoric Ymax contract instance. By combining all addresses, Remote Accounts are uniquely tied to the Agoric portfolio account.
+An Agoric account address alone is not sufficient to identify an account as belonging to a particular Ymax portfolio system. The factory is the root contract provisioning Remote Accounts for a specific Ymax contract instance, while the portfolio account address identifies the per-portfolio asset container within that system.
 
-The deterministic derivation also gives the system idempotent provisioning: the same portfolio on the same EVM chain always maps to the same Remote Account address. The system can safely check whether the account already exists, deploy it if needed, and compute deposit destinations before assets move.
-
-Remote Accounts are deployed as EIP-1167 minimal-proxy clones, allowing each account to have a stable address and isolated asset ownership without requiring full contract bytecode deployment for every portfolio. This also makes it easier for users to identify and verify the contract holding their assets.
+Deterministic derivation supports race-tolerant, idempotent provisioning: the same portfolio for the same Ymax instance on the same EVM chain always maps to the same Remote Account address. The system can safely check whether the account already exists, deploy it using the Remote Account factory if needed, and independently start moving assets to computed deposit destinations.
 
 ```mermaid
 flowchart TB
