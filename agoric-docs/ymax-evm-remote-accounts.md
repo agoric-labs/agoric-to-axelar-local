@@ -2,7 +2,7 @@
 
 **Stable Asset Containers for Cross-Chain Portfolio Orchestration**
 
-## 1. The problem: one user intent, many chain-specific actions
+## The problem: one user intent, many chain-specific actions
 
 Ymax is a non-custodial portfolio management dapp that turns a single signed user intent into a coordinated sequence of actions across multiple chains.
 
@@ -12,7 +12,7 @@ A user may express a high-level goal, such as depositing funds, rebalancing a po
 - The system does not take custody through a shared omnibus account.
 - The user does not need to manually operate accounts on every destination chain.
 
-Ymax solves this by combining an Agoric-side orchestration contract with per-portfolio Remote Account contracts on each supported EVM chain.
+Ymax solves this by combining an orchestration contract on the Agoric blockchain with per-portfolio Remote Account contracts on each supported EVM chain.
 
 Example of an orchestrated flow for a user opening a portfolio:
 
@@ -36,23 +36,23 @@ flowchart TB
   subgraph Ethereum["Ethereum"]
     direction TB
     EthRA["Ethereum Remote Account"]
-    Morpho["Morpho vault"]
+    Compound["Compound"]
   end
 
-  User -->|"1. Sign OpenPortfolio intent:<br/>Deposit 1,000 USDC from Base<br/>Allocate 100% into Morpho on Ethereum"| UI
+  User -->|"1. Sign OpenPortfolio intent:<br/>Deposit 1,000 USDC from Base<br/>Allocate 100% into Compound on Ethereum"| UI
   UI -->|"2. Submit intent"| Ymax
   Ymax -->|"3. Create"| Portfolio
   Ymax -->|"4. Provision"| BaseRA
   Ymax -->|"5. Provision"| EthRA
   Wallet -->|"<b>6. Permit2-signed transfer 1,000 USDC</b>"| BaseRA
   BaseRA -->|"<b>7. Move USDC cross-chain</b>"| EthRA
-  EthRA -->|"<b>8. Allocate to Morpho</b>"| Morpho
+  EthRA -->|"<b>8. Allocate to Compound</b>"| Compound
   Ymax -->|"9. Record allocation"| Portfolio
 
   linkStyle 5,6,7 stroke-width:3px
 ```
 
-## 2. The core design: assets should outlive execution paths
+## The core design: assets should outlive execution paths
 
 The key architectural choice is to separate the contracts that hold assets from the machinery used to operate them.
 
@@ -60,9 +60,9 @@ The asset-holding side needs to be boring and durable. A portfolio's account on 
 
 The execution side has different pressures. Cross-chain messaging providers can change, instruction formats can evolve, and new ways of interacting with EVM accounts may become useful. Those changes should be applicable to existing portfolio accounts, rather than requiring every portfolio to move assets into a new account.
 
-Ymax therefore treats the EVM Remote Account as the stable object. Everything else in the system is organized around safely creating that account, sending authenticated instructions to it, and observing whether those instructions completed.
+Ymax therefore treats each EVM Remote Account as a stable object. Everything else in the system is organized around safely creating those accounts, sending authenticated instructions to them, and observing the results of those instructions.
 
-## 3. Remote Accounts: per-portfolio asset ownership on EVM chains
+## Remote Accounts: per-portfolio asset ownership on EVM chains
 
 The important property of a Remote Account is not just that it exists on an EVM chain. It is that its address is derived from the Agoric Ymax contract instance and the portfolio account it represents.
 
@@ -108,23 +108,23 @@ flowchart TB
   PortfolioB -.->|"deterministically maps to"| RemoteB
 ```
 
-## 4. Routers: authenticated instruction delivery
+## Routers: authenticated instruction delivery
 
 Because Remote Accounts are meant to be stable asset containers, they do not embed or trust a single cross-chain messaging path directly. Instead, instructions arrive through router contracts.
 
-A router implements a cross-chain messaging integration, currently Axelar GMP, and receives authenticated payloads from the Agoric-side Ymax contract. The messaging layer, or the router itself, must ensure that messages are authentic, non-replayable, and tied to the correct source account. This avoids confused deputy problems where a valid router could be tricked into executing an instruction from the wrong origin.
+A router implements a cross-chain messaging integration, currently [Axelar General Message Passing (GMP)](https://docs.axelar.dev/dev/general-message-passing/overview/), and receives authenticated payloads from the Ymax orchestration contract. The messaging layer, or the router itself, must ensure that messages are authentic, non-replayable, and tied to the correct source account. This avoids confused deputy problems where a router could be tricked into executing instructions from an impostor.
 
-There is no ordering guarantee, and the Agoric orchestration contract is responsible for avoiding concurrent instructions if they have any dependencies between each other.
+There is no ordering guarantee, and the Ymax orchestration contract is responsible for avoiding concurrent execution of non-independent instructions.
 
-The router is not just a dumb pipe to Remote Accounts. It exposes high-level instructions that the Agoric contract can invoke, such as provisioning an account, executing a set of operations on an account, processing a deposit, or administering router authorization.
+The router is not just a dumb pipe to Remote Accounts. It exposes high-level instructions that the Ymax orchestration contract uses to provision accounts, process deposits, execute account operations, and administer router authorization.
 
 ```mermaid
-flowchart LR
+flowchart TD
   Ymax["Agoric Ymax contract"]
   RemoteAccount["Remote Account<br/>stable asset container"]
 
   subgraph ControlPath["Replaceable control path"]
-    MessageSystem["Cross-chain messaging system<br/>currently Axelar GMP"]
+    MessageSystem["Cross-chain messaging<br/>(Axelar GMP)"]
     Router["EVM router"]
   end
 
@@ -133,9 +133,9 @@ flowchart LR
   Router -->|"3. Invoke account operation"| RemoteAccount
 ```
 
-## 5. Router authorization: changing control paths without moving assets
+## Router authorization: changing control paths without moving assets
 
-Routers and Remote Accounts are not directly linked. Instead the factory plays a mediator role.
+Routers and Remote Accounts are not directly linked. Instead, the factory plays a mediator role.
 
 The router uses the factory to derive the Remote Account address from the Agoric portfolio account address.
 
@@ -146,35 +146,28 @@ This gives Ymax a controlled upgrade path without having to individually upgrade
 This authorization is protected by a two-factor mechanism maintained by the non-upgradable factory:
 
 - an EVM multisig must first vet the new router;
-- the managing Agoric-side Ymax contract must send an admin instruction through an existing authorized router to enable the vetted router.
+- the managing Ymax orchestration contract must send an admin instruction through an existing authorized router to enable the newly vetted router.
 
 ```mermaid
 flowchart LR
-  Unknown["Unknown<br/><small>Not approved by the EVM side</small>"]
-  Vetted["Vetted<br/><small>Code-approved, but<br/>cannot operate accounts yet</small>"]
-  Authorized["Authorized<br/><small>Can operate Remote Accounts<br/>created by this factory</small>"]
+  START@{shape: start}
+  Unknown(["Unknown<br/><small>Not approved by EVM multisig</small>"])
+  Vetted(["Vetted<br/><small>Code-approved, but<br/>cannot operate accounts yet</small>"])
+  Authorized(["Authorized<br/><small>Can operate Remote Accounts<br/>created by this factory</small>"])
 
-  subgraph Legend["Legend"]
-    EvmAuth["EVM vetting authority<br/>multisig"]
-    AgoricAuth["Agoric Ymax<br/>via existing authorized router"]
-  end
-
-  Unknown -->|"vetRouter"| Vetted
-  Vetted -->|"authorizeRouter"| Authorized
-  Authorized -->|"deauthorizeRouter"| Vetted
-  Vetted -->|"unvetRouter"| Unknown
+  START --> Unknown
+  Unknown -->|"EVM multisig:<br/>vetRouter"| Vetted
+  Vetted -->|"Ymax via other authorized router:<br/>authorizeRouter"| Authorized
+  Authorized -->|"Ymax via other authorized router:<br/>deauthorizeRouter"| Vetted
+  Vetted -->|"EVM multisig:<br/>unvetRouter"| Unknown
 
   classDef state fill:#f8fafc,stroke:#475569,stroke-width:1px,color:#0f172a
-  classDef evm fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#0f172a
-  classDef agoric fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#0f172a
   class Unknown,Vetted,Authorized state
-  class EvmAuth evm
-  class AgoricAuth agoric
 
-  linkStyle 0 stroke:#2563eb,stroke-width:3px
-  linkStyle 1 stroke:#16a34a,stroke-width:3px
+  linkStyle 1 stroke:#2563eb,stroke-width:3px
   linkStyle 2 stroke:#16a34a,stroke-width:3px
-  linkStyle 3 stroke:#2563eb,stroke-width:3px
+  linkStyle 3 stroke:#16a34a,stroke-width:3px
+  linkStyle 4 stroke:#2563eb,stroke-width:3px
 ```
 
 This means that the compromise of a single router, or even the compromise of an underlying cross-chain messaging system, should not by itself authorize a completely new control path for all Remote Accounts. An already authorized router remains highly privileged, so router code and messaging authentication are still critical trust boundaries.
@@ -199,36 +192,36 @@ flowchart TB
   RemoteAccount -->|"6. Execute requested calls"| Protocols
 ```
 
-## 6. Deposits as intents
+## Deposits as intents
 
 Deposits are intents processed as a router instruction rather than as separate token transfers.
 
 This leverages Permit2 signed transfers, with the router acting as the Permit2 spender. Because the router is tied to the Remote Account factory for a Ymax instance, its EVM address can represent that Ymax instance when a user signs a Permit2 authorization.
 
-The router enforces that a deposit instruction can only come from the factory principal: the Agoric-side Ymax contract instance associated with that factory. This prevents an attacker from taking a permit intended for the Ymax system and redirecting funds into an unrelated Remote Account. The factory’s deterministic address computation anchors the deposit to the portfolio account designated by the authenticated Ymax instruction, so funds can only land in that portfolio’s expected Remote Account.
+The router enforces that a deposit instruction can only come from the factory principal: the Agoric blockchain Ymax orchestration contract instance associated with that factory. This prevents an attacker from taking a permit intended for the Ymax system and redirecting funds into an unrelated Remote Account. The factory’s deterministic address computation anchors the deposit to the portfolio account designated by the authenticated Ymax instruction, so funds can only land in that portfolio’s expected Remote Account.
 
 This makes deposits part of the overall orchestration flow, authenticated in the same manner as other portfolio actions, and facilitated by the router.
 
-## 7. A routed instruction lifecycle
+## A routed instruction lifecycle
 
 All instructions received by the router have a common format, allowing unified processing.
 
-When the Agoric-side Ymax contract encodes a router instruction, it includes a unique txId and the expected target account address corresponding to the source Agoric account. The message is then sent from the source account, whose address must be guaranteed authentic by the messaging provider. Since the router does not verify uniqueness of the txId, the messaging provider checks must also guarantee messages cannot be replayed.
+When the Ymax orchestration contract encodes a router instruction, it includes a unique txId and the expected target account address corresponding to the source Agoric account the message is sent from. The messaging provider is responsible for authenticating the sender and (since the router does not verify txId uniqueness) preventing replays.
 
 Processing of authenticated cross-chain messages in the router revolves around an important trick: a self-dispatch pattern. Instructions are encoded as calldata, and the target methods, while public on the router, verify that they were called by the router itself. This has two benefits:
 
-First, it lets the router catch instruction-processing errors. If a message is valid but execution fails, the router records the failure in the result event instead of reverting the entire transaction. Not reverting also lets the messaging layer mark the delivery as consumed so the same authenticated delivery cannot be retried later.
+First, it lets the router catch instruction-processing errors. If a message is valid but execution fails, the router records the failure in the result event rather than reverting the entire transaction, allowing the messaging layer to mark the delivery as consumed so it cannot be retried later.
 
 Second, because the dispatched instruction is encoded as normal EVM calldata, it makes the transaction easier to inspect in block explorers. The instruction can be decoded as a function call instead of appearing only as an opaque bytes payload.
 
-However a plain self-dispatch of the encoded instruction would lose a crucial piece of information: the sender of the instruction. This is where the common format comes in. Before dispatching, the router replaces the txId in the encoded calldata with the authenticated source address. The txId was encoded to have the same length and serves no operational purpose for the instruction processors, as it is only used by the transport side of the router to report the outcome of the instruction as an event.
+However, a plain self-dispatch of the encoded instruction would lose a crucial piece of information: the sender of the instruction. This is where the common format becomes relevant. The txId is only used by the transport side of the router to report the outcome of the instruction as an event, and serves no operational purpose for instruction processors. So its encoding is defined to have the same length as the source address, and before dispatching, the router replaces it in the encoded calldata with the authenticated source address.
 
-With the authenticated source address, the instruction processor function can implement any "sender" checks as needed. For Remote Account operations, this leverages the factory to derive the Remote Account address from the portfolio account address, and sanity check it against the expected address also included in the encoded instruction. For any operation coming from the Ymax contract instance itself (like deposits and router administration), this sender is checked against the factory principal.
+With the authenticated source address, the instruction processor function can implement any "sender" checks as needed. For Remote Account operations, this leverages the factory to derive the Remote Account address from the portfolio account address, and validate it against the expected address also included in the encoded instruction. For any operation coming from the Ymax contract instance itself (like deposits and router administration), this sender is checked against the factory principal.
 
 ```mermaid
 flowchart TB
   Validate["<b>Validate message</b><br/>Check instruction selector<br/>Decode common fields"]
-  Rewrite["<b>Patch calldata</b><br/>authenticated sourceAddress"]
+  Rewrite["<b>Patch calldata</b><br/>insert authenticated sourceAddress"]
   Processor["<b>Instruction checks</b><br/>msg.sender == address(this)<br/>source matches expected target"]
   Operation["<b>Perform operation</b>"]
   Event["<b>Emit OperationResult</b><br/>txId + success/failure"]
@@ -236,30 +229,30 @@ flowchart TB
 
   Execute((" ")) -->|"Authenticated cross-chain message<br/>sourceAddress + encoded instruction"| Validate
   Validate --> Rewrite
-  Rewrite -->|"Self-dispatch<br/>patched process*Instruction calldata"| Processor
+  Rewrite -->|"Self-dispatch<br/>patched process$InstructionType calldata"| Processor
   Processor --> Operation
   Operation -->|"success"| Event
   Operation -->|"failure with reason"| Event
   Operation -->|"out of gas heuristics"| Revert
 ```
 
-## 8. Resolvers: reporting outcomes without trusting arbitrary state
+## Resolvers: reporting outcomes without trusting arbitrary state
 
 Ymax uses a resolver system to monitor `OperationResult` events emitted by routed instruction execution.
 
-Resolvers allow the Agoric-side orchestration contract to continue after an EVM instruction completes. For routed instructions, the resolver matches the pending transaction against the router event using the transaction id, and can fall back to the hash of the delivered payload when needed. It also watches for transactions that revert before emitting `OperationResult`, which can happen in cases such as the out-of-gas retry path.
+Resolvers allow the Ymax orchestration contract to continue after an EVM instruction completes. For routed instructions, the resolver matches the pending transaction against the router event using the txId, and can fall back to the hash of the delivered payload when needed. It also watches for transactions that revert before emitting `OperationResult`, which can happen in cases such as the out-of-gas retry path.
 
-Importantly, resolvers are not trusted to report arbitrary EVM state. They are trusted only to submit one bounded fact back to the Agoric chain: whether a specific routed instruction settled as successful or failed. Failed events and reverted transactions are confirmed with finality checks before settlement is reported, so transient chain reorgs or relayer retries do not prematurely resolve the orchestration step.
+Importantly, resolvers are not trusted to report arbitrary EVM state. They are trusted only to submit one bounded fact back to the Agoric chain: whether a specific routed instruction settled as successful or failed. Failed events and reverted transactions are confirmed with finality checks before settlement is reported, so transient chain reorgs or relayer retries do not prematurely fail an orchestration step that ultimately succeeds.
 
 This keeps the return path independent of the outgoing cross-chain messaging transport. The system does not require the same cross-chain provider to carry both the command and the result.
 
-## 9. Deterministic deployments and consistent cross-chain addresses
+## Deterministic deployments and consistent cross-chain addresses
 
 The system uses deterministic deployments to make infrastructure addresses consistent across chains where possible.
 
 This is not strictly required for Remote Account operations, but it improves the user experience, operational safety, and observability. Users, integrators, and monitoring systems can recognize the same Ymax infrastructure addresses across supported EVM chains.
 
-The deployment model uses CreateX-based automated deployments:
+The deployment model uses [CreateX](https://github.com/pcaversaccio/createx)-based automated deployments:
 
 - the Remote Account implementation is deployed deterministically using permissionless CREATE2;
 - the Axelar router requires per-chain initialization data, such as the Axelar gateway address, so it is deployed deterministically using permissioned CREATE3;
@@ -269,13 +262,13 @@ Deployment scripts verify the integrity and initialization state of CREATE3-depl
 
 This should be distinguished from deterministic Remote Account addresses, which are a functional part of the system. Remote Account addresses are derived from the factory and portfolio identity so the system can safely provision accounts and compute deposit destinations based on verified contract addresses.
 
-## 10. Independent assessment
+## Independent assessment
 
-The Remote Account system was independently assessed by Atredis Partners as part of the [2026 Ymax Agoric Solidity contract assessment](./Atredis%20Partners%20-%20Ymax_Agoric%202026%20Solidity%20Contract%20Assessment-Report%20v1.3.pdf).
+The Remote Account system was independently audited by Atredis Partners as part of the [2026 Ymax Agoric Solidity contract assessment](./Atredis%20Partners%20-%20Ymax_Agoric%202026%20Solidity%20Contract%20Assessment-Report%20v1.3.pdf).
 
-Atredis reported no critical, high, medium, or low severity findings. The report included three informational findings. Two highlighted the importance of consistent source-address formatting expectations across routers and factories. The third identified a logic bug in the router's out-of-gas heuristic handling. That bug has since been fixed in the router implementation, and since it has no expected operational impact, the fix will be deployed with a future router upgrade.
+Atredis reported no critical, high, medium, or low severity findings. The report included three informational findings. Two highlighted the importance of consistent source-address formatting expectations across routers and factories. The third identified a logic bug in the router's out-of-gas heuristic handling. That bug has since been fixed in the router implementation, and because it has no expected operational impact, the fix will be deployed with a future router upgrade.
 
-## 11. Conclusion
+## Conclusion
 
 Ymax Remote Accounts provide stable, segregated asset ownership for cross-chain portfolios, while routers provide replaceable authenticated control paths.
 
