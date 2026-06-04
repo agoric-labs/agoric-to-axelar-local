@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.20;
 
-import {AxelarExecutable} from "@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol";
-import {IAxelarGasService} from "@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IAxelarGasService.sol";
-import {Ownable} from "./Ownable.sol";
+import { AxelarExecutable } from '@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol';
+import { IAxelarGasService } from '@updated-axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IAxelarGasService.sol';
+import { Ownable } from './Ownable.sol';
 
 struct CallResult {
     bool success;
@@ -17,8 +17,15 @@ struct AgoricResponse {
 }
 
 struct ContractCalls {
+    /// @dev the contract address receiving the call
     address target;
+    /// @dev the encoded call data
     bytes data;
+    /// @dev any `value` to forward to a payable call target
+    uint192 value;
+    /// @dev an explicit gas limit to provide when making the call
+    ///      If `0`, the call is made without specifying any `gas`
+    uint64 gasLimit;
 }
 
 struct CallMessage {
@@ -31,9 +38,8 @@ error InvalidSourceChain(string expected, string actual);
 
 contract Wallet is AxelarExecutable, Ownable {
     IAxelarGasService public gasService;
-    string private constant EXPECTED_SOURCE_CHAIN = "agoric";
-    bytes32 private constant EXPECTED_SOURCE_CHAIN_HASH =
-        keccak256(bytes(EXPECTED_SOURCE_CHAIN));
+    string private constant EXPECTED_SOURCE_CHAIN = 'agoric';
+    bytes32 private constant EXPECTED_SOURCE_CHAIN_HASH = keccak256(bytes(EXPECTED_SOURCE_CHAIN));
 
     event CallStatus(
         string indexed id,
@@ -59,19 +65,20 @@ contract Wallet is AxelarExecutable, Ownable {
 
         uint256 len = calls.length;
         for (uint256 i = 0; i < len; ) {
-            (bool success, ) = calls[i].target.call(calls[i].data);
+            bool success;
+            if (calls[i].gasLimit == 0) {
+                (success, ) = calls[i].target.call{ value: calls[i].value }(calls[i].data);
+            } else {
+                (success, ) = calls[i].target.call{ value: calls[i].value, gas: calls[i].gasLimit }(
+                    calls[i].data
+                );
+            }
 
             if (!success) {
                 revert ContractCallFailed(callMessage.id, i);
             }
 
-            emit CallStatus(
-                callMessage.id,
-                i,
-                calls[i].target,
-                bytes4(calls[i].data),
-                success
-            );
+            emit CallStatus(callMessage.id, i, calls[i].target, bytes4(calls[i].data), success);
 
             unchecked {
                 ++i;
