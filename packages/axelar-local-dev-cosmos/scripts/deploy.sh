@@ -17,7 +17,7 @@ if [[ $# -lt 2 ]]; then
     echo ""
     echo "Arguments:"
     echo "  network        - Target network to deploy to"
-    echo "  contract       - 'factory', 'depositFactory', 'remoteAccountFactory', or 'portfolioRouter'"
+    echo "  contract       - 'factory', 'depositFactory', 'remoteAccountFactory', 'portfolioRouter', or 'wallet'"
     echo "  owner_type     - Optional: 'ymax0' or 'ymax1' (default: ymax0)"
     echo "                   Used for remoteAccountFactory and depositFactory"
     echo ""
@@ -36,6 +36,9 @@ if [[ $# -lt 2 ]]; then
     echo ""
     echo "  # Deploy RemoteAccountAxelarRouter (requires env vars):"
     echo "  REMOTE_ACCOUNT_FACTORY=0x... $0 eth-sepolia portfolioRouter"
+    echo ""
+    echo "  # Deploy a standalone Wallet owned directly by an Agoric address (requires env var):"
+    echo "  OWNER_ADDRESS=agoric1... $0 avax wallet"
     echo ""
     echo "Environment Variables:"
     echo "  REMOTE_ACCOUNT_FACTORY - Required for portfolioRouter: previously deployed factory address"
@@ -157,6 +160,28 @@ case "$contract" in
             npx hardhat run "./scripts/deployRemoteAccountFactory.ts" --network "$network"
         ;;
 
+    wallet)
+        # Deploy a standalone Wallet owned directly by an Agoric address.
+        # OWNER_ADDRESS must be supplied in the environment (bech32 agoric1...).
+        if [ -z "${OWNER_ADDRESS:-}" ]; then
+            echo "Error: OWNER_ADDRESS environment variable is not set"
+            echo "Please set OWNER_ADDRESS=agoric1... before deploying Wallet"
+            echo "Example: OWNER_ADDRESS=agoric1u4yhqp9tp58hx3kkg2ktj4d9shpukg2q3cx8nv npm run deploy avax wallet"
+            exit 1
+        fi
+
+        echo ""
+        echo "========================================="
+        echo "Deploying Wallet (owned by Agoric address)..."
+        echo "========================================="
+        echo "Using Owner: $OWNER_ADDRESS"
+
+        GATEWAY_CONTRACT="$GATEWAY" \
+            GAS_SERVICE_CONTRACT="$GAS_SERVICE" \
+            OWNER_ADDRESS="$OWNER_ADDRESS" \
+            npx hardhat run "./scripts/deployWallet.ts" --network "$network"
+        ;;
+
     portfolioRouter)
         # Axelar source chain can vary by $network, but all mainnet and testnet
         # networks currently share the same value.
@@ -170,7 +195,7 @@ case "$contract" in
         ;;
     *)
         echo "Error: Invalid contract type '$contract'"
-        echo "Valid options: 'factory', 'depositFactory', 'remoteAccountFactory', or 'portfolioRouter'"
+        echo "Valid options: 'factory', 'depositFactory', 'remoteAccountFactory', 'portfolioRouter', or 'wallet'"
         exit 1
         ;;
 esac
