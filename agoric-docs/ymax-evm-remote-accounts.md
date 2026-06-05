@@ -149,9 +149,9 @@ This authorization is protected by a two-factor mechanism maintained by the non-
 ```mermaid
 flowchart LR
   START@{shape: start}
-  Unknown(["Unknown<br/><small>Not approved by EVM multisig</small>"])
-  Vetted(["Vetted<br/><small>Code-approved, but<br/>cannot operate accounts yet</small>"])
-  Authorized(["Authorized<br/><small>Can operate Remote Accounts<br/>created by this factory</small>"])
+  Unknown(["Unknown<br/><small>Not approved<br/>by EVM multisig</small>"])
+  Vetted(["Vetted<br/><small>Code-approved, but<br/>cannot yet<br/>operate accounts</small>"])
+  Authorized(["Authorized<br/><small>Can operate<br/>Remote Accounts<br/>created by this factory</small>"])
 
   START --> Unknown
   Unknown -->|"EVM multisig:<br/>vetRouter"| Vetted
@@ -170,7 +170,7 @@ flowchart LR
 
 This means that the compromise of a single router, or even the compromise of an underlying cross-chain messaging system, should not by itself authorize a completely new control path for all Remote Accounts. An already authorized router remains highly privileged, so router code and messaging authentication are still critical trust boundaries.
 
-Routers can also be deauthorized and un-vetted when retired. The multisig vetting authority can be updated as well after a similar two-step process: a proposal by the current vetting authority and a confirming admin instruction from the Agoric-side Ymax contract.
+Routers can also be deauthorized and un-vetted when retired. The multisig vetting authority can be updated as well after a similar two-step process: a proposal by the current vetting authority and a confirming admin instruction from the Ymax orchestration contract.
 
 In the future, this model can support multiple concurrent interaction paths, potentially including direct EVM user wallet access behind a timelock, without changing where assets are held.
 
