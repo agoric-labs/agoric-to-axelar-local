@@ -149,9 +149,9 @@ This authorization is protected by a two-factor mechanism maintained by the non-
 ```mermaid
 flowchart LR
   START@{shape: start}
-  Unknown(["Unknown<br/><small>Not approved<br/>by EVM multisig</small>"])
-  Vetted(["Vetted<br/><small>Code-approved, but<br/>cannot yet<br/>operate accounts</small>"])
-  Authorized(["Authorized<br/><small>Can operate<br/>Remote Accounts<br/>created by this factory</small>"])
+  Unknown(["<b>Unknown</b><br/>Not approved<br/>by EVM multisig"])
+  Vetted(["<b>Vetted</b><br/>Code-approved, but<br/>cannot yet<br/>operate accounts"])
+  Authorized(["<b>Authorized</b><br/>Can operate<br/>Remote Accounts<br/>created by this factory"])
 
   START --> Unknown
   Unknown -->|"EVM multisig:<br/>vetRouter"| Vetted
