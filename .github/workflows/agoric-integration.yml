@@ -19,12 +19,15 @@ jobs:
 
     steps:
       - name: Checkout this repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Use Node 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "20"
+          # keep setup-node v4 behavior: packageManager is yarn but there is
+          # no yarn.lock, so automatic caching would fail
+          package-manager-cache: false
 
       - name: Install dependencies
         run: npm install && cd integration && yarn install

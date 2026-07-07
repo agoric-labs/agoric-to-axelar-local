@@ -10,18 +10,26 @@ jobs:
     name: "Publish to NPM"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
         with:
           node-version: "16.x"
           registry-url: "https://registry.npmjs.org"
+          # keep setup-node v4 behavior: packageManager is yarn but there is
+          # no yarn.lock, so automatic caching would fail
+          package-manager-cache: false
+
       - name: Cache node_modules
-        uses: actions/cache@v2
+        uses: actions/cache@v5
         with:
           path: node_modules
           key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
       - run: npm ci
+
       - run: npm run build
+
       - run: npm run publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
