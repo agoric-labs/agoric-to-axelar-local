@@ -1,103 +1,63 @@
-# Agoric <=> EVM
+# Agoric <=> EVM Remote Account Contracts
 
-This updates the `axelar-local-dev` repository to use agoric chain instead of wasm chain in `agoric-local-dev-cosmos` package.
+Solidity contracts and deployment tooling for the ymax remote-account system: an Agoric
+portfolio manager controls accounts and executes operations on EVM chains through
+[Axelar General Message Passing (GMP)](https://docs.axelar.dev/dev/general-message-passing/overview/).
 
-This repository does not demonstrate a token trasnfer to eth but rather a message transfer
+This repo started as a fork of [`axelar-local-dev`](https://github.com/axelarnetwork/axelar-local-dev)
+(hence the `upstream` git remote) but is now scoped to building, testing, and deploying the
+contracts below.
 
-## Steps to run contract call
+See [`src/contracts/design.md`](src/contracts/design.md) for the system architecture and
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for deployment details.
 
-- In root of the workspace run:
+## Contracts
 
-```bash
-    npm install
-    npm run build
-```
+| Contract                   | Purpose                                                     |
+| --------------------------- | ------------------------------------------------------------ |
+| `RemoteAccount`              | Minimal-clone implementation for a remote EVM account         |
+| `RemoteAccountFactory`        | Deploys deterministic `RemoteAccount` clones                  |
+| `RemoteAccountAxelarRouter`   | Single Axelar GMP entry point for remote account operations   |
+| `Factory` / `Wallet`         | Legacy smart-wallet factory                                   |
+| `DepositFactory`              | Deposit-only wallet factory (with Permit2 support)             |
+| `WalletHelper`                | Helper for withdrawing from Beefy vaults                      |
 
-- Change to `axelar-local-dev-cosmos` dir
-
-```bash
-    cd packages/axelar-local-dev-cosmos
-```
-
-- start the agoric and axelar chains using:
-
-```bash
-    npm run start
-```
-
-- start the relaying process using
+## Getting started
 
 ```bash
-    npm run relay
-```
-> Note: you can also run `testFactory` or `testWallet` instead of `relay`
-
-- you should see this in the logs:
-
-```
-Message on Ethereum Contract: [
-  'agoric1estsewt6jqsx77pwcxkn5ah0jqgu8rhgflwfdl',
-  'Hello, world!',
-  sender: 'agoric1estsewt6jqsx77pwcxkn5ah0jqgu8rhgflwfdl',
-  message: 'Hello, world!'
-]
+npm install
+npm run build   # type-checks the TS sources and compiles the Solidity contracts
+npm test        # runs the Hardhat contract test suite
 ```
 
-## Steps to run contract call with token transfer
+Among the tests is `src/__tests__/BuildArtifacts.spec.ts`, which pins the compiled bytecode
+hash of every contract with a deployment script. Since compiler-embedded metadata includes
+each contract's relative source path, renaming or moving a contract file changes its
+bytecode even when the Solidity itself is untouched — this test exists to catch that.
 
-- In root of the workspace run:
+## Deploying
 
 ```bash
-    npm install
-    npm run build
+./scripts/deploy.sh <network> <factory|depositFactory|remoteAccountFactory|portfolioRouter> [owner_type]
 ```
 
-- Change to `axelar-local-dev-cosmos` dir
+See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the full deployment guide (CreateX
+determinism, environment variables, multi-chain deploys via `npm run deploy:all`).
 
-```bash
-    cd packages/axelar-local-dev-cosmos
-```
+### Mainnet gas settings
 
-- start the agoric and axelar chains using:
+Before deploying to Ethereum mainnet, check current gas prices at
+https://etherscan.io/gastracker and compare against `hardhat.config.ts`'s `eth` network
+config (`maxFeePerGas`/`maxPriorityFeePerGas`). Increase them if the network is congested
+(base fee > 80 gwei) to avoid dropped transactions.
 
-```bash
-    npm run start
-```
+## Repo layout
 
-- run the script to start an ibc-transfer
-
-```bash
-    bash ./docker/axelar/bin/steps/ibc-transfer.sh
-```
-
-- run this script to relay the ibc trasnsaction.
-
-```bash
-    npm run relayWithTokens
-```
-
-- After that run again to relay the token transfer
-
-```bash
-    npm run relayWithTokens
-```
-
-- you should see this in the logs:
-
-```
-Balance of account after relaying ...
-```
-
-> **Note:** the `npm run relay` command will not exit by itself after receiving the message on ethereum and must be manually exited)
-
-## Main file
-
-The main file to look out for is the `packages/axelar-local-dev-cosmos/src/relayToEth.ts` in which the majority of the work is being done.
-
-This file is responsible for
-
-- starting up an ethereum chain instance
-- adding a solidity contract to that instance (which receives the message from cosmos)
-- setting up a relayer between axelar and ethereum + axelar and agoric
-- sending an IBC transaction from agoric to axelar
-- finally, relaying the packets from agoric <=> axelar <=> ethereum
+- `src/contracts/` — Solidity sources
+- `src/deploy/`, `scripts/`, `ignition/` — deployment scripts (CreateX-based deterministic
+  deploys for the remote-account system, Hardhat Ignition modules for the legacy
+  factory/deposit-factory/wallet-helper contracts)
+- `src/__tests__/` — Hardhat contract tests
+- `integration/` — scripts and an Agoric-side CLI (`integration/agoric/`) for exercising the
+  deployed contracts end-to-end (creating remote accounts, supply/withdraw flows)
+- `agoric-docs/` — Agoric-authored design notes and audit reports

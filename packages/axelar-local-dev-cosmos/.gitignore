@@ -1,8 +1,0 @@
-.env
-
-# Docker
-docker/**/.*
-config.json
-channel.json
-connection.json
-info/*

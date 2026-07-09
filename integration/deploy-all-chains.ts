@@ -165,7 +165,7 @@ const checkAndSyncNonces = async (
   const isTestnet = chains.some((c) => CHAINS.testnet.includes(c));
   const scriptPath = path.resolve(
     __dirname,
-    "../packages/axelar-local-dev-cosmos/scripts/increment-nonce.ts",
+    "../scripts/increment-nonce.ts",
   );
 
   const args = [
@@ -180,7 +180,7 @@ const checkAndSyncNonces = async (
 
   return new Promise((resolve) => {
     const child = spawn("npx", ["ts-node", scriptPath, ...args], {
-      cwd: path.resolve(__dirname, "../packages/axelar-local-dev-cosmos"),
+      cwd: path.resolve(__dirname, ".."),
       stdio: "inherit",
     });
 
@@ -211,10 +211,7 @@ const deployToChain = async (
   contract: string,
   ownerType?: string,
 ): Promise<DeployResult> => {
-  const scriptPath = path.resolve(
-    __dirname,
-    "../packages/axelar-local-dev-cosmos/scripts/deploy.sh",
-  );
+  const scriptPath = path.resolve(__dirname, "../scripts/deploy.sh");
 
   const args = [chain, contract, ownerType].filter(Boolean) as string[];
 
@@ -227,7 +224,7 @@ const deployToChain = async (
     });
 
     const child = spawn(scriptPath, args, {
-      cwd: path.resolve(__dirname, "../packages/axelar-local-dev-cosmos"),
+      cwd: path.resolve(__dirname, ".."),
       env: { ...process.env },
       stdio: [yesProcess.stdout, "inherit", "inherit"],
     });

@@ -31,7 +31,7 @@ For Aave/Compound testing, ensure USDC tokens are present in the remote EVM acco
 
 ### Deploy Factory.sol Contract
 
-Before using the CLI, you need to deploy the [`Factory.sol`](../../packages/axelar-local-dev-cosmos/src/__tests__/contracts/Factory.sol) contract on your target EVM chain (Avalanche or Ethereum testnet):
+Before using the CLI, you need to deploy the [`Factory.sol`](../../src/contracts/Factory.sol) contract on your target EVM chain (Avalanche or Ethereum testnet):
 
 **Important:** Use the correct contract version for your target chain:
 
@@ -40,22 +40,13 @@ Before using the CLI, you need to deploy the [`Factory.sol`](../../packages/axel
 
 These versions use hardcoded gas values instead of expecting the gas amount from the Agoric contract call.
 
-1. Navigate to the contract directory:
-
-   ```bash
-   cd packages/axelar-local-dev-cosmos
-   ```
-
-2. Set up your `.env` file with the required environment variables:
+1. Set up your `.env` file (in the repo root) with the required environment variables:
    - `PRIVATE_KEY` - Private key of the account that will deploy the contract (without 0x prefix)
    - `INFURA_KEY` - (Optional) Infura API key for Ethereum networks
 
-3. Deploy the Factory contract:
+2. Deploy the Factory contract from the repo root:
 
    ```bash
-   # Navigate to project root first
-   cd ../../
-
    # Deploy to Avalanche Fuji testnet
    npm run deploy -- fuji
 
@@ -63,9 +54,9 @@ These versions use hardcoded gas values instead of expecting the gas amount from
    npm run deploy -- sepolia
    ```
 
-4. Copy the deployed Factory contract address from the output and set it as `FACTORY_ADDRESS` in your integration folder `.env` file.
+3. Copy the deployed Factory contract address from the output and set it as `FACTORY_ADDRESS` in your integration folder `.env` file.
 
-5. **Fund the Factory contract with native tokens** - The deployed Factory contract needs native tokens (ETH for Ethereum, AVAX for Avalanche) to pay for gas when sending responses back to Agoric. This is required because the [`_send` function](../../packages/axelar-local-dev-cosmos/src/__tests__/contracts/Factory.sol#L148-L164) uses `gasService.payNativeGasForContractCall{value: gasAmount}` to pay for cross-chain gas fees.
+4. **Fund the Factory contract with native tokens** - The deployed Factory contract needs native tokens (ETH for Ethereum, AVAX for Avalanche) to pay for gas when sending responses back to Agoric. This is required because the `_send` function in [`Factory.sol`](../../src/contracts/Factory.sol) uses `gasService.payNativeGasForContractCall{value: gasAmount}` to pay for cross-chain gas fees.
 
    Send native tokens to the deployed Factory contract address to ensure it can respond to Agoric requests.
 
