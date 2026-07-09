@@ -24,15 +24,15 @@ jobs:
         run: rm -rf target sui-devnet-v1.7.0-ubuntu-x86_64.tgz
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 18
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Cache node_modules
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         with:
           path: node_modules
           key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
