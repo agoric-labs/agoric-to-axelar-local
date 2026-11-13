@@ -68,6 +68,9 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          # This job handles the deployer key, so always use the newest 22.x
+          # (including security releases) instead of the runner's cached one.
+          check-latest: true
 
       - name: Checkout code
         uses: actions/checkout@v5
